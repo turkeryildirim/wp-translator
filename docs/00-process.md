@@ -60,15 +60,18 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D17 | Sync autonomy | The trusted-source cycle runs unattended: existing entries updated, new added, entries removed upstream deleted. The owner supplies the list and presses the button; nothing else is confirmed. |
 | D18 | Tag cardinality | A project carries **several** tags. |
 | D19 | Tag vocabulary | **Open and owner-controlled.** AI proposes; the owner may correct or add tags. |
-| D20 | Project ingestion | The owner supplies the project's wordpress.org page and its translate.wordpress.org page; the tool exports the PO automatically into a per-project store, separate from the glossary. |
+| D20 | Project ingestion | The owner supplies the translate.wordpress.org URL (D31); the tool exports the PO automatically into a per-project store, separate from the glossary. Where the family supports it, metadata and source come from the wordpress.org API. |
 | D21 | Source code | The plugin/theme **source code is stored locally** next to its language file, so file names, directories and the code itself reveal where a string is used. |
 | D22 | Status model | `untranslated` → glossary match is placed as complete without review; AI output is `review`; approval makes it `ok`. Rejection is not a state — it means the owner edits and saves the string. |
 | D23 | Glossary write-back | An approved translation is added to the glossary if absent. If a different translation already exists, the system warns. |
 | D24 | `msgctxt` | Carried verbatim through import → storage → export. Not used for matching, not shown in the UI, not stored in the glossary. It exists solely so GlotPress can match the entry on import. |
-| D25 | Source code | Downloaded automatically as the versioned ZIP from `downloads.wordpress.org`. |
+| D25 | Source code | Downloaded automatically as the versioned ZIP from `downloads.wordpress.org`. Available only for `wp-plugins` and `wp-themes` — see R8 and O16. |
 | D26 | Glossary status filter | Only `current` translations feed the glossary. `waiting` is unreviewed and would dilute it. |
 | D27 | Sub-project | **`dev` when the project has one, otherwise `stable`.** Where `dev` exists, `stable` is not consulted. Large projects carry both; small ones often only one. |
 | D28 | readme | The readme sub-project is **not** a translation target. `readme.txt` is read only as context for tag proposal and AI translation. |
+| D29 | Glossary collision | When an approved project translation differs from an existing glossary entry, the panel offers **two independent choices**: for the project — use the glossary translation or keep the project's; for the glossary — keep the existing entry or overwrite it. |
+| D30 | Testing scope | Verification is limited to the **exported PO**: is it syntactically valid, and will GlotPress import it. No WordPress installation, no plugin activation, no runtime loading test. |
+| D31 | Project identity | The owner supplies the **translate.wordpress.org URL**. A slug alone cannot locate a project — see R8. |
 
 ---
 
@@ -88,7 +91,7 @@ Each phase produces one document. **The owner signs it off before the next phase
 
 - Plugins: `…/projects/wp-plugins/<slug>/<stable|dev>/tr/default/export-translations/?format=po`
 - Themes: `…/projects/wp-themes/<slug>/tr/default/export-translations/?format=po` — **themes have no sub-project**; `/stable` and `/dev` both 404.
-- A missing sub-project or project returns **HTTP 404 with a ~116 KB HTML error page**. The probe behind D27 must therefore test the status code. Treating "bytes were returned" as success would store an HTML page as if it were a PO file.
+- A missing sub-project or project returns **HTTP 404 with a ~116 KB HTML error page**. The probe behind D27 must test the status code **and** the content type: a successful export is `application/octet-stream`, a 404 is `text/html`. Size is not a signal — `ry-wc-city-select` exports a legitimate 1.2 MB PO with 14 402 strings, larger than the error page.
 
 **R6 — wordpress.org metadata APIs, verified.** Both are public GETs needing only the slug:
 
@@ -122,13 +125,32 @@ Source alignment against the released ZIP (contact-form-7 6.1.7):
 
 Two consequences follow from D27 and are accepted: strings that exist only in `stable` are not translated, and references pointing at trunk-only files fall back to the path and the `#.` comment without source code.
 
+**R8 — the project space is not uniform.** A slug does not identify a project: the type path and the sub-project depth both vary. All of the following export PO at `…/projects/<path>/tr/default/export-translations/?format=po`, verified:
+
+| Path shape | Example | msgid | msgctxt | `#:` refs |
+|------------|---------|------:|--------:|----------:|
+| `wp-plugins/<slug>/<stable\|dev>` | `classic-editor/stable` | 54 | 8 | 53 |
+| `wp-themes/<slug>` — no sub-project | `astra` | 4 142 | 91 | 6 083 |
+| `wp/<branch>` | `wp/dev` | 8 143 | 1 182 | 12 746 |
+| `wp/<branch>/<sub>` | `wp/dev/admin` | 3 663 | 204 | 4 319 |
+| `patterns/<slug>` | `patterns/core` | 17 045 | 0 | 24 068 |
+| `apps/<platform>/<branch>` | `apps/ios/dev` | 4 343 | **4 342** | **0** |
+| `meta/<slug>` | `meta/learn-wordpress` | 981 | 323 | 1 135 |
+
+A second URL form exists: `…/locale/tr/default/<type>/<slug>/` is an HTML page that **lists a project's sub-projects** — for `ry-wc-city-select` it shows `stable`, `dev`, `stable-readme`, `dev-readme`. It is the natural discovery input.
+
+Two consequences:
+
+- **`apps/ios` has no `#:` references at all** and carries `msgctxt` on 4 342 of 4 343 strings. Source-code usage detection (D21) is meaningless there, and `msgctxt` is the only context available — which D24 deliberately does not read.
+- **The wordpress.org info API and the source ZIP exist only for `wp-plugins` and `wp-themes`.** For `wp`, `patterns`, `apps` and `meta` there is no `download_link` and no tags line, so D6, D8, D21 and D25 have nothing to work with.
+
 ## 6. Open questions
 
 | # | Question | Phase |
 |---|----------|-------|
-| O15 | R6 means the slug alone yields all project metadata and the ZIP. Does the owner still supply the wordpress.org page URL when adding a project, or is the translate.wordpress.org URL (which contains the slug) enough? | 1 |
-| O13 | When approval collides with an existing, different glossary translation the system warns — and then what? Keep both as variants, replace, or leave the glossary untouched? | 1 |
-| O14 | Is there an automated test suite, and what does it cover? Relevant because PO round-trip fidelity is the one thing a silent bug would corrupt invisibly. | 2 |
+| O16 | **Scope.** Which project families from R8 are supported — plugins and themes alone, or also `wp` core, `patterns`, `apps` and `meta`? The latter have no wordpress.org metadata and no source ZIP, and `apps` has no `#:` references, so D6, D8, D21 and D25 degrade or do not apply. | 1 |
+| O17 | Tag synonym drift under an open vocabulary (`ecommerce` / `e-ticaret` / `shop`) splits the glossary silently. Prevent, repair, or leave for now? | 1 |
+| O18 | Who writes the content of the general Turkish style rules, and when? | 1 |
 
 ---
 

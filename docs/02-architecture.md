@@ -63,16 +63,16 @@ Settled by R1–R3 and the export rules in `01`:
 
 ## translate.wordpress.org and wordpress.org integration
 
-Verified (R5, R6): the export endpoint is a public GET returning a PO body, `filters[status]` works, and no rate-limit headers are advertised. The plugin and theme info APIs return name, version, `download_link`, tags and readme sections from the slug alone, so nothing needs scraping.
+Verified (R5, R5b, R6, R8): the export endpoint is a public GET returning a PO body, `filters[status]` works, and no rate-limit headers are advertised. For plugins and themes the info API returns name, version, `download_link`, tags and readme sections, so nothing needs scraping — but the project must first be identified from its URL, since the slug alone does not locate it.
 
-Project setup therefore makes three public calls per project — info API, versioned ZIP, PO export — all unauthenticated.
+Setting up a plugin or theme therefore makes three public, unauthenticated calls: info API, versioned ZIP, PO export. Other families have only the third.
 
 Still to settle:
 
 - **Sub-project probing.** D27 probes the `dev` export URL and falls back to `stable` on 404. Per R5b this must be a status-code check: a 404 returns a large HTML body, so a byte-count or "response received" test would silently store an error page as a PO file. Themes take a different URL shape with no sub-project segment at all.
-- **Status filtering** (O12) — which statuses feed the glossary.
 - Actual request pacing. No rate limit is advertised, which is not the same as none existing; the trusted-source Update loop issues one request per project and should be deliberately paced and resumable.
-- Fetching the wordpress.org project page and `readme.txt` for tag proposal and AI context.
+- Fetching wordpress.org metadata and `readme.txt` for tag proposal and AI context — **available only for `wp-plugins` and `wp-themes`** (R8).
+- **Project family handling** (O16). The URL is the project's identity (D31), so the system must parse `…/projects/<path>/tr/default/` and `…/locale/tr/default/<type>/<slug>/` into a family, slug and sub-project. Families differ in shape: themes have no sub-project, `wp` nests two levels, `apps` splits by platform. Whichever families are in scope, the parser and the metadata/source steps have to degrade cleanly when a family offers neither.
 
 ---
 
@@ -100,7 +100,16 @@ Deriving whether a string appears in the admin or the front end, from `#:` paths
 
 ## Testing strategy
 
-**Open (O14).** PO round-trip is the one area where a silent bug corrupts data invisibly — a dropped `msgctxt` or a mangled placeholder only surfaces after the PO reaches GlotPress. If there is a test suite, that is what it is for. Offline fixtures are available locally: `~/Projects/investakademi/app/languages/` holds WP core `tr_TR` files with and without `msgctxt` and with plural forms, and `~/Projects/wc-sanal-pos/languages/` holds a file with none.
+Scope is deliberately narrow (D30): verify **the exported PO**, nothing further. No WordPress installation, no plugin activation, no check that the catalogue loads at runtime.
+
+Two things to verify:
+
+1. **Syntactic validity.** `msgfmt --check` from GNU gettext validates PO syntax and, with `--check-format`, that `printf` placeholders agree between source and translation. The CLI is not currently installed (`dnf install gettext`); PHP's `gettext` extension is a different thing and does not provide it. If an external binary is unwanted, the equivalent checks can be asserted directly.
+2. **GlotPress will import it.** Expressed as assertions over the output rather than by running GlotPress: only `ok` strings present, no `#, fuzzy`, no empty `msgstr`, no `#~`, every `msgctxt` preserved, plural arity intact.
+
+Offline fixtures: `~/Projects/investakademi/app/languages/` holds WP core `tr_TR` files with `msgctxt` and plural forms, `~/Projects/wc-sanal-pos/languages/` holds one with neither.
+
+**Open:** whether to depend on the `msgfmt` binary or assert the same rules in code.
 
 ---
 
