@@ -6,44 +6,177 @@ This document is filled in Phase 2. Sections below state what is already settled
 
 ---
 
-## Technology stack → `adr/0001-tech-stack.md`
+## Technology stack
 
-Judged against:
-
-- **PO round-trip fidelity** — the hard requirement. `msgctxt`, `#:`, `#.`, plural forms and headers must survive import → storage → export.
-- Library support for parsing and serialising PO.
-- AI SDK support for whichever provider ADR-0002 selects.
-- Single-user local deployment: how the owner starts it, where data lives.
-- Downloading and unpacking plugin/theme source archives.
-
-The export path needs no browser automation and no credentials (R5).
+**Node + TypeScript + SQLite** — [`adr/0001-tech-stack.md`](adr/0001-tech-stack.md). PO handling uses `gettext-parser`, the only library measured to round-trip a real export without loss; storage is SQLite through `better-sqlite3`, synchronous because a single-user local tool has no reason to be otherwise.
 
 ---
 
-## AI provider → `adr/0002-ai-provider.md`
+## AI provider
 
-The decisive criterion is **instruction adherence**, not fluency. Quality checks are blocking, so a model that writes elegant Turkish while dropping a `%1$s` or a `</strong>` creates review work instead of removing it. Honouring the glossary and the per-tag style rules matters for the same reason: consistency is the point of the project.
-
-Secondary: cost per project at realistic string counts, throughput, and whether the interface is abstracted so providers can be swapped.
+A pluggable **`TranslationProvider`** interface — [`adr/0002-ai-provider.md`](adr/0002-ai-provider.md). It takes a batch of source strings plus the assembled context bundle and returns translations keyed back to their units. The concrete roster is supplied by the owner; nothing else in the design waits on it.
 
 ---
 
 ## Data model
 
-Entities:
+Keyed so that the business rules are enforced by the database rather than by remembering to check.
 
-- **trusted sources** — translate.wordpress.org URL, label, last export time
-- **glossary entries** — source string, translation, domain tags, provenance (which trusted project, or owner approval), plural forms
-- **projects** — family, slug or path, translate.wordpress.org URL, sub-project, metadata where available (name, version, description, readme, tags), assigned domain tags
-- **project source snapshots** — the stored plugin/theme code, with the version it corresponds to
-- **translation units** — source string, `msgid_plural`, `msgctxt`, `#:` references, `#.` comments, translation, state, provenance, derived usage surface
-- **domain tags** — open vocabulary, mergeable (D33): a merge has to rewrite every referencing row, so tags are referenced by id rather than by name
-- **style rules** — free text: one general, one per tag (D34)
-- **QA exceptions** — unit, rule, reason, time
+**The glossary is keyed by `(source, tag)`, not by source alone.** That is the whole point of D5: `Add to cart` under `ecommerce` and the same string under another tag are different rows with different translations. The unique index makes a collision impossible to introduce silently — it surfaces as a constraint violation, which is what drives the D29 choice dialogue.
 
-Raw exported PO files are kept on disk as well as imported into the database, for both the glossary and each project.
+`source_hash` is `sha256(source_text \x1f source_plural)`. Indexing the hash rather than the text keeps the key compact; WooCommerce strings run to several hundred characters.
 
-**Open:** whether the glossary and per-project stores are separate databases or separate tables in one.
+`last_seen_sync_id` implements the D17 delete: after a sync run completes, any row from that source not touched by the run is gone.
+
+```sql
+PRAGMA foreign_keys = ON;
+PRAGMA journal_mode = WAL;
+
+-- ---------- vocabulary ----------
+CREATE TABLE tags (
+  id          INTEGER PRIMARY KEY,
+  name        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+) STRICT;
+
+-- ---------- trusted sources (Workflow A) ----------
+CREATE TABLE trusted_sources (
+  id             INTEGER PRIMARY KEY,
+  translate_url  TEXT NOT NULL UNIQUE,
+  family         TEXT NOT NULL CHECK (family IN ('plugin','theme','core','apps','meta','patterns')),
+  project_path   TEXT NOT NULL,
+  label          TEXT,
+  last_sync_id   INTEGER,
+  last_synced_at TEXT,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+) STRICT;
+
+CREATE TABLE sync_runs (
+  id                INTEGER PRIMARY KEY,
+  trusted_source_id INTEGER NOT NULL REFERENCES trusted_sources(id) ON DELETE CASCADE,
+  started_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  finished_at       TEXT,
+  po_path           TEXT,
+  status            TEXT NOT NULL DEFAULT 'running'
+                    CHECK (status IN ('running','ok','failed')),
+  error             TEXT,
+  entries_seen      INTEGER NOT NULL DEFAULT 0
+) STRICT;
+CREATE INDEX idx_sync_runs_source ON sync_runs(trusted_source_id, started_at);
+
+-- ---------- glossary / translation memory ----------
+-- Keyed by (source, plural, tag): the same string may carry a different
+-- translation under a different domain tag. That is the whole point (D5).
+CREATE TABLE glossary_entries (
+  id                 INTEGER PRIMARY KEY,
+  source_hash        TEXT NOT NULL,          -- sha256 of source_text || 0x1f || coalesce(source_plural,'')
+  source_text        TEXT NOT NULL,
+  source_plural      TEXT,
+  tag_id             INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  translation        TEXT NOT NULL,
+  translation_plural TEXT,
+  origin             TEXT NOT NULL CHECK (origin IN ('trusted','owner')),
+  trusted_source_id  INTEGER REFERENCES trusted_sources(id) ON DELETE SET NULL,
+  last_seen_sync_id  INTEGER,
+  created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+) STRICT;
+
+CREATE UNIQUE INDEX idx_glossary_key ON glossary_entries(source_hash, tag_id);
+CREATE INDEX idx_glossary_tag      ON glossary_entries(tag_id);
+CREATE INDEX idx_glossary_sweep    ON glossary_entries(trusted_source_id, last_seen_sync_id);
+CREATE INDEX idx_glossary_search   ON glossary_entries(source_text);
+
+-- ---------- projects (Workflow B) ----------
+CREATE TABLE projects (
+  id            INTEGER PRIMARY KEY,
+  family        TEXT NOT NULL CHECK (family IN ('plugin','theme','core','apps','meta','patterns')),
+  project_path  TEXT NOT NULL,              -- e.g. wp-plugins/woocommerce
+  sub_project   TEXT,                       -- dev | stable | NULL for flat families
+  translate_url TEXT NOT NULL UNIQUE,
+  slug          TEXT,                       -- plugins/themes only
+  name          TEXT,
+  version       TEXT,
+  description   TEXT,
+  readme        TEXT,
+  source_path   TEXT,                       -- unpacked ZIP on disk, plugins/themes only
+  po_path       TEXT,                       -- raw export retained on disk
+  imported_at   TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+) STRICT;
+
+CREATE TABLE project_tags (
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  tag_id     INTEGER NOT NULL REFERENCES tags(id)     ON DELETE CASCADE,
+  PRIMARY KEY (project_id, tag_id)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX idx_project_tags_tag ON project_tags(tag_id);
+
+-- ---------- translation units ----------
+CREATE TABLE translation_units (
+  id                 INTEGER PRIMARY KEY,
+  project_id         INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  ordinal            INTEGER NOT NULL,       -- position in the source export
+  source_hash        TEXT NOT NULL,
+  msgid              TEXT NOT NULL,
+  msgid_plural       TEXT,
+  msgctxt            TEXT,                   -- carried verbatim, never matched (D24)
+  refs               TEXT,                   -- '#:' block, verbatim
+  extracted_comments TEXT,                   -- '#.' block, verbatim
+  msgstr             TEXT,
+  msgstr_plural      TEXT,
+  state              TEXT NOT NULL DEFAULT 'untranslated'
+                     CHECK (state IN ('untranslated','review','ok')),
+  provenance         TEXT CHECK (provenance IN ('glossary','ai','human')),
+  provider           TEXT,                   -- which TranslationProvider produced it
+  glossary_entry_id  INTEGER REFERENCES glossary_entries(id) ON DELETE SET NULL,
+  usage_surface      TEXT CHECK (usage_surface IN ('admin','frontend','both','unknown')),
+  updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+) STRICT;
+
+CREATE UNIQUE INDEX idx_unit_identity ON translation_units(project_id, source_hash, ifnull(msgctxt,''));
+CREATE INDEX idx_unit_review  ON translation_units(project_id, state);
+CREATE INDEX idx_unit_lookup  ON translation_units(source_hash);
+CREATE INDEX idx_unit_glossary ON translation_units(glossary_entry_id);  -- FK; without it every glossary delete scans this table
+
+-- ---------- style guide ----------
+CREATE TABLE style_rules (
+  id         INTEGER PRIMARY KEY,
+  tag_id     INTEGER UNIQUE REFERENCES tags(id) ON DELETE CASCADE,  -- NULL row = general guide
+  body       TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+) STRICT;
+CREATE UNIQUE INDEX idx_style_general ON style_rules((tag_id IS NULL)) WHERE tag_id IS NULL;
+
+-- ---------- quality-check exceptions ----------
+CREATE TABLE qa_exceptions (
+  id         INTEGER PRIMARY KEY,
+  unit_id    INTEGER NOT NULL REFERENCES translation_units(id) ON DELETE CASCADE,
+  rule       TEXT NOT NULL,
+  reason     TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (unit_id, rule)
+) STRICT;
+```
+
+**Measured on the real WooCommerce export**, 14 530 translated strings × 3 tags:
+
+| | |
+|---|---|
+| Rows | 42 483 |
+| Write (batched upsert) | 0.44 s |
+| Database size | 15.7 MB |
+| Match query plan | `SEARCH USING INDEX idx_glossary_key (source_hash=? AND tag_id=?)` |
+| 5 000 real lookups | 100 ms |
+| Sync sweep plan | `SEARCH USING INDEX idx_glossary_sweep` |
+
+Matching a whole project is not a performance concern: 0.02 ms per lookup means even WooCommerce resolves in well under a second.
+
+`idx_unit_glossary` exists only because SQLite does not index foreign keys automatically — without it, every glossary delete scans `translation_units` in full. The query plan confirms it is gone.
+
+Raw exported PO files are kept on disk as well as imported; `po_path` and `sync_runs.po_path` record where.
+
+**Open:** whether tag merge (D33) rewrites `glossary_entries.tag_id` in place, which can collide with the unique index when both tags hold the same source string. The collision is the interesting case — it needs the same two-way choice as D29.
 
 ---
 
