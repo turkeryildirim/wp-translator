@@ -185,12 +185,6 @@ Loading WordPress core `dev` under the revised key stores 8 142 of 8 142 rows �
 
 Raw exported PO files are kept on disk as well as imported; `po_path` and `sync_runs.po_path` record where.
 
-**Open:** tag names need Turkish-aware case folding in the application; the `NOCASE` collation only folds ASCII (R10).
-
-**Open:** `idx_glossary_search` on `source_text` serves prefix and equality search but not `LIKE '%…%'`. If the glossary browser needs substring search across tens of thousands of rows, that is an FTS5 virtual table, not this index.
-
-**Open:** whether tag merge (D33) rewrites `glossary_entries.tag_id` in place, which can collide with the unique index when both tags hold the same source string. The collision is the interesting case — it needs the same two-way choice as D29.
-
 ---
 
 ## PO import and export
@@ -224,23 +218,75 @@ Still to settle:
 
 ## Matching engine
 
-Exact match on source string, scoped by the project's domain tags.
+**Exact byte match on the source string. No normalisation.**
 
-**Open:** what normalisation is applied before comparison (whitespace, case, trailing punctuation) and whether it risks false matches; the fallback order when a project has several tags, or when no entry exists under any of them; behaviour when several glossary candidates tie.
+This was measured, not assumed. Across WooCommerce's 14 159 distinct source strings, each candidate normalisation was applied and the resulting merges checked against the translations they would unify:
+
+| Normalisation | Extra matches gained | …that map to **different** translations |
+|---|---:|---:|
+| Collapse whitespace | 6 | 5 |
+| + lowercase | 253 | **197** |
+| + strip trailing punctuation | 484 | **431** |
+
+Almost everything normalisation would gain is a string whose translation genuinely differs. `Saved for Later` is `Sonraya Kaydet` while `Saved for later` is `Sonraya kaydedildi`; `No items found` and `No items found.` have different translations. Case-folding these applies the wrong translation and no quality check catches it, because nothing is malformed.
+
+Whitespace is also meaningful in PO — a trailing space before a value is usually deliberate.
+
+So the rule is the strict one: byte-identical source, byte-identical `msgid_plural`. Anything else goes to the AI, which is the safe direction to fail.
+
+**Lookup order** for a unit with context `C` in a project tagged `T₁…Tₙ`:
+
+1. `(source, C, T)` for each project tag
+2. `(source, '', T)` for each project tag
+3. no match — the unit goes to the AI
+
+**Open:** which tag wins when several match with different translations. The ordering has to be deterministic or the same project produces different output on re-run.
 
 ---
 
 ## Usage-surface detection
 
-Deriving whether a string appears in the admin or the front end, from `#:` paths, `#.` comments and the stored source code. A string can legitimately be both.
+Measured against real plugin sources, path patterns alone are weaker than they look:
 
-**Open:** the heuristics themselves, and how they are validated against real plugins.
+| Project | strings | decided by path alone |
+|---|---:|---:|
+| WooCommerce | 14 523 | 60.9 % |
+| Contact Form 7 | 442 | 36.4 % |
+| Yoast SEO | 2 606 | 20.4 % |
+
+Adding file-content signals (`add_menu_page`, `add_meta_box`, `WP_List_Table`, `is_admin()` against `add_shortcode`, `wc_get_template`, `register_block_type`, `WP_Widget`) lifts WooCommerce to 66.6 %. A third still cannot be decided.
+
+**Classification is per file, not per string.** WooCommerce's 14 523 strings reference only 1 649 distinct files — 15.2 strings per file — and scanning all of them takes 0.7 s. Classify each file once, cache it, and every string in it inherits the answer.
+
+`unknown` is a legitimate outcome. The surface is context for the AI, not a correctness gate, so a string with no confident classification simply gets less context. Guessing would be worse than admitting ignorance.
+
+98 % of referenced files are present in the release ZIP, consistent with the `dev`-versus-release gap recorded in R7.
+
+**Source excerpts must be capped.** For strings the heuristics cannot place, the natural fallback is to show the AI the code around the reference. Measured on WooCommerce, an uncapped ±6-line window has a median of 601 characters but a p90 of **65 425** — because 14 % of referenced files are minified bundles, one carrying a single line of 1.73 million characters, and **31 % of all references point into them**.
+
+Capping each line at 300 characters and the whole excerpt at 2 000 brings this to a median of 134 tokens, p90 437, hard maximum 500. A file whose longest line exceeds 2 000 characters is treated as minified and yields no excerpt at all — a 300-character slice of a bundle is noise, not context.
 
 ---
 
 ## AI pipeline
 
-**Open:** context bundle assembly and its token budget; batching and how string identity survives the round trip; structured output and validation before storage; automatic quality checks on AI output; retry, partial failure, resumability; cost reporting.
+**Context bundle**, assembled per batch:
+
+- fixed: the general style guide, plus per-tag rules for the project's tags, plus project metadata and readme (≈1 400 tokens)
+- per string: source text, `msgctxt`, `#.` comment, derived surface or a capped source excerpt (≈250 tokens median)
+- glossary terms relevant to the batch
+
+Measured against real excerpt sizes, that puts a **50-string batch at roughly 17 600 input tokens** and a 100-string batch at 34 000. Batch size is a setting; 50 is the starting point, small enough that a failure re-runs cheaply and large enough that the fixed portion is amortised.
+
+**Identity across the round trip.** Strings are sent with opaque ids and matched back by id, never by position or by the source text — a provider that reorders, merges or subtly rewrites a source string must not be able to silently misalign translations. Any id in the response that was not sent, or any sent id missing from the response, fails the batch rather than being guessed at.
+
+**Validation before storage.** Every returned translation runs the D9 quality checks before it is written. Output lands in `review` regardless of provider (D22).
+
+**Failure handling.** A batch is the retry unit. Partial results from a failed batch are discarded rather than half-stored, so a re-run is idempotent. Translation is resumable: the job records which units it has covered, and re-running picks up the untranslated remainder — necessary because WooCommerce at 50 strings per batch is roughly 290 requests.
+
+**Cost.** The provider records tokens in and out per batch, aggregated per project, so cost is observed rather than estimated.
+
+**Open:** whether the fixed portion is worth caching at the provider level, which depends on the roster ADR-0002 leaves open.
 
 ---
 
@@ -261,4 +307,14 @@ Offline fixtures: `~/Projects/investakademi/app/languages/` holds WP core `tr_TR
 
 ## Storage, configuration and runtime
 
-**Open:** database engine and file location; AI API key storage; how the tool starts; backup of the glossary, which is the most valuable asset in the system and the only part that is expensive to rebuild; schema migration.
+- **Database:** one SQLite file, WAL mode. The glossary and the per-project stores are tables in that one database, not separate files — matching reads the glossary while writing units, and a single file keeps that in one transaction and one backup.
+- **On disk beside it:** raw exported PO files (`po_path`, `sync_runs.po_path`) and unpacked source trees (`source_path`). These are re-downloadable, so they are cache, not state.
+- **Backup** covers the database file only. It is the one thing that is expensive to rebuild: trusted-source rows can be re-synced, but the owner's own approvals cannot be recovered from anywhere.
+- **Credentials** are per provider, stored locally outside the database so a copied or shared database carries no keys.
+- **Migrations** run forward-only on start, versioned in the file via `PRAGMA user_version`.
+
+**Tag normalisation** happens in the application, not the collation: SQLite's `NOCASE` folds ASCII only, so `içerik` and `İÇERİK` compare unequal (R10). Tag names are trimmed and case-folded with Turkish rules before insert. The `NOCASE` collation stays as a second line of defence.
+
+**Tag merge** (D33) rewrites `glossary_entries.tag_id` from the losing tag to the winning one. Where both tags hold the same `(source, msgctxt)` the unique index rejects the update, which is the interesting case: it is the same collision as D29 and takes the same two-way choice from the owner. Rows that do not collide move silently.
+
+**Glossary search.** `idx_glossary_search` on `source_text` serves equality and prefix lookups. Substring search across tens of thousands of rows needs an FTS5 virtual table mirroring `source_text` and `translation`; whether the panel needs that is a Phase 3 question, and adding it later requires no change to the tables above.

@@ -161,6 +161,12 @@ Real cases: `May` → `May` (abbreviation) against `Mayıs` (full month); `F j, 
 
 **R10 — SQLite `NOCASE` is ASCII-only.** Verified: `'ecommerce' = 'ECommerce' COLLATE NOCASE` is true, `'içerik' = 'İÇERİK' COLLATE NOCASE` is false. The collation on `tags.name` therefore only half-implements D33's prevention. Tag names must be normalised in the application with Turkish-aware case folding before insert.
 
+**R11 — usage surface cannot be fully derived.** Path patterns decide 60.9 % of WooCommerce strings, 36.4 % of Contact Form 7, 20.4 % of Yoast SEO. Adding file-content signals lifts WooCommerce to 66.6 %. Classification is per file, not per string — WooCommerce's 14 523 strings touch 1 649 files, 15.2 strings each, scanned in 0.7 s. `unknown` stays a legitimate outcome: the surface is AI context, not a correctness gate.
+
+**R12 — source excerpts must be capped.** 14 % of WooCommerce's referenced files are minified bundles and **31 % of all references point into them**; the largest single line is 1.73 million characters. An uncapped ±6-line excerpt has a median of 601 characters but a p90 of 65 425. Capping lines at 300 characters and excerpts at 2 000 gives a median of 134 tokens and a hard ceiling of 500. Files with lines over 2 000 characters yield no excerpt.
+
+**R13 — normalising before matching is a net loss.** Measured over WooCommerce's 14 159 distinct source strings: collapsing whitespace gains 6 matches of which 5 have different translations; adding lowercase gains 253 of which **197** differ; adding trailing-punctuation stripping gains 484 of which **431** differ. `Saved for Later` is `Sonraya Kaydet` but `Saved for later` is `Sonraya kaydedildi`. Matching is therefore byte-exact, and quality checks cannot catch a wrong match because nothing is malformed.
+
 ## 6. Open questions
 
 | # | Question | Phase |
