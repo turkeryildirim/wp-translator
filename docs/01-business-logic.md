@@ -34,7 +34,7 @@ Consistency is the whole difficulty. `item` is *ürün* in an e-commerce plugin 
 The glossary is built from projects whose Turkish translations are known to be good, because humans translated, reviewed and approved them.
 
 1. The owner maintains a list of **trusted projects** in the panel, identified by their translate.wordpress.org URL. The list is editable at any time.
-2. The owner presses **Update**. For every project on the list the PO is exported from translate.wordpress.org and saved locally as a file.
+2. The owner presses **Update**. For every project on the list the PO is exported from translate.wordpress.org and saved locally as a file. Only `current` translations are exported — `waiting` strings have not been reviewed and would dilute the glossary with exactly the inconsistency it exists to prevent.
 3. Each file is imported into the glossary database: entries already present are **updated**, entries not present are **added**, and entries that have disappeared upstream are **deleted**.
 4. The cycle runs unattended. The owner supplies the list and starts it; nothing in between asks for confirmation.
 
@@ -146,9 +146,8 @@ The general rules cover at least: form of address, title capitalisation, suffix 
 
 | # | Question |
 |---|----------|
-| O11 | Which sub-project is imported — `stable`, `dev`, `stable-readme`, `dev-readme`? Is the readme itself a translation target? Downloading the released ZIP points this at `stable`. |
+| O11 | Which sub-project is imported. `dev` is preferred, but neither sub-project covers the other and the release ZIP only matches `stable`. Is the readme itself a translation target? |
 | O15 | Does the owner still supply the wordpress.org page URL, given that the slug alone yields all metadata and the ZIP? |
-| O12 | Which translation statuses feed the glossary — `current` only, or also `waiting`? |
 | O13 | After the warning in Workflow B step 8, what happens: keep both as variants, replace, or leave the glossary untouched? |
 | — | Tag synonym drift under an open vocabulary. |
 | — | Content of the general style rules. |

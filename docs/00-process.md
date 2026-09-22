@@ -66,6 +66,7 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D23 | Glossary write-back | An approved translation is added to the glossary if absent. If a different translation already exists, the system warns. |
 | D24 | `msgctxt` | Carried verbatim through import → storage → export. Not used for matching, not shown in the UI, not stored in the glossary. It exists solely so GlotPress can match the entry on import. |
 | D25 | Source code | Downloaded automatically as the versioned ZIP from `downloads.wordpress.org`. |
+| D26 | Glossary status filter | Only `current` translations feed the glossary. `waiting` is unreviewed and would dilute it. |
 
 ---
 
@@ -90,13 +91,33 @@ One call returns `name`, `version`, `download_link` (the versioned ZIP), `tags`,
 
 ---
 
+**R7 — `stable` and `dev`, measured.** Five plugins were checked; **all five expose both sub-projects**, so "use `dev` where it exists" resolves to "always `dev`" in practice.
+
+Neither sub-project is a superset of the other:
+
+| Plugin | stable | dev | shared | only in stable | only in dev |
+|--------|-------:|----:|-------:|---------------:|------------:|
+| contact-form-7 | 442 | 429 | 378 | 64 | 51 |
+| wordpress-seo | 2 580 | 2 606 | 2 566 | 14 | 40 |
+| woocommerce | 14 711 | 14 523 | 14 280 | 431 | 243 |
+| classic-editor | 53 | 53 | 53 | 0 | 0 |
+| wp-super-cache | 492 | 492 | 492 | 0 | 0 |
+
+Source alignment against the released ZIP (contact-form-7 6.1.7):
+
+| PO | references | files | files absent from ZIP | line overflows |
+|----|-----------:|------:|----------------------:|---------------:|
+| stable | 503 | 55 | 0 | 0 |
+| dev | 492 | 58 | 5 | 1 |
+
+`stable` aligns perfectly. `dev` references five trunk-only files (a refactored `admin/` tree) that the release ZIP does not contain, so roughly one reference in ten has no source code to read.
+
 ## 6. Open questions
 
 | # | Question | Phase |
 |---|----------|-------|
-| O11 | Which sub-project is imported: `stable`, `dev`, `stable-readme`, `dev-readme`? Is the readme sub-project itself a translation target? **Constrained by D25:** the ZIP is the released version, which matches `stable`. Importing `dev` would align `#:` line numbers against trunk, which the ZIP does not contain — that would need SVN instead. | 1 |
+| O11 | `dev` is preferred where it exists, but R7 shows both exist everywhere tested and neither covers the other — importing only `dev` skips 64 contact-form-7 and 431 WooCommerce strings that are in the released version users run today. It also leaves ~10% of references without source code, since the ZIP is the release. Settle: `dev` with a source gap, `dev` plus an SVN trunk checkout, `stable`, or both merged. Separately: is the readme sub-project a translation target? | 1 |
 | O15 | R6 means the slug alone yields all project metadata and the ZIP. Does the owner still supply the wordpress.org page URL when adding a project, or is the translate.wordpress.org URL (which contains the slug) enough? | 1 |
-| O12 | Which translation statuses feed the glossary — `current` only, or also `waiting`? | 1 |
 | O13 | When approval collides with an existing, different glossary translation the system warns — and then what? Keep both as variants, replace, or leave the glossary untouched? | 1 |
 | O14 | Is there an automated test suite, and what does it cover? Relevant because PO round-trip fidelity is the one thing a silent bug would corrupt invisibly. | 2 |
 
