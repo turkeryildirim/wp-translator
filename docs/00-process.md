@@ -31,7 +31,7 @@ Each phase produces one document. **The owner signs it off before the next phase
 |-------|----------|-------|
 | 0 | `docs/` skeleton and baseline | Closed |
 | 1 | `01-business-logic.md` | Closed |
-| 2 | `02-architecture.md`, `adr/0001-tech-stack.md`, `adr/0002-ai-provider.md` | Open |
+| 2 | `02-architecture.md`, `adr/0001-tech-stack.md`, `adr/0002-ai-provider.md` | Awaiting sign-off |
 | 3 | `03-web-ui.md` | Not started |
 | 4 | Implementation, in vertical slices | Not started |
 
