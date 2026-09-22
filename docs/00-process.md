@@ -74,6 +74,7 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D31 | Project identity | The owner supplies the **translate.wordpress.org URL**. A slug alone cannot locate a project — see R8. |
 | D32 | Project families | Six families, each with its own import tab: **Core, Theme, Plugin, Apps, Meta, Patterns**. Themes and plugins are slug-driven — automatic ZIP download, metadata, readme, AI tag proposal; everything decided for them holds. `wp`, `apps`, `meta` and `patterns` are WordPress's own projects and may have no ZIP or readme, so the owner supplies the URL directly and those steps are skipped. Trusted sources are drawn from **all** families. |
 | D33 | Tag drift | Prevention and repair together: the AI is given the existing tag list and told to choose from it before proposing a new one, and the panel offers a **merge** that moves every glossary entry and project from one tag to another. |
+| D35 | Glossary key | `(source, msgctxt, tag)`. Matching prefers the unit's own `msgctxt` and falls back to the context-less row; a unit without context matches only context-less entries. Resolves R9. |
 | D34 | Style guide form | A large free-text field in the panel, written by the owner, passed to the AI as part of the prompt. No structured rule editor. Per D12 the same form applies per tag. |
 
 ---
@@ -156,7 +157,7 @@ Two consequences:
 | Astra | 4 141 | 9 | 1 |
 | Yoast SEO `dev` | 2 606 | 8 | 0 |
 
-Real cases: `May` → `May` (abbreviation) against `Mayıs` (full month); `F j, Y` → two different date formats; `Excludes` → `Hariç tutar` against `Hariçler`. These are exactly what `msgctxt` exists to separate. Under the current key the two rows collapse into one and the last write wins, so the glossary keeps one arbitrary translation and applies it everywhere. Quality checks do not catch this — nothing is malformed, only wrong. WordPress core is both the worst affected and the most likely trusted source.
+Real cases: `May` → `May` (abbreviation) against `Mayıs` (full month); `F j, Y` → two different date formats; `Excludes` → `Hariç tutar` against `Hariçler`. These are exactly what `msgctxt` exists to separate. Keying the glossary on source alone collapses these into one arbitrary winner, and quality checks cannot catch it — nothing is malformed, only wrong. WordPress core is both the worst affected and the most likely trusted source. Resolved by D35.
 
 **R10 — SQLite `NOCASE` is ASCII-only.** Verified: `'ecommerce' = 'ECommerce' COLLATE NOCASE` is true, `'içerik' = 'İÇERİK' COLLATE NOCASE` is false. The collation on `tags.name` therefore only half-implements D33's prevention. Tag names must be normalised in the application with Turkish-aware case folding before insert.
 
@@ -164,7 +165,7 @@ Real cases: `May` → `May` (abbreviation) against `Mayıs` (full month); `F j, 
 
 | # | Question | Phase |
 |---|----------|-------|
-| O19 | R9: should the glossary key include `msgctxt`, so context-distinct translations stop collapsing? Matching would try `(source, msgctxt, tag)` first and fall back to `(source, tag)`. | 2 |
+| — | None open. |
 
 ---
 

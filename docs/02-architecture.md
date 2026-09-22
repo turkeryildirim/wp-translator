@@ -22,7 +22,11 @@ A pluggable **`TranslationProvider`** interface — [`adr/0002-ai-provider.md`](
 
 Keyed so that the business rules are enforced by the database rather than by remembering to check.
 
-**The glossary is keyed by `(source, tag)`, not by source alone.** That is the whole point of D5: `Add to cart` under `ecommerce` and the same string under another tag are different rows with different translations. The unique index makes a collision impossible to introduce silently — it surfaces as a constraint violation, which is what drives the D29 choice dialogue.
+**The glossary is keyed by `(source, msgctxt, tag)`.** The tag separates domains — `Add to cart` under `ecommerce` against the same string elsewhere (D5). `msgctxt` separates senses inside a single project: WordPress core translates `May` as `May` under `May abbreviation` and as `Mayıs` otherwise. Without it in the key those rows collapse and one arbitrary translation wins (R9).
+
+Matching prefers the unit's own `msgctxt` and falls back to the context-less row. A unit **without** context matches only context-less entries — falling back to an arbitrary context-bearing one is precisely the collapse this key exists to prevent.
+
+The unique index makes a collision impossible to introduce silently; it surfaces as a constraint violation, which is what drives the D29 choice dialogue.
 
 `source_hash` is `sha256(source_text \x1f source_plural)`. Indexing the hash rather than the text keeps the key compact; WooCommerce strings run to several hundred characters.
 
@@ -65,13 +69,16 @@ CREATE TABLE sync_runs (
 CREATE INDEX idx_sync_runs_source ON sync_runs(trusted_source_id, started_at);
 
 -- ---------- glossary / translation memory ----------
--- Keyed by (source, plural, tag): the same string may carry a different
--- translation under a different domain tag. That is the whole point (D5).
+-- Keyed by (source, msgctxt, tag). The tag separates domains; msgctxt
+-- separates senses inside one project ("May" the abbreviation from
+-- "May" the month). Matching prefers the unit's own msgctxt and falls
+-- back to the context-less row.
 CREATE TABLE glossary_entries (
   id                 INTEGER PRIMARY KEY,
   source_hash        TEXT NOT NULL,          -- sha256 of source_text || 0x1f || coalesce(source_plural,'')
   source_text        TEXT NOT NULL,
   source_plural      TEXT,
+  msgctxt            TEXT,
   tag_id             INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
   translation        TEXT NOT NULL,
   translation_plural TEXT,
@@ -82,7 +89,7 @@ CREATE TABLE glossary_entries (
   updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
 ) STRICT;
 
-CREATE UNIQUE INDEX idx_glossary_key ON glossary_entries(source_hash, tag_id);
+CREATE UNIQUE INDEX idx_glossary_key ON glossary_entries(source_hash, ifnull(msgctxt,''), tag_id);
 CREATE INDEX idx_glossary_tag      ON glossary_entries(tag_id);
 CREATE INDEX idx_glossary_sweep    ON glossary_entries(trusted_source_id, last_seen_sync_id);
 CREATE INDEX idx_glossary_search   ON glossary_entries(source_text);
@@ -163,20 +170,20 @@ CREATE TABLE qa_exceptions (
 
 | | |
 |---|---|
-| Rows | 42 483 |
-| Write (batched upsert) | 0.44 s |
-| Database size | 15.7 MB |
-| Match query plan | `SEARCH USING INDEX idx_glossary_key (source_hash=? AND tag_id=?)` |
-| 5 000 real lookups | 100 ms |
+| Rows | 43 116 |
+| Write (batched upsert) | 0.39 s |
+| Database size | 16.1 MB |
+| Match query plan | `SEARCH USING INDEX idx_glossary_key (source_hash=? AND <expr>=? AND tag_id=?)` |
+| 5 000 real lookups, with fallback | 92 ms |
 | Sync sweep plan | `SEARCH USING INDEX idx_glossary_sweep` |
 
-Matching a whole project is not a performance concern: 0.02 ms per lookup means even WooCommerce resolves in well under a second.
+Matching a whole project is not a performance concern: under 0.02 ms per lookup, even with the two-step fallback, means WooCommerce resolves in well under a second.
+
+Loading WordPress core `dev` under the revised key stores 8 142 of 8 142 rows — no collapse — and `May` survives as three rows: no context and `genitive` both `Mayıs`, `May abbreviation` as `May`.
 
 `idx_unit_glossary` exists only because SQLite does not index foreign keys automatically — without it, every glossary delete scans `translation_units` in full. The query plan confirms it is gone.
 
 Raw exported PO files are kept on disk as well as imported; `po_path` and `sync_runs.po_path` record where.
-
-**Open (O19):** the glossary key omits `msgctxt`, which collapses 43 context-distinct translations in WooCommerce and 52 in WordPress core into one arbitrary winner each — see R9.
 
 **Open:** tag names need Turkish-aware case folding in the application; the `NOCASE` collation only folds ASCII (R10).
 
