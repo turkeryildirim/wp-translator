@@ -176,6 +176,12 @@ Matching a whole project is not a performance concern: 0.02 ms per lookup means 
 
 Raw exported PO files are kept on disk as well as imported; `po_path` and `sync_runs.po_path` record where.
 
+**Open (O19):** the glossary key omits `msgctxt`, which collapses 43 context-distinct translations in WooCommerce and 52 in WordPress core into one arbitrary winner each — see R9.
+
+**Open:** tag names need Turkish-aware case folding in the application; the `NOCASE` collation only folds ASCII (R10).
+
+**Open:** `idx_glossary_search` on `source_text` serves prefix and equality search but not `LIKE '%…%'`. If the glossary browser needs substring search across tens of thousands of rows, that is an FTS5 virtual table, not this index.
+
 **Open:** whether tag merge (D33) rewrites `glossary_entries.tag_id` in place, which can collide with the unique index when both tags hold the same source string. The collision is the interesting case — it needs the same two-way choice as D29.
 
 ---

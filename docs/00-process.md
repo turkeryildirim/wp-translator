@@ -147,11 +147,24 @@ Two consequences:
 - **`apps/ios` has no `#:` references at all** and carries `msgctxt` on 4 342 of 4 343 strings. Source-code usage detection (D21) is meaningless there, and `msgctxt` is the only context available — which D24 deliberately does not read.
 - **The wordpress.org info API and the source ZIP exist only for `wp-plugins` and `wp-themes`.** For `wp`, `patterns`, `apps` and `meta` there is no `download_link` and no tags line, so D6, D8, D21 and D25 have nothing to work with.
 
+**R9 — dropping `msgctxt` from the glossary collapses real distinctions.** D24 keeps `msgctxt` out of the glossary, and D5 keys the glossary on `(source, tag)`. Measured across live exports, counting source strings that appear more than once under different `msgctxt` **and carry genuinely different translations**:
+
+| Project | entries | repeated `msgid` | conflicting translations |
+|---------|--------:|-----------------:|-------------------------:|
+| WooCommerce `dev` | 14 530 | 166 | **43** |
+| WordPress core `dev` | 8 142 | 314 | **52** |
+| Astra | 4 141 | 9 | 1 |
+| Yoast SEO `dev` | 2 606 | 8 | 0 |
+
+Real cases: `May` → `May` (abbreviation) against `Mayıs` (full month); `F j, Y` → two different date formats; `Excludes` → `Hariç tutar` against `Hariçler`. These are exactly what `msgctxt` exists to separate. Under the current key the two rows collapse into one and the last write wins, so the glossary keeps one arbitrary translation and applies it everywhere. Quality checks do not catch this — nothing is malformed, only wrong. WordPress core is both the worst affected and the most likely trusted source.
+
+**R10 — SQLite `NOCASE` is ASCII-only.** Verified: `'ecommerce' = 'ECommerce' COLLATE NOCASE` is true, `'içerik' = 'İÇERİK' COLLATE NOCASE` is false. The collation on `tags.name` therefore only half-implements D33's prevention. Tag names must be normalised in the application with Turkish-aware case folding before insert.
+
 ## 6. Open questions
 
 | # | Question | Phase |
 |---|----------|-------|
-| — | None open for Phase 1. |
+| O19 | R9: should the glossary key include `msgctxt`, so context-distinct translations stop collapsing? Matching would try `(source, msgctxt, tag)` first and fall back to `(source, tag)`. | 2 |
 
 ---
 
