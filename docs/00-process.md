@@ -55,8 +55,8 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D12 | Style guide | General Turkish rules plus per-tag rules, editable in the panel, injected into every AI request. |
 | D13 | Users / auth | None. Single user, local. |
 | D14 | Docs language | English. |
-| D15 | Stack | Open — `adr/0001-tech-stack.md`. Owner's stated preference: Node + npm + SQLite. |
-| D16 | AI provider | Open — `adr/0002-ai-provider.md`. |
+| D15 | Stack | **Node + TypeScript + SQLite** — `adr/0001-tech-stack.md`. Only stack measured to round-trip a real export without loss, and the owner's preference. |
+| D16 | AI provider | **A pluggable `TranslationProvider` interface** — `adr/0002-ai-provider.md`. The concrete provider roster is supplied by the owner later; nothing else waits on it. |
 | D17 | Sync autonomy | The trusted-source cycle runs unattended: existing entries updated, new added, entries removed upstream deleted. The owner supplies the list and presses the button; nothing else is confirmed. |
 | D18 | Tag cardinality | A project carries **several** tags. |
 | D19 | Tag vocabulary | **Open and owner-controlled.** AI proposes; the owner may correct or add tags. |

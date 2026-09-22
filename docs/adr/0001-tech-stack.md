@@ -1,6 +1,6 @@
 # ADR-0001 — Technology stack
 
-- **Status:** Open — awaiting decision
+- **Status:** Accepted
 - **Phase:** 2
 - **Relates to:** D15
 
@@ -63,8 +63,16 @@ These measurements describe the leading off-the-shelf library in each language, 
 
 ## Decision
 
-TBD
+**Option A — Node + TypeScript + SQLite.**
+
+It is the only stack measured to round-trip a real WooCommerce export without loss, and it is what the owner wants to work in. The two agree, so there is nothing to trade away.
 
 ## Consequences
 
-TBD
+- **PO handling** uses `gettext-parser`. Its two deviations are accepted: entries are re-sorted (harmless — GlotPress matches by content, not position) and the header charset is lowercased (case-insensitive per RFC). Both are asserted in the export tests so a future version changing behaviour is caught.
+- **The `"0"` case becomes a test fixture**, not because Node fails it but because it is the cheapest known probe for this class of defect. Any replacement library or hand-written parser must pass it.
+- **Storage** is SQLite. `better-sqlite3` is synchronous, which suits a single-user local tool: no connection pool, no async ceremony around what is effectively a local file.
+- **One language across backend and panel**, so the review screen and the import pipeline share types — a translation unit is one definition, not two that drift.
+- **Source archives** unpack in-process; no external `unzip` dependency.
+- The panel's framework is left to Phase 3, constrained only to something that runs in this stack.
+- Node 24.18 and npm 11.16 are already installed (R4); nothing new is required to start.
