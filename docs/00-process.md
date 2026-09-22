@@ -57,13 +57,13 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D14 | Docs language | English. |
 | D15 | Stack | **Node + TypeScript + SQLite** — `adr/0001-tech-stack.md`. Only stack measured to round-trip a real export without loss, and the owner's preference. |
 | D16 | AI provider | **A pluggable `TranslationProvider` interface** — `adr/0002-ai-provider.md`. The concrete provider roster is supplied by the owner later; nothing else waits on it. |
-| D17 | Sync autonomy | The trusted-source cycle runs unattended: existing entries updated, new added, entries removed upstream deleted. The owner supplies the list and presses the button; nothing else is confirmed. |
+| D17 | Sync autonomy | The trusted-source cycle runs unattended: existing entries updated, new added, entries removed upstream deleted. The owner supplies the list and presses the button; nothing else is confirmed. A sync removes that source's **link** to an entry; the entry goes only when no source still vouches for it (R14). |
 | D18 | Tag cardinality | A project carries **several** tags. |
 | D19 | Tag vocabulary | **Open and owner-controlled.** AI proposes; the owner may correct or add tags. |
 | D20 | Project ingestion | The owner supplies the translate.wordpress.org URL (D31); the tool exports the PO automatically into a per-project store, separate from the glossary. Where the family supports it, metadata and source come from the wordpress.org API. |
 | D21 | Source code | For plugins and themes the **source code is stored locally** next to its language file, so file names, directories and the code itself reveal where a string is used. |
 | D22 | Status model | `untranslated` → glossary match is placed as complete without review; AI output is `review`; approval makes it `ok`. Rejection is not a state — it means the owner edits and saves the string. |
-| D23 | Glossary write-back | An approved translation is added to the glossary if absent. On collision see D29. |
+| D23 | Glossary write-back | An approved translation is added to the glossary if absent, as **one row per project tag**. On collision see D29. |
 | D24 | `msgctxt` | Carried verbatim through import → storage → export. Not used for matching, not shown in the UI, not stored in the glossary. It exists solely so GlotPress can match the entry on import. |
 | D25 | Source code | Downloaded automatically as the versioned ZIP from `downloads.wordpress.org`. Plugins and themes only (D32). |
 | D26 | Glossary status filter | Only `current` translations feed the glossary. `waiting` is unreviewed and would dilute it. |
@@ -166,6 +166,8 @@ Real cases: `May` → `May` (abbreviation) against `Mayıs` (full month); `F j, 
 **R12 — source excerpts must be capped.** 14 % of WooCommerce's referenced files are minified bundles and **31 % of all references point into them**; the largest single line is 1.73 million characters. An uncapped ±6-line excerpt has a median of 601 characters but a p90 of 65 425. Capping lines at 300 characters and excerpts at 2 000 gives a median of 134 tokens and a hard ceiling of 500. Files with lines over 2 000 characters yield no excerpt.
 
 **R13 — normalising before matching is a net loss.** Measured over WooCommerce's 14 159 distinct source strings: collapsing whitespace gains 6 matches of which 5 have different translations; adding lowercase gains 253 of which **197** differ; adding trailing-punctuation stripping gains 484 of which **431** differ. `Saved for Later` is `Sonraya Kaydet` but `Saved for later` is `Sonraya kaydedildi`. Matching is therefore byte-exact, and quality checks cannot catch a wrong match because nothing is malformed.
+
+**R14 — trusted sources overlap, so ownership cannot be a single column.** `Save`, `Cancel` and `Delete` live in core and in most plugins. Loading WooCommerce and WordPress core together produces 50 615 entries over 51 258 source links, of which **643 are vouched for by both**. With one `trusted_source_id` per entry the outcome depends on sync order: whichever source last wrote the row owns it, and the other source's sweep either deletes a row that is still in use or leaves a stale one behind. Demonstrated by running both orders. The link table fixes it; sweeping one source out of the combined load takes 452 ms and leaves the other's entries intact.
 
 ## 6. Open questions
 

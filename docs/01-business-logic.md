@@ -63,6 +63,8 @@ Where a trusted source and an entry the owner approved themselves disagree, **th
 8. Approved translations are written into the glossary if the source string is not already there. If it is there with a **different** translation, the owner is shown both and makes two independent choices:
    - *for this project* — use the glossary translation, or keep the one just approved;
    - *for the glossary* — keep the existing entry, or overwrite it with the new one.
+
+   Overwriting an entry that came from a trusted source lasts until that source is next synced, since the trusted source wins there (D11). The project keeps whichever translation was chosen for it either way.
 9. The owner exports the project as PO for import into GlotPress.
 
 **Acceptance criteria**

@@ -1,8 +1,6 @@
 # 02 — Architecture
 
-How the system described in [`01-business-logic.md`](01-business-logic.md) is built. Constraints R1–R5 and the decision register are in [`00-process.md`](00-process.md).
-
-This document is filled in Phase 2. Sections below state what is already settled and what remains to be decided.
+How the system described in [`01-business-logic.md`](01-business-logic.md) is built. Constraints R1–R14 and the decision register are in [`00-process.md`](00-process.md).
 
 ---
 
@@ -30,7 +28,9 @@ The unique index makes a collision impossible to introduce silently; it surfaces
 
 `source_hash` is `sha256(source_text \x1f source_plural)`. Indexing the hash rather than the text keeps the key compact; WooCommerce strings run to several hundred characters.
 
-`last_seen_sync_id` implements the D17 delete: after a sync run completes, any row from that source not touched by the run is gone.
+**Several trusted sources vouch for the same string.** `Save`, `Cancel` and `Delete` appear in core and in most plugins, so ownership cannot be a single column on the entry. `glossary_entry_sources` links an entry to every source that carries it, with that source's own translation.
+
+The D17 delete therefore removes a **link**, not the entry: after a sync run, links from that source not touched by the run are dropped, and an entry disappears only when no link remains and the owner did not write it. The effective `translation` is then re-resolved from the surviving links by `trusted_sources.rank`, so the result does not depend on the order the sources happened to sync in.
 
 ```sql
 PRAGMA foreign_keys = ON;
@@ -50,6 +50,7 @@ CREATE TABLE trusted_sources (
   family         TEXT NOT NULL CHECK (family IN ('plugin','theme','core','apps','meta','patterns')),
   project_path   TEXT NOT NULL,
   label          TEXT,
+  rank           INTEGER NOT NULL DEFAULT 100,   -- lower wins when sources disagree
   last_sync_id   INTEGER,
   last_synced_at TEXT,
   created_at     TEXT NOT NULL DEFAULT (datetime('now'))
@@ -83,16 +84,26 @@ CREATE TABLE glossary_entries (
   translation        TEXT NOT NULL,
   translation_plural TEXT,
   origin             TEXT NOT NULL CHECK (origin IN ('trusted','owner')),
-  trusted_source_id  INTEGER REFERENCES trusted_sources(id) ON DELETE SET NULL,
-  last_seen_sync_id  INTEGER,
   created_at         TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
 ) STRICT;
 
 CREATE UNIQUE INDEX idx_glossary_key ON glossary_entries(source_hash, ifnull(msgctxt,''), tag_id);
 CREATE INDEX idx_glossary_tag      ON glossary_entries(tag_id);
-CREATE INDEX idx_glossary_sweep    ON glossary_entries(trusted_source_id, last_seen_sync_id);
 CREATE INDEX idx_glossary_search   ON glossary_entries(source_text);
+
+-- Which trusted sources vouch for an entry, and with what translation.
+-- Several sources carry the same string ('Save', 'Cancel'), so ownership
+-- cannot be a single column: the sweep removes a LINK, and the entry goes
+-- only when no link remains and the owner did not write it.
+CREATE TABLE glossary_entry_sources (
+  entry_id          INTEGER NOT NULL REFERENCES glossary_entries(id)  ON DELETE CASCADE,
+  trusted_source_id INTEGER NOT NULL REFERENCES trusted_sources(id)   ON DELETE CASCADE,
+  translation       TEXT NOT NULL,
+  last_seen_sync_id INTEGER NOT NULL,
+  PRIMARY KEY (entry_id, trusted_source_id)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX idx_ges_sweep ON glossary_entry_sources(trusted_source_id, last_seen_sync_id);
 
 -- ---------- projects (Workflow B) ----------
 CREATE TABLE projects (
@@ -180,6 +191,8 @@ CREATE TABLE qa_exceptions (
 Matching a whole project is not a performance concern: under 0.02 ms per lookup, even with the two-step fallback, means WooCommerce resolves in well under a second.
 
 Loading WordPress core `dev` under the revised key stores 8 142 of 8 142 rows — no collapse — and `May` survives as three rows: no context and `genitive` both `Mayıs`, `May abbreviation` as `May`.
+
+Loading WooCommerce and WordPress core together gives 50 615 entries over 51 258 links, of which **643 are vouched for by both sources**. A single owner column would delete or strand every one of those. Sweeping WooCommerce out takes 452 ms and leaves core's 8 142 entries intact.
 
 `idx_unit_glossary` exists only because SQLite does not index foreign keys automatically — without it, every glossary delete scans `translation_units` in full. The query plan confirms it is gone.
 
@@ -276,7 +289,7 @@ Capping each line at 300 characters and the whole excerpt at 2 000 brings this t
 - per string: source text, `msgctxt`, `#.` comment, derived surface or a capped source excerpt (≈250 tokens median)
 - glossary terms relevant to the batch
 
-Measured against real excerpt sizes, that puts a **50-string batch at roughly 17 600 input tokens** and a 100-string batch at 34 000. Batch size is a setting; 50 is the starting point, small enough that a failure re-runs cheaply and large enough that the fixed portion is amortised.
+Measured against **capped** excerpt sizes (R12), that puts a **50-string batch at roughly 17 600 input tokens** and a 100-string batch at 34 000. Batch size is a setting; 50 is the starting point, small enough that a failure re-runs cheaply and large enough that the fixed portion is amortised.
 
 **Identity across the round trip.** Strings are sent with opaque ids and matched back by id, never by position or by the source text — a provider that reorders, merges or subtly rewrites a source string must not be able to silently misalign translations. Any id in the response that was not sent, or any sent id missing from the response, fails the batch rather than being guessed at.
 
