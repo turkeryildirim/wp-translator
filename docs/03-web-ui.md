@@ -1,119 +1,76 @@
 # 03 — Web UI
 
-**Phase:** 3
-**Status:** ⬜ Not started
-**Prerequisite:** `02-architecture.md` signed off
-**Exit criterion:** every step resolved, no `TBD` remains, owner signs off. Implementation starts only after this.
+The panel for the workflows in [`01-business-logic.md`](01-business-logic.md). Filled in Phase 3.
 
-The panel is a **single-user local tool** (D13): no login, no registration, no roles. Design effort goes into review throughput, not into account management.
+A single-user local tool: no login, no registration, no roles. Design effort goes into review throughput, not account management.
 
 ---
 
-## Steps
+## Screens
 
-### Step 1 — Screen inventory
-
-**Goal:** list every screen and what it is for.
-
-Expected set — to confirm:
-- **Project list** — everything imported, with progress (translated / reviewed / remaining)
-- **Project review** — the core screen, see Step 2
-- **Glossary browser & editor** — search, filter by domain tag, edit, delete, see provenance
-- **Curated sources** — add, label, sync, view last-sync result (D3, D4)
-- **Style guide editor** — general rules plus per-tag rules (D12)
-- **Import / export** — bring a project in, take a PO out
-- **Settings** — AI provider credentials, defaults
-
-**Status:** TBD
+- **Trusted sources** — the URL list, editable, with an **Update** button that runs the whole sync and reports what changed.
+- **Projects** — everything added, with per-project progress.
+- **Add project** — wordpress.org URL and translate.wordpress.org URL; then metadata, source code and PO are fetched.
+- **Project tags** — the AI's proposals, for the owner to confirm, correct or extend.
+- **Project review** — the core screen, below.
+- **Glossary** — search, filter by tag, edit, inspect provenance.
+- **Style guide** — general rules and per-tag rules.
+- **Settings** — AI provider credentials and defaults.
 
 ---
 
-### Step 2 — The review screen
+## Project review
 
-This is where nearly all the owner's time is spent. It decides whether the tool is actually faster than translating by hand.
+Nearly all the owner's time is spent here. It decides whether the tool is faster than translating by hand.
 
-**Goal:** design the string review interaction.
+Two entry points, matching Workflow B:
 
-To settle:
-- Layout: list of strings versus one string at a time; how the source and the suggestion sit relative to each other
-- **Provenance display** — was this an exact glossary match or AI output? It changes how much scrutiny a string deserves
-- Context on show: `#:` references, `#.` comments, the derived surface (admin vs. end-user), plural forms
-- **Actions:** approve, edit-then-approve, reject — and what reject does (per Phase 1, Step 4)
-- **Keyboard-first flow.** Bulk review of hundreds of strings is only tolerable with keys, not clicks. Define the full shortcut map.
-- Filtering and sorting: by status, by provenance, by QA failure, by search text
-- Bulk operations, and what safeguards they need
+- After glossary matching: a table of what was placed, with the completion percentage. Browsing, not reviewing — these strings are already `ok`.
+- After AI translation: the `review` queue, which is the actual work.
 
-**Status:** TBD
+Requirements:
 
----
+- **Keyboard-first.** Hundreds of strings are only tolerable with keys, not clicks. The shortcut map is part of this document.
+- Provenance is visible — glossary match or AI output changes how much scrutiny a string deserves.
+- Context on show: `#:` references, `#.` comments, the derived usage surface, plural forms, and a way to reach the source code around the call site.
+- Actions: approve, edit-and-save. There is no reject button; editing *is* rejecting.
+- Filter and sort by state, provenance, quality-check failure, and free text.
 
-### Step 3 — QA presentation (D9)
-
-**Goal:** make blocking validation legible rather than merely obstructive.
-
-To settle:
-- How a failing string is marked, and how the *reason* is stated in plain language ("source has `%1$s` and `%2$s`, translation has only `%1$s`")
-- How the approve action is disabled, and how the owner can tell why without hunting
-- The **exception override** flow: how it is triggered, how the reason is captured, how overridden strings stay visible afterwards
-- A pre-export summary: how many strings blocked, how many overridden
-
-**Status:** TBD
+**Open:** one string at a time versus a list; bulk operations and what guards them; how the source-code excerpt is surfaced without stealing the screen.
 
 ---
 
-### Step 4 — Glossary and style guide editing
+## Quality checks in the UI
 
-**Goal:** design the screens that maintain the system's long-term quality.
+Blocking validation has to be legible, not merely obstructive.
 
-To settle:
-- Glossary search and filtering at scale — the memory will hold tens of thousands of entries
-- Editing an entry, and what happens to projects already translated using it
-- Showing variants and provenance for one *(source, tag)* pair
-- Whether the owner can add a glossary entry directly from the review screen while reviewing
-- Style guide editing: plain text, structured rules, or a mix
-
-**Status:** TBD
+- A failing string states its reason in plain language — "source has `%1$s` and `%2$s`, translation has only `%1$s`" — not a rule code.
+- The approve action is disabled, and why is visible without hunting.
+- The exception override captures a reason, and overridden strings stay findable afterwards.
+- Before export: how many strings are blocked, how many overridden.
 
 ---
 
-### Step 5 — Import, sync and progress feedback
+## Glossary and style guide
 
-**Goal:** make long-running operations legible.
+- Search and filtering that hold up at tens of thousands of entries.
+- Inspecting an entry: its translation, tags, and which trusted project it came from.
+- The collision warning from Workflow B step 8 — showing the existing translation against the one being approved.
 
-To settle:
-- Progress feedback for import, source sync, and AI translation — these take minutes, not milliseconds
-- Whether the owner can keep working while a batch runs
-- Error reporting: which strings failed, and how to retry only those
-- The AI cost/usage indicator, if Phase 2 Step 7 calls for one
-
-**Status:** TBD
+**Open:** whether a glossary entry can be created directly from the review screen; what editing an entry does to projects already translated with it; whether the style guide is free text, structured rules, or both.
 
 ---
 
-### Step 6 — Frontend approach
+## Progress and long operations
 
-**Goal:** choose how the UI is built, consistent with ADR-0001.
+Trusted-source Update, project import and AI translation all take minutes.
 
-To settle:
-- Server-rendered, SPA, or hybrid
-- Component and styling approach
-- How much interactivity the review screen genuinely needs
-- Light/dark handling, and density — this is a tool for long working sessions
-
-**Status:** TBD
+**Open:** progress reporting for each; whether the owner can work while one runs; how failures are reported and retried for only the affected items; whether AI cost is surfaced.
 
 ---
 
-## Decisions
+## Frontend approach
 
-| # | Topic | Decision | Step |
-|---|-------|----------|------|
-| — | — | *none yet* | — |
+Follows ADR-0001.
 
----
-
-## Open questions
-
-| # | Question | Status |
-|---|----------|--------|
-| — | — | *none yet* |
+**Open:** server-rendered, SPA or hybrid; component and styling approach; how much interactivity the review screen truly needs; density and light/dark, since this is a tool for long sessions.

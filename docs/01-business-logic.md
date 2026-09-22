@@ -1,174 +1,151 @@
-# 01 — Business Logic & Feature Set
+# 01 — Business Logic
 
-**Phase:** 1
-**Status:** ⬜ Not started
-**Prerequisite:** `00-process.md` signed off
-**Exit criterion:** every step below is resolved, no `TBD` remains, and the owner signs off.
-
-Baseline decisions (D1–D16) and findings (R1–R5) live in [`00-process.md`](00-process.md). This document refines them into a concrete feature set. It defines **what the system does**, never **how it is built** — technology belongs in `02-architecture.md`.
+What the system does. Technology choices belong in [`02-architecture.md`](02-architecture.md); the decision register and constraints are in [`00-process.md`](00-process.md).
 
 ---
 
-## Steps
+## Problem
 
-### Step 1 — End-to-end workflows
+WordPress plugins and themes reach Turkish users untranslated. Translating them by hand is slow, and translating them with a general-purpose AI produces text that is fluent but inconsistent: the same source word comes out differently in every project, and sometimes differently within one project.
 
-**Goal:** write out each workflow as a numbered sequence, with the actor (owner or system) named at every step, and the failure branch stated.
+Consistency is the whole difficulty. `item` is *ürün* in an e-commerce plugin and *öge* elsewhere. The knowledge that resolves this already exists — in translations that humans have made, reviewed and approved on translate.wordpress.org over many years — but it is not reachable as a glossary, and GlotPress cannot apply it automatically.
 
-Workflows to cover:
-1. Add a curated source → fetch → ingest into the glossary
-2. Re-sync an existing curated source (D4)
-3. Import a target project (see O7)
-4. Assign domain tags to a project (D6)
-5. Auto-translate: exact match → AI fill (D7)
-6. Review: approve / edit / reject
-7. Glossary write-back on approval (D7)
-8. Export PO for GlotPress (D1)
+## Goals
 
-**Output:** one subsection per workflow.
-**Status:** TBD
+1. Reuse existing human translations verbatim wherever the same source string recurs, rather than re-translating it.
+2. Make AI output consistent with those translations by handing the AI the relevant glossary terms, the project's domain, and evidence of where the string is used.
+3. Keep every AI translation under human review before it counts as finished.
+4. Grow the glossary from the owner's own approvals, so the system improves with use.
+5. Produce a PO file that imports into translate.wordpress.org without losing entries.
 
----
+## Non-goals
 
-### Step 2 — Glossary / translation-memory entry model
-
-**Goal:** define what a glossary entry *is*, in business terms.
-
-To settle:
-- What identifies an entry — is it the full source string, or a term/phrase? (The `item → ürün` example is a single word; PO entries are whole strings. Decide whether these are one concept or two.)
-- How a domain tag attaches to an entry.
-- Whether several translations may coexist for the same *(source, tag)* pair, and if so how one is chosen.
-- What provenance is recorded: which source project it came from, whether it was owner-approved, when it was last seen.
-- **O1** — does "newest wins" (D11) apply to owner-approved entries too, or only to externally-sourced ones?
-
-**Status:** TBD
+- No users, login, registration, roles or permissions. One person uses this on their own machine.
+- No locale other than `tr_TR`.
+- No `.mo` or `.l10n.php` generation.
+- No translator discussion, no priority queues, no review workflow beyond approve-or-edit. That is GlotPress's job, and re-implementing it is why this tool would stop being worth having.
+- No submitting translations back to translate.wordpress.org. The owner imports the PO there by hand, with their GTE rights.
+- No public or hosted deployment.
 
 ---
 
-### Step 3 — Domain tag taxonomy
+## Workflow A — Trusted sources and the glossary
 
-**Goal:** produce the actual tag list and its rules.
+The glossary is built from projects whose Turkish translations are known to be good, because humans translated, reviewed and approved them.
 
-To settle:
-- **Closed set or open vocabulary?** Undecided. The owner chose "AI proposes, owner confirms" (D6) and explicitly did *not* choose "fixed list + AI proposal", so nothing settles this yet. A closed set prevents synonym drift (`ecommerce` / `e-ticaret` / `shop`), which would silently break matching; an open vocabulary with autocomplete is more flexible.
-- The concrete tag list — or, if open, the vocabulary it is seeded with (e-commerce, forms, SEO, membership, booking, …).
-- How the AI's proposal (D6) maps onto that vocabulary, and what happens when it proposes something new.
-- **O4** — one tag per project or several? Can an individual string override its project's tag?
-- What happens when no tag fits — is there a `general` fallback, and how does matching behave against it?
+1. The owner maintains a list of **trusted projects** in the panel, identified by their translate.wordpress.org URL. The list is editable at any time.
+2. The owner presses **Update**. For every project on the list the PO is exported from translate.wordpress.org and saved locally as a file.
+3. Each file is imported into the glossary database: entries already present are **updated**, entries not present are **added**, and entries that have disappeared upstream are **deleted**.
+4. The cycle runs unattended. The owner supplies the list and starts it; nothing in between asks for confirmation.
 
-**Status:** TBD
+Where a trusted source and an entry the owner approved themselves disagree, **the trusted source wins** — it carries more human review than a single approval does.
 
----
+**Acceptance criteria**
 
-### Step 4 — Translation unit status model
-
-**Goal:** define every state a string can be in, and the legal transitions between them.
-
-Candidate states — to be confirmed, renamed or reduced:
-`untranslated` · `memory-filled` · `ai-filled` · `approved` · `rejected` · `needs-work`
-
-To settle:
-- Which states are exportable to PO. Per R-note in `00-process.md`: GlotPress skips empty `msgstr`, so only approved strings should be emitted, and never with a `#, fuzzy` flag.
-- What "reject" means concretely — does the string revert to untranslated, or is it parked with the rejected text kept for reference?
-- Whether re-running AI on an already-reviewed project is allowed, and what it may overwrite.
-
-**Status:** TBD
+- [ ] A project can be added to, edited in, and removed from the trusted list.
+- [ ] Update processes every project on the list, one export at a time.
+- [ ] Re-running Update with no upstream change leaves the glossary unchanged.
+- [ ] An entry deleted upstream is gone from the glossary after the next Update.
+- [ ] An entry the owner approved is replaced when a trusted source carries a different translation.
+- [ ] Raw exported PO files are retained on disk alongside the imported rows.
 
 ---
 
-### Step 5 — QA rule catalogue (D9)
+## Workflow B — Translating a project
 
-**Goal:** enumerate every automated check, and define the override mechanism.
+1. The owner adds a project, supplying its **wordpress.org page** and its **translate.wordpress.org page**.
+2. The system stores the project's metadata — name, description, readme, tags — and the plugin or theme's **source code**.
+3. The PO is exported automatically into a per-project store, kept **separate from the glossary**.
+4. The AI proposes domain tags from the stored metadata. The owner confirms, corrects, or adds their own. A project carries several tags, and the vocabulary is open — the owner can introduce a tag that did not exist.
+5. The owner starts translation. Every string with an exact glossary match under one of the project's tags is filled in automatically and counts as complete; progress is reported as a percentage. The owner can browse what was placed.
+6. The owner then asks the AI to translate what is left. Progress is reported the same way. **AI output is marked `review`, never `ok`.**
+7. The owner works through the `review` strings. Approving one makes it `ok`. Rejecting is not a separate outcome — it means the owner edits the string and saves their own wording, which is likewise `ok`.
+8. Approved translations are written into the glossary if the source string is not already there. If it is there with a **different** translation, the system warns rather than overwriting silently.
+9. The owner exports the project as PO for import into GlotPress.
 
-Checks to specify — at minimum:
-- `printf` placeholders: `%s`, `%d`, `%1$s`, `%%` — same set and same count as the source
-- HTML tags and attributes: `<a href="…">`, `<strong>`, self-closing tags — balanced and matching
-- Brace placeholders: `{count}`, `%(name)s` and similar plugin-specific conventions
-- Plural arity (R3): `msgstr[0]` and `msgstr[1]` both present for plural entries
-- Leading/trailing whitespace preserved
-- Empty translation
+**Acceptance criteria**
 
-To settle:
-- Which checks are blocking versus advisory.
-- The **exception record** (D9): what is stored — string, rule, reason, timestamp — and whether an exception survives re-import of the project.
-
-**Status:** TBD
-
----
-
-### Step 6 — Style guide structure (D12)
-
-**Goal:** define the shape of the editable style guide.
-
-To settle:
-- The general Turkish rules to start with. Candidates, to confirm rather than assume: form of address (formal "siz" vs. informal), title capitalisation, suffix agreement, punctuation, how untranslatable product names are treated.
-- How per-domain-tag overrides are expressed and how they combine with the general rules on conflict.
-- How the guide reaches the AI — full text every request, or only the rules relevant to the project's tags.
-- Who edits it and how it is versioned.
-
-**Status:** TBD
+- [ ] Adding a project stores metadata, source code and the exported PO before translation can start.
+- [ ] Glossary matching honours the project's tags.
+- [ ] A string filled from the glossary is not sent to the AI.
+- [ ] AI-filled strings land in `review` and cannot reach `ok` without the owner acting on them.
+- [ ] Editing a string and saving it produces `ok`, with provenance recorded as human.
+- [ ] Approval adds the string to the glossary when absent, and warns when a different translation exists.
+- [ ] Export emits only `ok` strings, with no `#, fuzzy` flag, no empty `msgstr`, and no `#~` obsolete entries.
 
 ---
 
-### Step 7 — Source context rules (O3, D8)
+## Translation unit states
 
-**Goal:** define how the system decides where a string appears.
+| State | Meaning | Reached by |
+|-------|---------|------------|
+| `untranslated` | No translation yet. | Import |
+| `review` | Translated by AI, not yet seen by the owner. | AI fill |
+| `ok` | Final. Exportable. | Glossary match, owner approval, or owner edit |
 
-To settle:
-- Heuristics mapping `#:` paths to a surface — e.g. `admin/`, `includes/admin/`, `class-*-settings.php` → admin; `public/`, `templates/`, `blocks/` → end-user facing.
-- What happens when a string has several references pointing at different surfaces.
-- What happens when there are no `#:` references at all.
-- What else goes into the context bundle beyond the surface: `#.` extractor comments, the plugin's readme, its wp.org description.
+A glossary match arrives at `ok` directly — it is already human-approved work, so asking the owner to re-approve it would be busywork. Provenance (`glossary`, `ai`, `human`) is recorded separately from state, so the owner can still find and inspect glossary-filled strings.
 
-**Status:** TBD
-
----
-
-### Step 8 — Ingestion scope (O6, O7)
-
-**Goal:** close the two ingestion questions.
-
-To settle:
-- **O6** — is `.po`/`.pot` upload into the glossary wanted alongside curated URLs? Note this is the only route for the ≈9 200-entry local WP core corpus (R5).
-- **O7** — is the target project fetched by URL, or handed over as a downloaded file?
-- If URLs are used: what the owner pastes (a project page URL, or a direct export URL) and how the system derives the rest.
-
-**Status:** TBD
+Only `ok` strings are exported.
 
 ---
 
-### Step 9 — Non-goals
+## Domain tags
 
-**Goal:** write down explicitly what this tool will **not** do, so it does not drift back into being GlotPress.
+Tags describe what a project *is about*, and they are what makes `item → ürün` possible in one project and `item → öge` in another. They attach to the project, and through it to every translation unit in that project and every glossary entry derived from it.
 
-Starting list — to confirm and extend:
-- No users, login, registration, roles or permissions (D13)
-- No locale other than `tr_TR` (D10)
-- No `.mo` / `.l10n.php` generation (D1)
-- No translator discussion threads, no priority/status workflow beyond Step 4
-- No public or hosted deployment
+- A project carries several tags.
+- The vocabulary is open. The AI proposes from what exists; the owner may add a new one.
+- Tags are proposed from stored project metadata: title, description, readme, and the wordpress.org Tags line.
 
-**Status:** TBD
+**Open:** with an open vocabulary, synonyms (`ecommerce` / `e-ticaret` / `shop`) will eventually appear and will silently split the glossary. Whether to merge, alias or constrain tags is unresolved.
 
 ---
 
-## Decisions
+## Where a string is used
 
-Decisions made *in this phase*. Baseline decisions D1–D16 are in `00-process.md`.
+A single source word can appear in both the admin screens and the front end of the same plugin, so the project's tags alone are not enough context for the AI. Three signals are available, in increasing order of reliability:
 
-| # | Topic | Decision | Step |
-|---|-------|----------|------|
-| — | — | *none yet* | — |
+1. `#:` references in the PO — the file path and line number.
+2. `#.` extractor comments — the developer's own note about the string.
+3. **The stored source code itself** — the file name, its directory, and the surrounding code.
+
+The source code is why it is kept locally: a path such as `includes/admin/class-settings.php` is a strong signal, but reading the call site settles cases the path cannot, including strings that genuinely appear in both places.
+
+---
+
+## Quality checks
+
+Placeholder and markup damage is the failure mode that matters, because a broken `%1$s` reaches real sites. Checks are **blocking**: a string that fails cannot be approved. The owner can override a specific string as a deliberate exception, and the reason is recorded.
+
+Checked against the source string:
+
+- `printf` placeholders — `%s`, `%d`, `%1$s`, `%%` — same set, same count
+- HTML tags and attributes — balanced, matching, `<a href="…">` intact
+- Brace and named placeholders — `{count}`, `%(name)s`
+- Plural arity — both `msgstr[0]` and `msgstr[1]` present on plural entries
+- Leading and trailing whitespace preserved
+- Non-empty translation
+
+---
+
+## Style guide
+
+A general Turkish style guide plus per-tag additions, editable in the panel and sent to the AI with every request. It is the main lever for tone and consistency that a term glossary cannot express.
+
+The general rules cover at least: form of address, title capitalisation, suffix agreement, punctuation, and how untranslatable product names are treated. Per-tag rules extend the general ones and win where they conflict.
+
+**Open:** the actual content of the general rules.
 
 ---
 
 ## Open questions
 
-| # | Question | Status |
-|---|----------|--------|
-| O1 | Does "newest wins" (D11) apply to owner-approved glossary entries, or only to externally-sourced ones? | Open — Step 2 |
-| O3 | Rules for deriving "admin vs. end-user facing" from `#:` paths | Open — Step 7 |
-| O4 | Domain tag: single- or multi-valued per project; can a string override it? | Open — Step 3 |
-| O8 | Is the tag taxonomy a closed set or an open vocabulary? Not settled by D6. | Open — Step 3 |
-| O6 | Is `.po`/`.pot` upload into the glossary also wanted? | Open — Step 8 |
-| O7 | Target project ingestion: URL fetch or file upload? | Open — Step 8 |
+| # | Question |
+|---|----------|
+| O9 | Should `msgctxt` be carried through import → storage → export verbatim, to avoid losing context-bearing entries on GlotPress import? |
+| O10 | Is source code downloaded automatically from wordpress.org, or supplied by the owner? Its version must match the imported sub-project. |
+| O11 | Which sub-project is imported — `stable`, `dev`, `stable-readme`, `dev-readme`? Is the readme itself a translation target? |
+| O12 | Which translation statuses feed the glossary — `current` only, or also `waiting`? |
+| O13 | After the warning in Workflow B step 8, what happens: keep both as variants, replace, or leave the glossary untouched? |
+| — | Tag synonym drift under an open vocabulary. |
+| — | Content of the general style rules. |

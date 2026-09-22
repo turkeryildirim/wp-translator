@@ -1,142 +1,104 @@
 # 00 — Process
 
-**Project:** wp-translator — an AI-assisted, glossary-grounded translation tool for WordPress plugins and themes (`tr_TR`).
-**Owner:** single user, Turkish GTE (Global Translation Editor) on translate.wordpress.org.
-**Created:** 2026-09-22
-**Status:** Phase 0 complete — Phase 1 not started.
+**Project:** wp-translator — AI-assisted, glossary-grounded `tr_TR` translation of WordPress plugins and themes.
+**Owner:** single user, Turkish GTE on translate.wordpress.org.
+
+This file is the roadmap and the decision register. It is deleted once all phases close.
 
 ---
 
-## 1. Why this project exists
+## 1. Purpose
 
-Many WordPress plugins and themes have no Turkish translation. The aim is to translate them with AI assistance **consistently**, by grounding the AI in translations that were already made by humans, used for a long time, and reviewed by more than one person.
+Many WordPress plugins and themes have no Turkish translation. This tool translates them with AI assistance, kept **consistent** by grounding the AI in translations that humans have already made, reviewed and approved.
 
-GlotPress itself is not used because:
-- it carries a large amount of functionality the owner never touches,
-- it offers **no personal/custom glossary**,
-- it **cannot run AI translation**.
-
-The end product is a local, single-user tool. The output is a **PO file** that the owner imports back into translate.wordpress.org using their GTE rights.
+GlotPress is not used directly because it carries a large amount of functionality the owner never touches, offers no personal glossary, and cannot run AI translation. The output is a **PO file** the owner imports into translate.wordpress.org with their GTE rights.
 
 ---
 
-## 2. How these documents work
+## 2. Documentation rules
 
-Design happens in order, one document per phase. **Each document is reviewed and signed off by the owner before the next phase begins.** No implementation code is written until `03-web-ui.md` is signed off.
-
-Every document has the same shape:
-- an ordered list of **Steps** to work through, each with a detail subsection,
-- a **Decisions** table, where each settled question becomes a numbered decision,
-- an **Open questions** list.
-
-Bodies start as `TBD`. A `TBD` is never resolved by assumption — it is either decided with the owner or explicitly deferred with a recorded reason.
-
-| Document | Phase | Produces | Status |
-|----------|-------|----------|--------|
-| `00-process.md` | 0 | This roadmap and the shared baseline | ✅ Done |
-| `01-business-logic.md` | 1 | Feature set, workflows, data lifecycle, glossary rules | ⬜ Not started |
-| `02-architecture.md` | 2 | Stack, data model, components, pipeline, integrations | ⬜ Not started |
-| `03-web-ui.md` | 3 | Panel information architecture, screens, interactions | ⬜ Not started |
-| `adr/0001-tech-stack.md` | 2 | Technology stack decision | ⬜ Proposed |
-| `adr/0002-ai-provider.md` | 2 | AI provider decision | ⬜ Proposed |
-| — | 4 | Implementation, in vertical slices | ⬜ Not started |
+- **No history.** Documents state what is true now. No "was X, then became Y", no changelog, no record of completed work — git holds that.
+- **Task-bearing files** mark a finished step `Closed` and move on. When every step closes, the file is deleted.
+- **Spec files** (`01`, `02`, `03`) are living descriptions in the present tense, not activity logs.
 
 ---
 
-## 3. Target workflow (the thing being designed)
+## 3. Phases
 
-1. The owner maintains a list of **trusted source projects** (URLs on translate.wordpress.org) whose Turkish translations are known to be good.
-2. Those sources are fetched and ingested into a local **glossary / translation memory**, each entry carrying a **domain tag** (e-commerce, forms, SEO, …).
-3. An untranslated plugin/theme is imported as a GlotPress **PO** export.
-4. The project is given one or more domain tags — **AI proposes, owner confirms** — derived from its wordpress.org page and `readme.txt`.
-5. **Exact glossary matches** on *(source text + domain tag)* are applied automatically and marked as coming from the memory.
-6. Everything left over goes to **AI**, with a context bundle: the wp.org project page, the `readme.txt`, where the string appears (admin screen vs. end-user facing), the relevant glossary terms, and the style guide.
-7. The owner reviews every string in a per-project panel: **approve / edit / reject**.
-8. Approved — and edited-then-approved — translations are **written back into the glossary** with their context.
-9. The project is exported as **PO** for import into GlotPress.
+Each phase produces one document. **The owner signs it off before the next phase starts.** No implementation code until `03-web-ui.md` is signed off.
+
+| Phase | Document | State |
+|-------|----------|-------|
+| 0 | `docs/` skeleton and baseline | Closed |
+| 1 | `01-business-logic.md` | Open |
+| 2 | `02-architecture.md`, `adr/0001-tech-stack.md`, `adr/0002-ai-provider.md` | Not started |
+| 3 | `03-web-ui.md` | Not started |
+| 4 | Implementation, in vertical slices | Not started |
 
 ---
 
-## 4. Decision log
-
-Settled during the planning session on 2026-09-22.
+## 4. Decision register
 
 | # | Topic | Decision |
 |---|-------|----------|
-| D1 | Output target | **PO only**, for import into translate.wordpress.org. No local `.mo` / `.l10n.php` artifact needed for now. |
-| D2 | Input format | GlotPress export. **PO is mandatory** — see R1. |
-| D3 | Glossary sources | A **user-curated list of trusted project URLs** maintained in the panel and **auto-fetched from translate.wordpress.org**. No automatic crawling of "top plugins". File upload is not part of this decision — see O6. |
-| D4 | Glossary refresh | Curated sources are re-fetchable; an explicit **update / re-sync** flow is required. |
-| D5 | Context model | **Domain tag only.** `msgctxt` is *not* a matching dimension — plugins and themes rarely use it. |
-| D6 | Tag assignment | **AI proposes, owner confirms**, derived from the wp.org project page + `readme.txt` (title, description, Tags line). |
-| D7 | Translation pipeline | Exact glossary match on *(source text + domain tag)* → AI fills the remainder → human approve / edit / reject → approved and edited-approved entries are written back to the glossary. |
-| D8 | AI context bundle | wp.org project page, `readme.txt`, **where the string appears** (admin vs. end-user facing), glossary terms, style rules. |
-| D9 | QA validation | **Blocking, with per-string exception override.** Placeholder / HTML / plural mismatches block approval; the owner may mark a specific string as a deliberate exception, with a recorded reason. |
-| D10 | Language scope | **`tr_TR` only.** No multi-locale abstraction. |
-| D11 | Glossary conflict on re-sync | **Newest wins** — see O1 for the one tension to resolve. |
-| D12 | Style guide | **A general Turkish style guide plus per-domain-tag rules**, editable in the panel, injected into every AI request. |
-| D13 | Users / auth | **None.** Single user, local. No login, registration, roles or multi-tenancy. |
-| D14 | Docs language | **English.** |
-| D15 | Stack | **Deferred to Phase 2** → `adr/0001-tech-stack.md`. |
-| D16 | AI provider | **Deferred to Phase 2** → `adr/0002-ai-provider.md`. |
+| D1 | Output | **PO only.** No `.mo` / `.l10n.php`. |
+| D2 | Input | GlotPress **PO** export. |
+| D3 | Glossary source | A URL-based list of **trusted projects**, maintained in the panel and exported from translate.wordpress.org. No file upload, no automatic crawling. |
+| D4 | Glossary refresh | Owner presses "update"; every project on the list is re-exported and re-imported. |
+| D5 | Context model | **Domain tag.** `msgctxt` is not a matching dimension. |
+| D6 | Tag assignment | AI proposes from stored project metadata; owner confirms, corrects or adds. |
+| D7 | Pipeline | Glossary match placed automatically → owner triggers AI for the remainder → owner reviews → approved entries feed the glossary. |
+| D8 | AI context | Project metadata, readme, wp.org description, the stored **source code**, glossary terms, style rules. |
+| D9 | QA validation | Blocking, with per-string exception override and recorded reason. |
+| D10 | Language | `tr_TR` only. |
+| D11 | Glossary conflict | The trusted source wins over the owner's own entries. Trusted projects are human-translated, reviewed and approved. |
+| D12 | Style guide | General Turkish rules plus per-tag rules, editable in the panel, injected into every AI request. |
+| D13 | Users / auth | None. Single user, local. |
+| D14 | Docs language | English. |
+| D15 | Stack | Open — `adr/0001-tech-stack.md`. Owner's stated preference: Node + npm + SQLite. |
+| D16 | AI provider | Open — `adr/0002-ai-provider.md`. |
+| D17 | Sync autonomy | The trusted-source cycle runs unattended: existing entries updated, new added, entries removed upstream deleted. The owner supplies the list and presses the button; nothing else is confirmed. |
+| D18 | Tag cardinality | A project carries **several** tags. |
+| D19 | Tag vocabulary | **Open and owner-controlled.** AI proposes; the owner may correct or add tags. |
+| D20 | Project ingestion | The owner supplies the project's wordpress.org page and its translate.wordpress.org page; the tool exports the PO automatically into a per-project store, separate from the glossary. |
+| D21 | Source code | The plugin/theme **source code is stored locally** next to its language file, so file names, directories and the code itself reveal where a string is used. |
+| D22 | Status model | `untranslated` → glossary match is placed as complete without review; AI output is `review`; approval makes it `ok`. Rejection is not a state — it means the owner edits and saves the string. |
+| D23 | Glossary write-back | An approved translation is added to the glossary if absent. If a different translation already exists, the system warns. |
 
 ---
 
-## 5. Findings that constrain the design
+## 5. Constraints
 
-**R1 — PO is required on import; JSON is not sufficient.**
-D8 needs to know whether a string appears in the admin or in front of the end user. That lives in the PO file's `#:` source references (e.g. `#: includes/admin/class-settings.php:42`) and `#.` extractor comments. The GlotPress **JSON / Jed** export drops both and encodes context inside the key as `ctx\u0004msgid`. Therefore: **import PO**, and keep `#:` and `#.` in the data model.
+**R1 — PO on import, not JSON.** Deciding where a string appears (D8) needs the PO's `#:` source references and `#.` extractor comments. The GlotPress JSON/Jed export drops both and encodes context as `ctx\u0004msgid`.
 
-**R2 — `msgctxt` must still survive the round trip.**
-D5 rightly excludes `msgctxt` from *matching*, but it must be preserved verbatim on export or the PO will not re-import cleanly into GlotPress. Local evidence: `wc-sanal-pos-tr_TR.po` has **0** `msgctxt`, while WP core `tr_TR.po` has **959** and `admin-tr_TR.po` has **180**. Fixtures must cover both shapes.
+**R2 — `msgctxt` on export.** GlotPress matches an incoming PO entry to an existing original by singular + plural + **context**. An exported entry that omits a `msgctxt` the original carries does not match, and that translation is lost on import. Verified against a live export: Classic Editor, a 54-string plugin, carries 8 `msgctxt` entries — `Block editor`, `Classic editor` and `block editor` all under `msgctxt "Editor Name"`. See O9.
 
-**R3 — Plural forms.**
-Turkish is `nplurals=2; plural=(n > 1);`. The data model must handle `msgid_plural` / `msgstr[0]` / `msgstr[1]`, and QA (D9) must validate plural arity.
+**R3 — Plural forms.** `nplurals=2; plural=n > 1;`. `msgid_plural` / `msgstr[0]` / `msgstr[1]` must be modelled, and QA must validate plural arity.
 
-**R4 — Environment** (verified 2026-09-22).
-PHP 8.5.10 + Composer 2.10.3 — extensions present: `pdo_sqlite`, `sqlite3`, `gettext`, `mbstring`, `curl`, `zip`, `openssl`, `pdo_mysql`, `pdo_pgsql`.
-Node 24.18.0 + npm 11.16.0. Go. MariaDB 11.8.8. Docker 29.7.2 / Podman 5.8.7. WP-CLI 2.12.0. git 2.55.0.
-**The PHP `intl` extension is NOT installed** — relevant if the stack turns out to be PHP and locale or collation handling is needed. The `sqlite3` **CLI binary** is also absent, though the PHP driver is present.
+**R4 — Environment.** PHP 8.5.10 + Composer 2.10.3 (`intl` ICU 77.1, `pdo_sqlite`, `gettext`, `mbstring`, `curl`, `zip`); Node 24.18.0 + npm 11.16.0; Go; MariaDB 11.8.8; SQLite CLI 3.51.2; Docker / Podman; WP-CLI 2.12.0; git 2.55.0.
 
-**R5 — Local corpus available as test fixtures.**
-`~/Projects/investakademi/app/languages/` holds a full WP core `tr_TR` set:
-
-| File | msgid | msgctxt |
-|------|------:|--------:|
-| `tr_TR.po` | 4 812 | 959 |
-| `admin-tr_TR.po` | 3 520 | 180 |
-| `admin-network-tr_TR.po` | 325 | 21 |
-| `continents-cities-tr_TR.po` | 529 | 0 |
-
-≈ 9 200 human-reviewed entries, plus 40 further `.po` files across the owner's own projects. Per D3 these are **not** auto-ingested, but they are ideal fixtures.
+**R5 — GlotPress export access, verified 2026-09-22.** `https://translate.wordpress.org/projects/wp-plugins/<slug>/stable/tr/default/export-translations/?format=po` returns **HTTP 200 with a PO body and no authentication**. `filters[status]=current|waiting|untranslated` works and changes the payload. No rate-limit headers are advertised. Exports carry `#:` references, `#.` comments and `msgctxt`. **No headless browser and no stored credentials are needed to read exports.**
 
 ---
 
 ## 6. Open questions
 
-Carried forward; each must be resolved in the phase named.
-
-| # | Question | Resolve in |
-|---|----------|-----------|
-| O1 | **D7 vs. D11 conflict.** D7 writes the owner's approved translations into the glossary; D11 says a re-synced external source overwrites with the newest value. As written, a sync can silently overwrite a translation the owner personally approved. Does "newest wins" apply to *all* entries, or only to externally-sourced ones? | Phase 1 |
-| O2 | Are the translate.wordpress.org export URL patterns and rate limits as assumed? **Must be fetched and inspected once**, not assumed. | Phase 2 |
-| O3 | What exactly identifies "admin vs. end-user facing" from `#:` paths? Heuristics must be defined and tested against real plugins. | Phase 1 (rule), Phase 2 (implementation) |
-| O4 | Is the domain tag single- or multi-valued per project, and can an individual *string* override its project's tag? | Phase 1 |
-| O5 | ~~`git init` for this repository.~~ **Resolved 2026-09-22: repository initialised in Phase 0.** | ✅ Closed |
-| O6 | The selected option was labelled "manual upload", but the description given covers only a curated URL list. Is uploading a `.po`/`.pot` file into the glossary *also* wanted? It would be the only way to ingest the R5 corpus. | Phase 1 |
-| O7 | How is the **target** project ingested — does the owner download the export and hand the file over, or does the tool fetch it by URL (as curated sources already are)? | Phase 1 |
-| O8 | Is the domain tag taxonomy a **closed set** or an **open vocabulary**? D6 settles only *who* assigns tags (AI proposes, owner confirms), not the shape of the vocabulary. A closed set blocks synonym drift that would break matching; an open one is more flexible. | Phase 1 |
+| # | Question | Phase |
+|---|----------|-------|
+| O9 | `msgctxt` was called unnecessary, but R2 shows dropping it on export loses translations for context-bearing originals. Proposal: carry it through import → storage → export verbatim, with no matching logic and no UI. | 1 |
+| O10 | How is project source code obtained — downloaded automatically from wordpress.org (ZIP or SVN) or supplied by the owner? The version must match the imported sub-project (`stable` ⇒ release tag, `dev` ⇒ trunk) or `#:` line numbers do not line up. | 1 |
+| O11 | Which sub-project is imported: `stable`, `dev`, `stable-readme`, `dev-readme`? Is the readme sub-project itself a translation target? | 1 |
+| O12 | Which translation statuses feed the glossary — `current` only, or also `waiting`? | 1 |
+| O13 | When approval collides with an existing, different glossary translation the system warns — and then what? Keep both as variants, replace, or leave the glossary untouched? | 1 |
+| O14 | Is there an automated test suite, and what does it cover? Relevant because PO round-trip fidelity is the one thing a silent bug would corrupt invisibly. | 2 |
 
 ---
 
-## 7. Skill activation per phase
+## 7. Skills per phase
 
 | Phase | Skills |
 |-------|--------|
-| 0 — Planning | `wordpress` *(loaded; plugin/theme-development oriented, so it pays off mainly in Phase 4)* |
-| 1 — Business logic | `product-management:brainstorm` / `product-management:product-brainstorming` for the discussion, then `product-management:write-spec` for the goals / non-goals / acceptance-criteria structure |
-| 2 — Architecture | `engineering:system-design`, `sql-expert`, `engineering:architecture` (ADR format), `claude-api` *(only if ADR-0002 selects Claude)* |
-| 3 — Web UI | `design:design-system`, `design:ux-copy`, `design:accessibility-review` |
-| 4 — Implementation | `code-standards` throughout, then stack-dependent: `laravel` / `php` / `phpunit`, or `javascript` / `vuejs` / `react`, or `golang` / `golang-tester`; `docker` if containerised |
-
-Deliberately **not** used: `architecture-advisor` (audits an existing codebase — this one started empty), and the Claude Docs connector / `anthropic-skills:docs` (these documents are local files by request).
+| 1 | `product-management:write-spec` |
+| 2 | `engineering:system-design`, `sql-expert`, `engineering:architecture`, `claude-api` *(only if ADR-0002 selects Claude)* |
+| 3 | `design:design-system`, `design:ux-copy`, `design:accessibility-review` |
+| 4 | `code-standards`, plus the stack's own skill once ADR-0001 closes: `javascript` / `react` / `vuejs`, or `php` / `laravel` / `phpunit`, or `golang`. `wordpress` when plugin/theme specifics come up. `docker` if containerised. |

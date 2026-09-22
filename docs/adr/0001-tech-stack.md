@@ -1,27 +1,26 @@
 # ADR-0001 — Technology stack
 
-- **Status:** Proposed
-- **Date:** TBD
-- **Phase:** 2 — see [`../02-architecture.md`](../02-architecture.md), Step 1
+- **Status:** Open
+- **Phase:** 2
 - **Relates to:** D15
 
 ## Context
 
-wp-translator is a **single-user, local** tool (D13). It imports GlotPress PO exports, maintains a contextual glossary, calls an AI provider, presents a review panel, and exports PO for re-import into translate.wordpress.org.
+wp-translator is a single-user local tool. It exports PO files from translate.wordpress.org, maintains a glossary, downloads and stores plugin source code, calls an AI provider, presents a review panel, and exports PO for re-import into GlotPress.
 
-The binding technical constraint is **PO round-trip fidelity**: `msgctxt`, `#:` source references, `#.` extractor comments, plural forms and headers must all survive import → storage → export (R1, R2, R3). A stack whose PO tooling is weak will cost more than it saves.
+The binding technical constraint is **PO round-trip fidelity**: `#:` references, `#.` comments, plural forms and headers must survive import → storage → export intact. A stack whose PO tooling is weak costs more than it saves.
 
-Environment as verified on 2026-09-22 (R4): PHP 8.5.10 + Composer 2.10.3 with `pdo_sqlite`, `sqlite3`, `gettext`, `mbstring`, `curl`, `zip` — but **no `intl`**. Node 24.18.0 + npm 11.16.0. Go. MariaDB 11.8.8. Docker / Podman. WP-CLI 2.12.0.
+**Owner's stated preference: Node + npm + SQLite.** The reason given was that headless-browser work might be needed. R5 removes that premise for the export path — the GlotPress export is a public GET returning a PO body, with no authentication and no browser automation required. Node may still be the right answer, but it needs a reason that survives R5: a named use for browser automation elsewhere, AI SDK ergonomics, or the owner simply preferring to work in it. Any of those is legitimate; the point is that the rationale should be the real one.
 
-The owner already maintains projects in Laravel (`laravel-api-spec`, `Ruler`), Go (`solopanel`) and Node (`job-crawler`), so familiarity does not decide this on its own.
+Environment (R4) rules nothing out: PHP 8.5 with `intl` and `pdo_sqlite`, Node 24, Go, SQLite CLI 3.51, MariaDB, Docker/Podman are all present. The owner maintains projects in Laravel, Go and Node, so familiarity does not decide it either.
 
-## Options considered
+## Options
 
-### A — PHP + Laravel + SQLite
+### A — Node + TypeScript + SQLite
 - *For:* TBD
 - *Against:* TBD
 
-### B — Node.js + TypeScript + SQLite
+### B — PHP + SQLite
 - *For:* TBD
 - *Against:* TBD
 

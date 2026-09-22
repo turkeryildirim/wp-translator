@@ -1,152 +1,106 @@
 # 02 — Architecture
 
-**Phase:** 2
-**Status:** ⬜ Not started
-**Prerequisite:** `01-business-logic.md` signed off
-**Exit criterion:** every step resolved, both ADRs accepted, no `TBD` remains, owner signs off.
+How the system described in [`01-business-logic.md`](01-business-logic.md) is built. Constraints R1–R5 and the decision register are in [`00-process.md`](00-process.md).
 
-This document turns the feature set from [`01-business-logic.md`](01-business-logic.md) into a technical design. Baseline in [`00-process.md`](00-process.md).
+This document is filled in Phase 2. Sections below state what is already settled and what remains to be decided.
 
 ---
 
-## Steps
+## Technology stack → `adr/0001-tech-stack.md`
 
-### Step 1 — Technology stack → `adr/0001-tech-stack.md`
+Judged against:
 
-**Goal:** choose the stack and record why (D15).
+- **PO round-trip fidelity** — the hard requirement. `msgctxt`, `#:`, `#.`, plural forms and headers must survive import → storage → export.
+- Library support for parsing and serialising PO.
+- AI SDK support for whichever provider ADR-0002 selects.
+- Single-user local deployment: how the owner starts it, where data lives.
+- Downloading and unpacking plugin/theme source archives.
 
-Judge the candidates against:
-- maturity of **PO parsing/serialising** libraries (round-trip fidelity is the hard requirement — R1, R2, R3)
-- AI SDK support for the provider chosen in Step 2
-- single-user **local** deployment: how the owner starts it, how it stores data
-- the owner's existing familiarity (Laravel, Go and Node projects all exist in `~/Projects`)
-- R4: PHP `intl` is **not** installed; the `sqlite3` CLI is absent though the PHP driver is present
-
-**Status:** TBD
+R5 removes what had been the strongest argument for one stack: the GlotPress export needs no browser automation and no credentials, so a headless browser is not a requirement of the export path. If browser automation is still wanted for something else, that use must be named before it weighs on the decision.
 
 ---
 
-### Step 2 — AI provider → `adr/0002-ai-provider.md`
+## AI provider → `adr/0002-ai-provider.md`
 
-**Goal:** choose the provider and record why (D16).
+The decisive criterion is **instruction adherence**, not fluency. Quality checks are blocking, so a model that writes elegant Turkish while dropping a `%1$s` or a `</strong>` creates review work instead of removing it. Honouring the glossary and the per-tag style rules matters for the same reason: consistency is the point of the project.
 
-Judge against:
-- Turkish translation quality
-- **instruction adherence** — not breaking `%1$s` placeholders or HTML, honouring the glossary and style guide. This matters more than raw fluency, because D9 makes violations blocking.
-- cost per project at realistic string counts
-- whether the interface should be abstracted so providers can be swapped
-
-If Claude is selected, load the `claude-api` skill before designing the calls, and verify current model IDs, pricing and prompt-caching behaviour rather than relying on memory.
-
-**Status:** TBD
+Secondary: cost per project at realistic string counts, throughput, and whether the interface is abstracted so providers can be swapped.
 
 ---
 
-### Step 3 — Data model
+## Data model
 
-**Goal:** a schema that survives the PO round trip and supports the workflows from Phase 1.
+Entities:
 
-Entities to model — at minimum:
-- **curated sources** — URL, label, last synced, trust marker
-- **projects** — slug, type (plugin/theme), wp.org metadata, readme, domain tags, import origin
-- **translation units** — source text, `msgid_plural`, `msgctxt`, `#:` references, `#.` comments, translation(s), status, provenance (memory / AI / human), surface (admin vs. end-user)
-- **glossary entries** — per Step 2 of Phase 1, with domain tag, provenance, variants
-- **domain tags** — the taxonomy defined in Phase 1 (whether it is a closed set or an open vocabulary is decided there, not here)
-- **style rules** — general and per-tag
-- **QA exceptions** — string, rule, reason, timestamp
-- **audit trail** — what changed, when
+- **trusted sources** — translate.wordpress.org URL, label, last export time
+- **glossary entries** — source string, translation, domain tags, provenance (which trusted project, or owner approval), plural forms
+- **projects** — slug, type, wordpress.org URL, translate.wordpress.org URL, metadata (name, description, readme, tags), assigned domain tags
+- **project source snapshots** — the stored plugin/theme code, with the version it corresponds to
+- **translation units** — source string, `msgid_plural`, `msgctxt`, `#:` references, `#.` comments, translation, state, provenance, derived usage surface
+- **domain tags** — open vocabulary
+- **style rules** — general, and per tag
+- **QA exceptions** — unit, rule, reason, time
 
-Cross-check every field against R2 and R3: nothing needed for a clean GlotPress re-import may be dropped.
+Raw exported PO files are kept on disk as well as imported into the database, for both the glossary and each project.
 
-**Status:** TBD
-
----
-
-### Step 4 — PO import / export
-
-**Goal:** define the round-trip strategy.
-
-To settle:
-- Library or hand-written parser; how header block, `Plural-Forms` and `X-Domain` are handled
-- Preservation of `msgctxt`, `#:`, `#.`, and entry ordering (R2)
-- Plural handling (R3)
-- **Export rules:** emit only approved strings; never emit a `#, fuzzy` flag; never emit empty `msgstr`; never emit `#~` obsolete entries — GlotPress silently drops or mis-flags all three on import
-- Encoding and line-wrapping behaviour, so diffs stay readable
-
-**Status:** TBD
+**Open:** whether the glossary and per-project stores are separate databases or separate tables in one.
 
 ---
 
-### Step 5 — translate.wordpress.org / wordpress.org integration
+## PO import and export
 
-**Goal:** define how remote data is fetched, verified and cached.
+Settled by R1–R3 and the export rules in `01`:
 
-To settle:
-- **O2 — fetch one real export and inspect it** before the schema depends on it. Do not assume the URL shape.
-- **Sub-project selection:** a plugin is split into `stable`, `dev`, `stable-readme` and `dev-readme`; themes have a single project. Decide which is imported, and whether the readme sub-project (the store-page description strings) is itself a translation target.
-- Which translation statuses feed the glossary when seeding — `current` only, or also `waiting`? GlotPress exposes status filters on export; the choice trades coverage against trustworthiness.
-- Caching, rate limiting, retry, and behaviour when offline.
-- Fetching the wp.org project page and `readme.txt` for D6 and D8.
+- Import PO, never JSON/Jed.
+- Preserve `#:`, `#.`, plural forms, headers and entry order.
+- Export only `ok` strings; never emit `#, fuzzy`, an empty `msgstr`, or a `#~` obsolete entry — GlotPress mis-flags or silently drops all three on import.
 
-**Status:** TBD
+**Open:** whether `msgctxt` is preserved (O9). Whether to use an existing PO library or write the parser.
 
 ---
 
-### Step 6 — Matching engine
+## translate.wordpress.org and wordpress.org integration
 
-**Goal:** specify exact-match lookup (D7).
+Verified (R5): the export endpoint is a public GET returning a PO body, `filters[status]` works, and no rate-limit headers are advertised.
 
-To settle:
-- The normalisation applied before comparison (whitespace, case, trailing punctuation) and whether normalisation risks false matches.
-- How the domain tag participates in the lookup, and the fallback order when the project has several tags or no match under its own tag.
-- Behaviour when the glossary holds several candidates.
+Still to settle:
 
-**Status:** TBD
-
----
-
-### Step 7 — AI pipeline
-
-**Goal:** specify how unmatched strings become translations.
-
-To settle:
-- Context bundle assembly (D8) and its token budget
-- Batching: how many strings per request; how order and identity are preserved in the response
-- Structured output format, and validation of the response before it is stored
-- Running QA (D9) on AI output automatically
-- Retry, partial failure, resumability, and cost control/reporting
-
-**Status:** TBD
+- **Sub-project selection** (O11) — a plugin is split into `stable`, `dev`, `stable-readme` and `dev-readme`; themes have one project.
+- **Source code acquisition** (O10) — from the wordpress.org ZIP, from SVN, or supplied by the owner. **The version must match the imported sub-project**: `stable` corresponds to the release tag, `dev` to trunk. A mismatch makes `#:` line numbers point at the wrong code, which is worse than having no source at all because it looks correct.
+- **Status filtering** (O12) — which statuses feed the glossary.
+- Actual request pacing. No rate limit is advertised, which is not the same as none existing; the trusted-source Update loop issues one request per project and should be deliberately paced and resumable.
+- Fetching the wordpress.org project page and `readme.txt` for tag proposal and AI context.
 
 ---
 
-### Step 8 — Storage, configuration and runtime
+## Matching engine
 
-**Goal:** how the tool runs on the owner's machine.
+Exact match on source string, scoped by the project's domain tags.
 
-To settle:
-- Database engine and where the file lives
-- API keys and secret storage
-- Start-up: script, container, or binary
-- Backup of the glossary — it is the most valuable asset in the system
-- Migration strategy as the schema evolves
-
-**Status:** TBD
+**Open:** what normalisation is applied before comparison (whitespace, case, trailing punctuation) and whether it risks false matches; the fallback order when a project has several tags, or when no entry exists under any of them; behaviour when several glossary candidates tie.
 
 ---
 
-## Decisions
+## Usage-surface detection
 
-| # | Topic | Decision | Step |
-|---|-------|----------|------|
-| — | — | *none yet* | — |
+Deriving whether a string appears in the admin or the front end, from `#:` paths, `#.` comments and the stored source code. A string can legitimately be both.
+
+**Open:** the heuristics themselves, and how they are validated against real plugins.
 
 ---
 
-## Open questions
+## AI pipeline
 
-| # | Question | Status |
-|---|----------|--------|
-| O2 | Verify translate.wordpress.org export URL patterns and rate limits against the live service | Open — Step 5 |
-| O3 | Implementation of the admin vs. end-user heuristics defined in Phase 1 | Open — Step 3 |
-| — | Which plugin sub-project(s) to import: `stable`, `dev`, `stable-readme`, `dev-readme` | Open — Step 5 |
+**Open:** context bundle assembly and its token budget; batching and how string identity survives the round trip; structured output and validation before storage; automatic quality checks on AI output; retry, partial failure, resumability; cost reporting.
+
+---
+
+## Testing strategy
+
+**Open (O14).** PO round-trip is the one area where a silent bug corrupts data invisibly — a dropped `msgctxt` or a mangled placeholder only surfaces after the PO reaches GlotPress. If there is a test suite, that is what it is for. Offline fixtures are available locally: `~/Projects/investakademi/app/languages/` holds WP core `tr_TR` files with and without `msgctxt` and with plural forms, and `~/Projects/wc-sanal-pos/languages/` holds a file with none.
+
+---
+
+## Storage, configuration and runtime
+
+**Open:** database engine and file location; AI API key storage; how the tool starts; backup of the glossary, which is the most valuable asset in the system and the only part that is expensive to rebuild; schema migration.
