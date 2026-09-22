@@ -69,7 +69,7 @@ Project setup therefore makes three public calls per project — info API, versi
 
 Still to settle:
 
-- **Sub-project selection** (O11) — a plugin is split into `stable`, `dev`, `stable-readme` and `dev-readme`; themes have one project.
+- **Sub-project probing.** D27 probes the `dev` export URL and falls back to `stable` on 404. Per R5b this must be a status-code check: a 404 returns a large HTML body, so a byte-count or "response received" test would silently store an error page as a PO file. Themes take a different URL shape with no sub-project segment at all.
 - **Status filtering** (O12) — which statuses feed the glossary.
 - Actual request pacing. No rate limit is advertised, which is not the same as none existing; the trusted-source Update loop issues one request per project and should be deliberately paced and resumable.
 - Fetching the wordpress.org project page and `readme.txt` for tag proposal and AI context.

@@ -67,6 +67,8 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D24 | `msgctxt` | Carried verbatim through import → storage → export. Not used for matching, not shown in the UI, not stored in the glossary. It exists solely so GlotPress can match the entry on import. |
 | D25 | Source code | Downloaded automatically as the versioned ZIP from `downloads.wordpress.org`. |
 | D26 | Glossary status filter | Only `current` translations feed the glossary. `waiting` is unreviewed and would dilute it. |
+| D27 | Sub-project | **`dev` when the project has one, otherwise `stable`.** Where `dev` exists, `stable` is not consulted. Large projects carry both; small ones often only one. |
+| D28 | readme | The readme sub-project is **not** a translation target. `readme.txt` is read only as context for tag proposal and AI translation. |
 
 ---
 
@@ -81,6 +83,12 @@ Each phase produces one document. **The owner signs it off before the next phase
 **R4 — Environment.** PHP 8.5.10 + Composer 2.10.3 (`intl` ICU 77.1, `pdo_sqlite`, `gettext`, `mbstring`, `curl`, `zip`); Node 24.18.0 + npm 11.16.0; Go; MariaDB 11.8.8; SQLite CLI 3.51.2; Docker / Podman; WP-CLI 2.12.0; git 2.55.0.
 
 **R5 — GlotPress export access, verified.** `https://translate.wordpress.org/projects/wp-plugins/<slug>/stable/tr/default/export-translations/?format=po` returns **HTTP 200 with a PO body and no authentication**. `filters[status]=current|waiting|untranslated` works and changes the payload. No rate-limit headers are advertised. Exports carry `#:` references, `#.` comments and `msgctxt`. **No headless browser and no stored credentials are needed to read exports.**
+
+**R5b — URL shapes and the sub-project probe, verified.**
+
+- Plugins: `…/projects/wp-plugins/<slug>/<stable|dev>/tr/default/export-translations/?format=po`
+- Themes: `…/projects/wp-themes/<slug>/tr/default/export-translations/?format=po` — **themes have no sub-project**; `/stable` and `/dev` both 404.
+- A missing sub-project or project returns **HTTP 404 with a ~116 KB HTML error page**. The probe behind D27 must therefore test the status code. Treating "bytes were returned" as success would store an HTML page as if it were a PO file.
 
 **R6 — wordpress.org metadata APIs, verified.** Both are public GETs needing only the slug:
 
@@ -112,11 +120,12 @@ Source alignment against the released ZIP (contact-form-7 6.1.7):
 
 `stable` aligns perfectly. `dev` references five trunk-only files (a refactored `admin/` tree) that the release ZIP does not contain, so roughly one reference in ten has no source code to read.
 
+Two consequences follow from D27 and are accepted: strings that exist only in `stable` are not translated, and references pointing at trunk-only files fall back to the path and the `#.` comment without source code.
+
 ## 6. Open questions
 
 | # | Question | Phase |
 |---|----------|-------|
-| O11 | `dev` is preferred where it exists, but R7 shows both exist everywhere tested and neither covers the other — importing only `dev` skips 64 contact-form-7 and 431 WooCommerce strings that are in the released version users run today. It also leaves ~10% of references without source code, since the ZIP is the release. Settle: `dev` with a source gap, `dev` plus an SVN trunk checkout, `stable`, or both merged. Separately: is the readme sub-project a translation target? | 1 |
 | O15 | R6 means the slug alone yields all project metadata and the ZIP. Does the owner still supply the wordpress.org page URL when adding a project, or is the translate.wordpress.org URL (which contains the slug) enough? | 1 |
 | O13 | When approval collides with an existing, different glossary translation the system warns — and then what? Keep both as variants, replace, or leave the glossary untouched? | 1 |
 | O14 | Is there an automated test suite, and what does it cover? Relevant because PO round-trip fidelity is the one thing a silent bug would corrupt invisibly. | 2 |

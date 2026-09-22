@@ -55,7 +55,7 @@ Where a trusted source and an entry the owner approved themselves disagree, **th
 
 1. The owner adds a project, supplying its **wordpress.org page** and its **translate.wordpress.org page**.
 2. The system stores the project's metadata — name, version, description, readme sections, tags — from the wordpress.org info API, and downloads the matching **versioned source ZIP** from `downloads.wordpress.org`. Because the ZIP is the released version, the source lines up with the `stable` sub-project.
-3. The PO is exported automatically into a per-project store, kept **separate from the glossary**.
+3. The PO is exported automatically into a per-project store, kept **separate from the glossary**. The `dev` sub-project is used when the project has one; otherwise `stable`. Where `dev` exists, `stable` is not read — large projects carry both, small ones often only one. The readme sub-project is never imported; `readme.txt` serves only as context.
 4. The AI proposes domain tags from the stored metadata. The owner confirms, corrects, or adds their own. A project carries several tags, and the vocabulary is open — the owner can introduce a tag that did not exist.
 5. The owner starts translation. Every string with an exact glossary match under one of the project's tags is filled in automatically and counts as complete; progress is reported as a percentage. The owner can browse what was placed.
 6. The owner then asks the AI to translate what is left. Progress is reported the same way. **AI output is marked `review`, never `ok`.**
@@ -113,6 +113,8 @@ A single source word can appear in both the admin screens and the front end of t
 
 The source code is why it is kept locally: a path such as `includes/admin/class-settings.php` is a strong signal, but reading the call site settles cases the path cannot, including strings that genuinely appear in both places.
 
+When a `#:` reference names a file the downloaded source does not contain — trunk-only files, since the ZIP is the released version — the path and the `#.` comment are used on their own.
+
 `msgctxt` is a fourth signal that the system deliberately does **not** use. It is carried from import to export untouched, so GlotPress can match the entry, but it plays no part in matching, in the glossary, or in the UI.
 
 ---
@@ -146,7 +148,6 @@ The general rules cover at least: form of address, title capitalisation, suffix 
 
 | # | Question |
 |---|----------|
-| O11 | Which sub-project is imported. `dev` is preferred, but neither sub-project covers the other and the release ZIP only matches `stable`. Is the readme itself a translation target? |
 | O15 | Does the owner still supply the wordpress.org page URL, given that the slug alone yields all metadata and the ZIP? |
 | O13 | After the warning in Workflow B step 8, what happens: keep both as variants, replace, or leave the glossary untouched? |
 | — | Tag synonym drift under an open vocabulary. |
