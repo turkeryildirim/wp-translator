@@ -55,18 +55,21 @@ Settled by R1–R3 and the export rules in `01`:
 - Preserve `#:`, `#.`, plural forms, headers and entry order.
 - Export only `ok` strings; never emit `#, fuzzy`, an empty `msgstr`, or a `#~` obsolete entry — GlotPress mis-flags or silently drops all three on import.
 
-**Open:** whether `msgctxt` is preserved (O9). Whether to use an existing PO library or write the parser.
+- Preserve `msgctxt` verbatim (D24). It is never read for matching, so it can be treated as an opaque column that travels with the unit.
+
+**Open:** whether to use an existing PO library or write the parser. The decision hinges on whether a candidate library round-trips `msgctxt`, `#:`, `#.` and plural forms without normalising them away.
 
 ---
 
 ## translate.wordpress.org and wordpress.org integration
 
-Verified (R5): the export endpoint is a public GET returning a PO body, `filters[status]` works, and no rate-limit headers are advertised.
+Verified (R5, R6): the export endpoint is a public GET returning a PO body, `filters[status]` works, and no rate-limit headers are advertised. The plugin and theme info APIs return name, version, `download_link`, tags and readme sections from the slug alone, so nothing needs scraping.
+
+Project setup therefore makes three public calls per project — info API, versioned ZIP, PO export — all unauthenticated.
 
 Still to settle:
 
 - **Sub-project selection** (O11) — a plugin is split into `stable`, `dev`, `stable-readme` and `dev-readme`; themes have one project.
-- **Source code acquisition** (O10) — from the wordpress.org ZIP, from SVN, or supplied by the owner. **The version must match the imported sub-project**: `stable` corresponds to the release tag, `dev` to trunk. A mismatch makes `#:` line numbers point at the wrong code, which is worse than having no source at all because it looks correct.
 - **Status filtering** (O12) — which statuses feed the glossary.
 - Actual request pacing. No rate limit is advertised, which is not the same as none existing; the trusted-source Update loop issues one request per project and should be deliberately paced and resumable.
 - Fetching the wordpress.org project page and `readme.txt` for tag proposal and AI context.

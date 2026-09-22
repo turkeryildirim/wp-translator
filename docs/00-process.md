@@ -64,6 +64,8 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D21 | Source code | The plugin/theme **source code is stored locally** next to its language file, so file names, directories and the code itself reveal where a string is used. |
 | D22 | Status model | `untranslated` → glossary match is placed as complete without review; AI output is `review`; approval makes it `ok`. Rejection is not a state — it means the owner edits and saves the string. |
 | D23 | Glossary write-back | An approved translation is added to the glossary if absent. If a different translation already exists, the system warns. |
+| D24 | `msgctxt` | Carried verbatim through import → storage → export. Not used for matching, not shown in the UI, not stored in the glossary. It exists solely so GlotPress can match the entry on import. |
+| D25 | Source code | Downloaded automatically as the versioned ZIP from `downloads.wordpress.org`. |
 
 ---
 
@@ -71,13 +73,20 @@ Each phase produces one document. **The owner signs it off before the next phase
 
 **R1 — PO on import, not JSON.** Deciding where a string appears (D8) needs the PO's `#:` source references and `#.` extractor comments. The GlotPress JSON/Jed export drops both and encodes context as `ctx\u0004msgid`.
 
-**R2 — `msgctxt` on export.** GlotPress matches an incoming PO entry to an existing original by singular + plural + **context**. An exported entry that omits a `msgctxt` the original carries does not match, and that translation is lost on import. Verified against a live export: Classic Editor, a 54-string plugin, carries 8 `msgctxt` entries — `Block editor`, `Classic editor` and `block editor` all under `msgctxt "Editor Name"`. See O9.
+**R2 — `msgctxt` on export.** GlotPress matches an incoming PO entry to an existing original by singular + plural + **context**. An exported entry that omits a `msgctxt` the original carries does not match, and that translation is lost on import. Verified against a live export: Classic Editor, a 54-string plugin, carries 8 `msgctxt` entries — `Block editor`, `Classic editor` and `block editor` all under `msgctxt "Editor Name"`. Handled by D24.
 
 **R3 — Plural forms.** `nplurals=2; plural=n > 1;`. `msgid_plural` / `msgstr[0]` / `msgstr[1]` must be modelled, and QA must validate plural arity.
 
 **R4 — Environment.** PHP 8.5.10 + Composer 2.10.3 (`intl` ICU 77.1, `pdo_sqlite`, `gettext`, `mbstring`, `curl`, `zip`); Node 24.18.0 + npm 11.16.0; Go; MariaDB 11.8.8; SQLite CLI 3.51.2; Docker / Podman; WP-CLI 2.12.0; git 2.55.0.
 
-**R5 — GlotPress export access, verified 2026-09-22.** `https://translate.wordpress.org/projects/wp-plugins/<slug>/stable/tr/default/export-translations/?format=po` returns **HTTP 200 with a PO body and no authentication**. `filters[status]=current|waiting|untranslated` works and changes the payload. No rate-limit headers are advertised. Exports carry `#:` references, `#.` comments and `msgctxt`. **No headless browser and no stored credentials are needed to read exports.**
+**R5 — GlotPress export access, verified.** `https://translate.wordpress.org/projects/wp-plugins/<slug>/stable/tr/default/export-translations/?format=po` returns **HTTP 200 with a PO body and no authentication**. `filters[status]=current|waiting|untranslated` works and changes the payload. No rate-limit headers are advertised. Exports carry `#:` references, `#.` comments and `msgctxt`. **No headless browser and no stored credentials are needed to read exports.**
+
+**R6 — wordpress.org metadata APIs, verified.** Both are public GETs needing only the slug:
+
+- `api.wordpress.org/plugins/info/1.2/?action=plugin_information&request[slug]=<slug>`
+- `api.wordpress.org/themes/info/1.2/?action=theme_information&request[slug]=<slug>&request[fields][tags]=1&request[fields][sections]=1`
+
+One call returns `name`, `version`, `download_link` (the versioned ZIP), `tags`, and `sections` (`description`, `faq`, `changelog`, …). This covers the project metadata behind D6 and D8 and the ZIP behind D25, without scraping the wordpress.org page. `downloads.wordpress.org/plugin/<slug>.<version>.zip` and `downloads.wordpress.org/theme/<slug>.<version>.zip` both return 200.
 
 ---
 
@@ -85,9 +94,8 @@ Each phase produces one document. **The owner signs it off before the next phase
 
 | # | Question | Phase |
 |---|----------|-------|
-| O9 | `msgctxt` was called unnecessary, but R2 shows dropping it on export loses translations for context-bearing originals. Proposal: carry it through import → storage → export verbatim, with no matching logic and no UI. | 1 |
-| O10 | How is project source code obtained — downloaded automatically from wordpress.org (ZIP or SVN) or supplied by the owner? The version must match the imported sub-project (`stable` ⇒ release tag, `dev` ⇒ trunk) or `#:` line numbers do not line up. | 1 |
-| O11 | Which sub-project is imported: `stable`, `dev`, `stable-readme`, `dev-readme`? Is the readme sub-project itself a translation target? | 1 |
+| O11 | Which sub-project is imported: `stable`, `dev`, `stable-readme`, `dev-readme`? Is the readme sub-project itself a translation target? **Constrained by D25:** the ZIP is the released version, which matches `stable`. Importing `dev` would align `#:` line numbers against trunk, which the ZIP does not contain — that would need SVN instead. | 1 |
+| O15 | R6 means the slug alone yields all project metadata and the ZIP. Does the owner still supply the wordpress.org page URL when adding a project, or is the translate.wordpress.org URL (which contains the slug) enough? | 1 |
 | O12 | Which translation statuses feed the glossary — `current` only, or also `waiting`? | 1 |
 | O13 | When approval collides with an existing, different glossary translation the system warns — and then what? Keep both as variants, replace, or leave the glossary untouched? | 1 |
 | O14 | Is there an automated test suite, and what does it cover? Relevant because PO round-trip fidelity is the one thing a silent bug would corrupt invisibly. | 2 |

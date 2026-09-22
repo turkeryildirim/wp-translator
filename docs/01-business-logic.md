@@ -54,7 +54,7 @@ Where a trusted source and an entry the owner approved themselves disagree, **th
 ## Workflow B — Translating a project
 
 1. The owner adds a project, supplying its **wordpress.org page** and its **translate.wordpress.org page**.
-2. The system stores the project's metadata — name, description, readme, tags — and the plugin or theme's **source code**.
+2. The system stores the project's metadata — name, version, description, readme sections, tags — from the wordpress.org info API, and downloads the matching **versioned source ZIP** from `downloads.wordpress.org`. Because the ZIP is the released version, the source lines up with the `stable` sub-project.
 3. The PO is exported automatically into a per-project store, kept **separate from the glossary**.
 4. The AI proposes domain tags from the stored metadata. The owner confirms, corrects, or adds their own. A project carries several tags, and the vocabulary is open — the owner can introduce a tag that did not exist.
 5. The owner starts translation. Every string with an exact glossary match under one of the project's tags is filled in automatically and counts as complete; progress is reported as a percentage. The owner can browse what was placed.
@@ -72,6 +72,8 @@ Where a trusted source and an entry the owner approved themselves disagree, **th
 - [ ] Editing a string and saving it produces `ok`, with provenance recorded as human.
 - [ ] Approval adds the string to the glossary when absent, and warns when a different translation exists.
 - [ ] Export emits only `ok` strings, with no `#, fuzzy` flag, no empty `msgstr`, and no `#~` obsolete entries.
+- [ ] Every `msgctxt` present on import is present, unchanged, on export.
+- [ ] The downloaded source version matches the version the PO was exported from.
 
 ---
 
@@ -111,6 +113,8 @@ A single source word can appear in both the admin screens and the front end of t
 
 The source code is why it is kept locally: a path such as `includes/admin/class-settings.php` is a strong signal, but reading the call site settles cases the path cannot, including strings that genuinely appear in both places.
 
+`msgctxt` is a fourth signal that the system deliberately does **not** use. It is carried from import to export untouched, so GlotPress can match the entry, but it plays no part in matching, in the glossary, or in the UI.
+
 ---
 
 ## Quality checks
@@ -142,9 +146,8 @@ The general rules cover at least: form of address, title capitalisation, suffix 
 
 | # | Question |
 |---|----------|
-| O9 | Should `msgctxt` be carried through import → storage → export verbatim, to avoid losing context-bearing entries on GlotPress import? |
-| O10 | Is source code downloaded automatically from wordpress.org, or supplied by the owner? Its version must match the imported sub-project. |
-| O11 | Which sub-project is imported — `stable`, `dev`, `stable-readme`, `dev-readme`? Is the readme itself a translation target? |
+| O11 | Which sub-project is imported — `stable`, `dev`, `stable-readme`, `dev-readme`? Is the readme itself a translation target? Downloading the released ZIP points this at `stable`. |
+| O15 | Does the owner still supply the wordpress.org page URL, given that the slug alone yields all metadata and the ZIP? |
 | O12 | Which translation statuses feed the glossary — `current` only, or also `waiting`? |
 | O13 | After the warning in Workflow B step 8, what happens: keep both as variants, replace, or leave the glossary untouched? |
 | — | Tag synonym drift under an open vocabulary. |
