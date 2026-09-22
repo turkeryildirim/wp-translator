@@ -6,7 +6,7 @@ What the system does. Technology choices belong in [`02-architecture.md`](02-arc
 
 ## Problem
 
-WordPress plugins and themes reach Turkish users untranslated. Translating them by hand is slow, and translating them with a general-purpose AI produces text that is fluent but inconsistent: the same source word comes out differently in every project, and sometimes differently within one project.
+WordPress projects — plugins, themes, core, the mobile apps, meta sites and patterns — reach Turkish users untranslated. Translating them by hand is slow, and translating them with a general-purpose AI produces text that is fluent but inconsistent: the same source word comes out differently in every project, and sometimes differently within one project.
 
 Consistency is the whole difficulty. `item` is *ürün* in an e-commerce plugin and *öge* elsewhere. The knowledge that resolves this already exists — in translations that humans have made, reviewed and approved on translate.wordpress.org over many years — but it is not reachable as a glossary, and GlotPress cannot apply it automatically.
 
@@ -53,8 +53,8 @@ Where a trusted source and an entry the owner approved themselves disagree, **th
 
 ## Workflow B — Translating a project
 
-1. The owner adds a project by its **translate.wordpress.org URL**. A slug alone is not enough: the type path and sub-project depth vary across project families. The `…/locale/tr/default/<type>/<slug>/` page lists a project's sub-projects and is the natural thing to paste.
-2. The system stores the project's metadata — name, version, description, readme sections, tags — from the wordpress.org info API, and downloads the matching **versioned source ZIP** from `downloads.wordpress.org`. Because the ZIP is the released version, the source lines up with the `stable` sub-project.
+1. The owner adds a project by its **translate.wordpress.org URL**, under the tab for its family. The `…/locale/tr/default/<type>/<slug>/` page lists a project's sub-projects and is the natural thing to paste.
+2. For a plugin or theme, the system stores metadata — name, version, description, readme sections, tags — from the wordpress.org info API and downloads the matching **versioned source ZIP**. The ZIP is the released version, so references to trunk-only files have no code behind them. For core, apps, meta and patterns this step is skipped and the owner assigns tags directly.
 3. The PO is exported automatically into a per-project store, kept **separate from the glossary**. The `dev` sub-project is used when the project has one; otherwise `stable`. Where `dev` exists, `stable` is not read — large projects carry both, small ones often only one. The readme sub-project is never imported; `readme.txt` serves only as context.
 4. The AI proposes domain tags from the stored metadata. The owner confirms, corrects, or adds their own. A project carries several tags, and the vocabulary is open — the owner can introduce a tag that did not exist.
 5. The owner starts translation. Every string with an exact glossary match under one of the project's tags is filled in automatically and counts as complete; progress is reported as a percentage. The owner can browse what was placed.
@@ -93,15 +93,36 @@ Only `ok` strings are exported.
 
 ---
 
+## Project families
+
+Six families, each with its own import tab. They differ in what the system can learn about a project without being told.
+
+| Family | Path | Slug-driven | ZIP + metadata | Tags |
+|--------|------|-------------|----------------|------|
+| Plugin | `wp-plugins/<slug>/<dev\|stable>` | yes | yes | AI proposes |
+| Theme | `wp-themes/<slug>` | yes | yes | AI proposes |
+| Core | `wp/<branch>[/<sub>]` | no | no | owner |
+| Apps | `apps/<platform>/<branch>` | no | no | owner |
+| Meta | `meta/<slug>` | no | no | owner |
+| Patterns | `patterns/<slug>` | no | no | owner |
+
+Plugins and themes get the full treatment: the slug yields metadata, readme and a versioned source ZIP, so tags are proposed and usage surface is derived from real code.
+
+The other four are WordPress's own projects — core, the mobile apps, the meta sites, the pattern directory. They often have no ZIP and no readme, so the owner supplies the URL and assigns tags directly, and the AI works from the string, its `#.` comment and whatever `#:` references exist. `apps` has none at all.
+
+Trusted sources are drawn from **every** family: some core, apps and meta projects are among the best-reviewed Turkish translations there are.
+
+---
+
 ## Domain tags
 
 Tags describe what a project *is about*, and they are what makes `item → ürün` possible in one project and `item → öge` in another. They attach to the project, and through it to every translation unit in that project and every glossary entry derived from it.
 
 - A project carries several tags.
-- The vocabulary is open. The AI proposes from what exists; the owner may add a new one.
-- Tags are proposed from stored project metadata: title, description, readme, and the wordpress.org Tags line.
+- The vocabulary is open. The AI is shown the existing tags and told to choose from them before proposing anything new; the owner may still add one.
+- For plugins and themes, tags are proposed from stored metadata: title, description, readme and the wordpress.org Tags line. Other families are tagged by the owner.
 
-**Open:** with an open vocabulary, synonyms (`ecommerce` / `e-ticaret` / `shop`) will eventually appear and will silently split the glossary. Whether to merge, alias or constrain tags is unresolved.
+Synonyms (`ecommerce` / `e-ticaret` / `shop`) would split the glossary silently, so two things guard against it: showing the AI the existing list keeps new tags rare, and the panel can **merge** one tag into another, moving every glossary entry and project with it.
 
 ---
 
@@ -142,14 +163,10 @@ A general Turkish style guide plus per-tag additions, editable in the panel and 
 
 The general rules cover at least: form of address, title capitalisation, suffix agreement, punctuation, and how untranslatable product names are treated. Per-tag rules extend the general ones and win where they conflict.
 
-**Open:** the actual content of the general rules.
+The guide is a large free-text field the owner writes and edits in the panel. There is no structured rule editor: the text goes to the AI as part of the prompt, so it is written the way it would be explained to a person.
 
 ---
 
 ## Open questions
 
-| # | Question |
-|---|----------|
-| O16 | Which project families are supported — plugins and themes alone, or also `wp` core, `patterns`, `apps` and `meta`? |
-| O17 | Tag synonym drift under an open vocabulary. |
-| O18 | Content of the general style rules. |
+None. This document is complete and awaiting sign-off.

@@ -16,7 +16,7 @@ Judged against:
 - Single-user local deployment: how the owner starts it, where data lives.
 - Downloading and unpacking plugin/theme source archives.
 
-R5 removes what had been the strongest argument for one stack: the GlotPress export needs no browser automation and no credentials, so a headless browser is not a requirement of the export path. If browser automation is still wanted for something else, that use must be named before it weighs on the decision.
+The export path needs no browser automation and no credentials (R5).
 
 ---
 
@@ -34,11 +34,11 @@ Entities:
 
 - **trusted sources** — translate.wordpress.org URL, label, last export time
 - **glossary entries** — source string, translation, domain tags, provenance (which trusted project, or owner approval), plural forms
-- **projects** — slug, type, wordpress.org URL, translate.wordpress.org URL, metadata (name, description, readme, tags), assigned domain tags
+- **projects** — family, slug or path, translate.wordpress.org URL, sub-project, metadata where available (name, version, description, readme, tags), assigned domain tags
 - **project source snapshots** — the stored plugin/theme code, with the version it corresponds to
 - **translation units** — source string, `msgid_plural`, `msgctxt`, `#:` references, `#.` comments, translation, state, provenance, derived usage surface
-- **domain tags** — open vocabulary
-- **style rules** — general, and per tag
+- **domain tags** — open vocabulary, mergeable (D33): a merge has to rewrite every referencing row, so tags are referenced by id rather than by name
+- **style rules** — free text: one general, one per tag (D34)
 - **QA exceptions** — unit, rule, reason, time
 
 Raw exported PO files are kept on disk as well as imported into the database, for both the glossary and each project.
@@ -72,7 +72,7 @@ Still to settle:
 - **Sub-project probing.** D27 probes the `dev` export URL and falls back to `stable` on 404. Per R5b this must be a status-code check: a 404 returns a large HTML body, so a byte-count or "response received" test would silently store an error page as a PO file. Themes take a different URL shape with no sub-project segment at all.
 - Actual request pacing. No rate limit is advertised, which is not the same as none existing; the trusted-source Update loop issues one request per project and should be deliberately paced and resumable.
 - Fetching wordpress.org metadata and `readme.txt` for tag proposal and AI context — **available only for `wp-plugins` and `wp-themes`** (R8).
-- **Project family handling** (O16). The URL is the project's identity (D31), so the system must parse `…/projects/<path>/tr/default/` and `…/locale/tr/default/<type>/<slug>/` into a family, slug and sub-project. Families differ in shape: themes have no sub-project, `wp` nests two levels, `apps` splits by platform. Whichever families are in scope, the parser and the metadata/source steps have to degrade cleanly when a family offers neither.
+- **URL parsing.** The URL is the project's identity (D31), so the system must resolve both `…/projects/<path>/tr/default/` and `…/locale/tr/default/<type>/<slug>/` into a family, slug and sub-project. Shapes differ per family (D32): themes have no sub-project, `wp` nests two levels, `apps` splits by platform. The metadata and source steps must be skipped, not failed, for the four families that have neither.
 
 ---
 

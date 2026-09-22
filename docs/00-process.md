@@ -1,6 +1,6 @@
 # 00 — Process
 
-**Project:** wp-translator — AI-assisted, glossary-grounded `tr_TR` translation of WordPress plugins and themes.
+**Project:** wp-translator — AI-assisted, glossary-grounded `tr_TR` translation of WordPress projects.
 **Owner:** single user, Turkish GTE on translate.wordpress.org.
 
 This file is the roadmap and the decision register. It is deleted once all phases close.
@@ -9,7 +9,7 @@ This file is the roadmap and the decision register. It is deleted once all phase
 
 ## 1. Purpose
 
-Many WordPress plugins and themes have no Turkish translation. This tool translates them with AI assistance, kept **consistent** by grounding the AI in translations that humans have already made, reviewed and approved.
+Many WordPress projects have no Turkish translation. This tool translates them with AI assistance, kept **consistent** by grounding the AI in translations that humans have already made, reviewed and approved.
 
 GlotPress is not used directly because it carries a large amount of functionality the owner never touches, offers no personal glossary, and cannot run AI translation. The output is a **PO file** the owner imports into translate.wordpress.org with their GTE rights.
 
@@ -30,7 +30,7 @@ Each phase produces one document. **The owner signs it off before the next phase
 | Phase | Document | State |
 |-------|----------|-------|
 | 0 | `docs/` skeleton and baseline | Closed |
-| 1 | `01-business-logic.md` | Open |
+| 1 | `01-business-logic.md` | Awaiting sign-off |
 | 2 | `02-architecture.md`, `adr/0001-tech-stack.md`, `adr/0002-ai-provider.md` | Not started |
 | 3 | `03-web-ui.md` | Not started |
 | 4 | Implementation, in vertical slices | Not started |
@@ -46,9 +46,9 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D3 | Glossary source | A URL-based list of **trusted projects**, maintained in the panel and exported from translate.wordpress.org. No file upload, no automatic crawling. |
 | D4 | Glossary refresh | Owner presses "update"; every project on the list is re-exported and re-imported. |
 | D5 | Context model | **Domain tag.** `msgctxt` is not a matching dimension. |
-| D6 | Tag assignment | AI proposes from stored project metadata; owner confirms, corrects or adds. |
+| D6 | Tag assignment | AI proposes from stored project metadata, choosing from the existing tag list first (D33); owner confirms, corrects or adds. Families without metadata are tagged by the owner directly. |
 | D7 | Pipeline | Glossary match placed automatically → owner triggers AI for the remainder → owner reviews → approved entries feed the glossary. |
-| D8 | AI context | Project metadata, readme, wp.org description, the stored **source code**, glossary terms, style rules. |
+| D8 | AI context | Glossary terms and style rules always; project metadata, readme, wp.org description and the stored **source code** where the family provides them (D32). |
 | D9 | QA validation | Blocking, with per-string exception override and recorded reason. |
 | D10 | Language | `tr_TR` only. |
 | D11 | Glossary conflict | The trusted source wins over the owner's own entries. Trusted projects are human-translated, reviewed and approved. |
@@ -61,17 +61,20 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D18 | Tag cardinality | A project carries **several** tags. |
 | D19 | Tag vocabulary | **Open and owner-controlled.** AI proposes; the owner may correct or add tags. |
 | D20 | Project ingestion | The owner supplies the translate.wordpress.org URL (D31); the tool exports the PO automatically into a per-project store, separate from the glossary. Where the family supports it, metadata and source come from the wordpress.org API. |
-| D21 | Source code | The plugin/theme **source code is stored locally** next to its language file, so file names, directories and the code itself reveal where a string is used. |
+| D21 | Source code | For plugins and themes the **source code is stored locally** next to its language file, so file names, directories and the code itself reveal where a string is used. |
 | D22 | Status model | `untranslated` → glossary match is placed as complete without review; AI output is `review`; approval makes it `ok`. Rejection is not a state — it means the owner edits and saves the string. |
-| D23 | Glossary write-back | An approved translation is added to the glossary if absent. If a different translation already exists, the system warns. |
+| D23 | Glossary write-back | An approved translation is added to the glossary if absent. On collision see D29. |
 | D24 | `msgctxt` | Carried verbatim through import → storage → export. Not used for matching, not shown in the UI, not stored in the glossary. It exists solely so GlotPress can match the entry on import. |
-| D25 | Source code | Downloaded automatically as the versioned ZIP from `downloads.wordpress.org`. Available only for `wp-plugins` and `wp-themes` — see R8 and O16. |
+| D25 | Source code | Downloaded automatically as the versioned ZIP from `downloads.wordpress.org`. Plugins and themes only (D32). |
 | D26 | Glossary status filter | Only `current` translations feed the glossary. `waiting` is unreviewed and would dilute it. |
 | D27 | Sub-project | **`dev` when the project has one, otherwise `stable`.** Where `dev` exists, `stable` is not consulted. Large projects carry both; small ones often only one. |
 | D28 | readme | The readme sub-project is **not** a translation target. `readme.txt` is read only as context for tag proposal and AI translation. |
 | D29 | Glossary collision | When an approved project translation differs from an existing glossary entry, the panel offers **two independent choices**: for the project — use the glossary translation or keep the project's; for the glossary — keep the existing entry or overwrite it. |
 | D30 | Testing scope | Verification is limited to the **exported PO**: is it syntactically valid, and will GlotPress import it. No WordPress installation, no plugin activation, no runtime loading test. |
 | D31 | Project identity | The owner supplies the **translate.wordpress.org URL**. A slug alone cannot locate a project — see R8. |
+| D32 | Project families | Six families, each with its own import tab: **Core, Theme, Plugin, Apps, Meta, Patterns**. Themes and plugins are slug-driven — automatic ZIP download, metadata, readme, AI tag proposal; everything decided for them holds. `wp`, `apps`, `meta` and `patterns` are WordPress's own projects and may have no ZIP or readme, so the owner supplies the URL directly and those steps are skipped. Trusted sources are drawn from **all** families. |
+| D33 | Tag drift | Prevention and repair together: the AI is given the existing tag list and told to choose from it before proposing a new one, and the panel offers a **merge** that moves every glossary entry and project from one tag to another. |
+| D34 | Style guide form | A large free-text field in the panel, written by the owner, passed to the AI as part of the prompt. No structured rule editor. Per D12 the same form applies per tag. |
 
 ---
 
@@ -148,9 +151,7 @@ Two consequences:
 
 | # | Question | Phase |
 |---|----------|-------|
-| O16 | **Scope.** Which project families from R8 are supported — plugins and themes alone, or also `wp` core, `patterns`, `apps` and `meta`? The latter have no wordpress.org metadata and no source ZIP, and `apps` has no `#:` references, so D6, D8, D21 and D25 degrade or do not apply. | 1 |
-| O17 | Tag synonym drift under an open vocabulary (`ecommerce` / `e-ticaret` / `shop`) splits the glossary silently. Prevent, repair, or leave for now? | 1 |
-| O18 | Who writes the content of the general Turkish style rules, and when? | 1 |
+| — | None open for Phase 1. |
 
 ---
 
