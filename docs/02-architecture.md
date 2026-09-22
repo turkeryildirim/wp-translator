@@ -30,7 +30,7 @@ The unique index makes a collision impossible to introduce silently; it surfaces
 
 **Several trusted sources vouch for the same string.** `Save`, `Cancel` and `Delete` appear in core and in most plugins, so ownership cannot be a single column on the entry. `glossary_entry_sources` links an entry to every source that carries it, with that source's own translation.
 
-The D17 delete therefore removes a **link**, not the entry: after a sync run, links from that source not touched by the run are dropped, and an entry disappears only when no link remains and the owner did not write it. The effective `translation` is then re-resolved from the surviving links by `trusted_sources.rank`, so the result does not depend on the order the sources happened to sync in.
+The D17 delete therefore removes a **link**, not the entry: after a sync run, links from that source not touched by the run are dropped, and an entry disappears only when no link remains and the owner did not write it. The effective `translation` is then re-resolved from the surviving links: the value the most links carry wins, ties broken by `trusted_sources.rank` (D36). The result does not depend on the order the sources happened to sync in. Measured over five sources, 88 % of disagreements are two-way ties, so `rank` decides most of them (R15).
 
 ```sql
 PRAGMA foreign_keys = ON;
@@ -253,7 +253,7 @@ So the rule is the strict one: byte-identical source, byte-identical `msgid_plur
 2. `(source, '', T)` for each project tag
 3. no match — the unit goes to the AI
 
-**Open:** which tag wins when several match with different translations. The ordering has to be deterministic or the same project produces different output on re-run.
+When several of a project's tags match with **different** translations, nothing is auto-filled (D37): the unit is left `untranslated` in the pipeline, marked `review`, and the panel resolves the candidates at display time by re-querying the glossary. No extra table — the candidates are derivable from `(source_hash, msgctxt, project tags)` whenever they are needed.
 
 ---
 

@@ -62,7 +62,7 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D19 | Tag vocabulary | **Open and owner-controlled.** AI proposes; the owner may correct or add tags. |
 | D20 | Project ingestion | The owner supplies the translate.wordpress.org URL (D31); the tool exports the PO automatically into a per-project store, separate from the glossary. Where the family supports it, metadata and source come from the wordpress.org API. |
 | D21 | Source code | For plugins and themes the **source code is stored locally** next to its language file, so file names, directories and the code itself reveal where a string is used. |
-| D22 | Status model | `untranslated` → glossary match is placed as complete without review; AI output is `review`; approval makes it `ok`. Rejection is not a state — it means the owner edits and saves the string. |
+| D22 | Status model | `untranslated` → an unambiguous glossary match is placed as complete without review; an ambiguous one (D37) and all AI output are `review`; approval makes it `ok`. Rejection is not a state — it means the owner edits and saves the string. |
 | D23 | Glossary write-back | An approved translation is added to the glossary if absent, as **one row per project tag**. On collision see D29. |
 | D24 | `msgctxt` | Carried verbatim through import → storage → export. Not used for matching, not shown in the UI, not stored in the glossary. It exists solely so GlotPress can match the entry on import. |
 | D25 | Source code | Downloaded automatically as the versioned ZIP from `downloads.wordpress.org`. Plugins and themes only (D32). |
@@ -74,6 +74,8 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D31 | Project identity | The owner supplies the **translate.wordpress.org URL**. A slug alone cannot locate a project — see R8. |
 | D32 | Project families | Six families, each with its own import tab: **Core, Theme, Plugin, Apps, Meta, Patterns**. Themes and plugins are slug-driven — automatic ZIP download, metadata, readme, AI tag proposal; everything decided for them holds. `wp`, `apps`, `meta` and `patterns` are WordPress's own projects and may have no ZIP or readme, so the owner supplies the URL directly and those steps are skipped. Trusted sources are drawn from **all** families. |
 | D33 | Tag drift | Prevention and repair together: the AI is given the existing tag list and told to choose from it before proposing a new one, and the panel offers a **merge** that moves every glossary entry and project from one tag to another. |
+| D36 | Source precedence | When trusted sources disagree, the translation **most sources agree on** wins; ties fall to `trusted_sources.rank`, which the owner orders. Deterministic regardless of sync order. |
+| D37 | Tag conflict | When a project's tags yield **different** translations for one string, it is **not** auto-filled. The unit goes to `review` with the candidates shown, and the owner picks. |
 | D35 | Glossary key | `(source, msgctxt, tag)`. Matching prefers the unit's own `msgctxt` and falls back to the context-less row; a unit without context matches only context-less entries. Resolves R9. |
 | D34 | Style guide form | A large free-text field in the panel, written by the owner, passed to the AI as part of the prompt. No structured rule editor. Per D12 the same form applies per tag. |
 
@@ -169,11 +171,13 @@ Real cases: `May` → `May` (abbreviation) against `Mayıs` (full month); `F j, 
 
 **R14 — trusted sources overlap, so ownership cannot be a single column.** `Save`, `Cancel` and `Delete` live in core and in most plugins. Loading WooCommerce and WordPress core together produces 50 615 entries over 51 258 source links, of which **643 are vouched for by both**. With one `trusted_source_id` per entry the outcome depends on sync order: whichever source last wrote the row owns it, and the other source's sweep either deletes a row that is still in use or leaves a stale one behind. Demonstrated by running both orders. The link table fixes it; sweeping one source out of the combined load takes 452 ms and leaves the other's entries intact.
 
+**R15 — majority voting rarely decides; the ranking does.** Five trusted sources (WP core, WooCommerce, Yoast, Astra, Contact Form 7) loaded under one tag give 25 318 entries over 26 407 links. 877 entries are vouched for by more than one source, and **402 of those disagree** — `Uncategorized` is `Genel` in core but `Kategorilendirilmemiş` in Yoast; `Add New` is `Yeni Ekle` against `Yeni ekle`. Of the disagreements, majority resolves **49 (12 %)**; the remaining **88 % are two-way ties** that fall to `rank`. Overlap is mostly pairwise, so the order of the trusted-source list is what actually decides, and it deserves to be set deliberately.
+
 ## 6. Open questions
 
 | # | Question | Phase |
 |---|----------|-------|
-| — | None open. |
+| — | None open. The provider roster for ADR-0002 is pending from the owner, needed for Phase 4. |
 
 ---
 

@@ -40,6 +40,8 @@ The glossary is built from projects whose Turkish translations are known to be g
 
 Where a trusted source and an entry the owner approved themselves disagree, **the trusted source wins** — it carries more human review than a single approval does.
 
+Where two trusted sources disagree, the translation **most of them agree on** wins. Ties go to the order of the trusted-source list, which the owner sets. In practice ties are the common case: measured across five sources, 88 % of disagreements are two-way, so the list order is what decides.
+
 **Acceptance criteria**
 
 - [ ] A project can be added to, edited in, and removed from the trusted list.
@@ -57,7 +59,7 @@ Where a trusted source and an entry the owner approved themselves disagree, **th
 2. For a plugin or theme, the system stores metadata — name, version, description, readme sections, tags — from the wordpress.org info API and downloads the matching **versioned source ZIP**. The ZIP is the released version, so references to trunk-only files have no code behind them. For core, apps, meta and patterns this step is skipped and the owner assigns tags directly.
 3. The PO is exported automatically into a per-project store, kept **separate from the glossary**. The `dev` sub-project is used when the project has one; otherwise `stable`. Where `dev` exists, `stable` is not read — large projects carry both, small ones often only one. The readme sub-project is never imported; `readme.txt` serves only as context.
 4. The AI proposes domain tags from the stored metadata. The owner confirms, corrects, or adds their own. A project carries several tags, and the vocabulary is open — the owner can introduce a tag that did not exist.
-5. The owner starts translation. Every string with an exact glossary match under one of the project's tags is filled in automatically and counts as complete; progress is reported as a percentage. The owner can browse what was placed.
+5. The owner starts translation. Every string with an exact glossary match under one of the project's tags is filled in automatically and counts as complete; progress is reported as a percentage. The owner can browse what was placed. Where the project's tags disagree — the same string carrying different translations under two of them — nothing is filled in: the string goes to `review` with both candidates shown, because that disagreement is exactly the distinction domain tags exist to make.
 6. The owner then asks the AI to translate what is left. Progress is reported the same way. **AI output is marked `review`, never `ok`.**
 7. The owner works through the `review` strings. Approving one makes it `ok`. Rejecting is not a separate outcome — it means the owner edits the string and saves their own wording, which is likewise `ok`.
 8. Approved translations are written into the glossary if the source string is not already there. If it is there with a **different** translation, the owner is shown both and makes two independent choices:
@@ -86,10 +88,10 @@ Where a trusted source and an entry the owner approved themselves disagree, **th
 | State | Meaning | Reached by |
 |-------|---------|------------|
 | `untranslated` | No translation yet. | Import |
-| `review` | Translated by AI, not yet seen by the owner. | AI fill |
+| `review` | Not yet settled by the owner. | AI fill, or a glossary match whose candidates disagree |
 | `ok` | Final. Exportable. | Glossary match, owner approval, or owner edit |
 
-A glossary match arrives at `ok` directly — it is already human-approved work, so asking the owner to re-approve it would be busywork. Provenance (`glossary`, `ai`, `human`) is recorded separately from state, so the owner can still find and inspect glossary-filled strings.
+An unambiguous glossary match arrives at `ok` directly — it is already human-approved work, so asking the owner to re-approve it would be busywork. An ambiguous one does not: two tags offering different translations is a real question only the owner can answer. Provenance (`glossary`, `ai`, `human`) is recorded separately from state, so the owner can still find and inspect glossary-filled strings.
 
 Only `ok` strings are exported.
 
