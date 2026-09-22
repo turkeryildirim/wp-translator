@@ -52,12 +52,12 @@ Raw exported PO files are kept on disk as well as imported into the database, fo
 Settled by R1–R3 and the export rules in `01`:
 
 - Import PO, never JSON/Jed.
-- Preserve `#:`, `#.`, plural forms, headers and entry order.
+- Preserve `#:`, `#.`, plural forms and headers. **Entry order is not a requirement** — GlotPress matches an imported entry by singular + plural + context, not by position.
 - Export only `ok` strings; never emit `#, fuzzy`, an empty `msgstr`, or a `#~` obsolete entry — GlotPress mis-flags or silently drops all three on import.
 
 - Preserve `msgctxt` verbatim (D24). It is never read for matching, so it can be treated as an opaque column that travels with the unit.
 
-**Open:** whether to use an existing PO library or write the parser. The decision hinges on whether a candidate library round-trips `msgctxt`, `#:`, `#.` and plural forms without normalising them away.
+Library fidelity was measured against the 14 531-entry WooCommerce export — see `adr/0001-tech-stack.md`. Node's `gettext-parser` round-trips it without loss; the leading PHP and Go libraries each lose data silently. Whether an off-the-shelf library is used or the parser is written by hand follows from ADR-0001.
 
 ---
 
