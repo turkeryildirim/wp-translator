@@ -196,6 +196,8 @@ Strings average 3–6 known terms each, and 60–76 % of them contain a term the
 
 So the glossary earns its keep in two different ways: full-string reuse handles roughly a tenth of a project, and terminology handed to the AI is what makes the other nine tenths consistent. Injecting the matched terms costs ~4 700 tokens for a 500-string batch against ~15 100 for the batch itself, and the n-gram lookup takes 6 ms.
 
+**R20 — most strings carry no technical structure, so the checks cannot help there.** Share of a project's strings with no placeholder, no HTML, no plural and under 80 characters: Astra 92 %, WooCommerce 81 %, Contact Form 7 78 %, WP Super Cache 51 %. For those the blocking quality checks find nothing, because nothing is malformed — review is pure semantic judgement on short text. Combined with the review volume (Astra leaves 3 818 strings after glossary matching, over five hours at five seconds each), this makes a dense list the primary review surface and reserves the detailed single-string view for the minority that has structure.
+
 ## 6. Open questions
 
 | # | Question | Phase |
@@ -210,5 +212,6 @@ So the glossary earns its keep in two different ways: full-string reuse handles 
 |-------|--------|
 | 1 | `product-management:write-spec` |
 | 2 | `engineering:system-design`, `sql-expert`, `engineering:architecture`, `claude-api` *(only if ADR-0002 selects Claude)* |
-| 3 | `design:design-system`, `design:ux-copy`, `design:accessibility-review` |
+| 3 | `design:ux-copy` |
+| 4 | `design:accessibility-review` once there is a built UI to audit |
 | 4 | `code-standards`, plus the stack's own skill once ADR-0001 closes: `javascript` / `react` / `vuejs`, or `php` / `laravel` / `phpunit`, or `golang`. `wordpress` when plugin/theme specifics come up. `docker` if containerised. |
