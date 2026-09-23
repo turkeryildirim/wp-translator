@@ -89,6 +89,7 @@ export interface SyncProgress {
   total: number;
   current: string | null;
   errors: { source: string; message: string }[];
+  glossaryTerms: number | null;
   finishedAt: string | null;
 }
 
@@ -195,3 +196,6 @@ export const startTranslation = (projectId: number, options: { agent?: string; m
 
 export const translateProgress = (projectId: number) =>
   json<TranslateProgress>(`/api/projects/${projectId}/translate`);
+
+export const setSourceTags = (id: number, tagIds: number[]) =>
+  post<{ ok: true }>(`/api/sources/${id}/tags`, { tagIds });

@@ -28,6 +28,7 @@ import {
   listSources,
   removeSource,
   reorderSources,
+  setSourceTags,
   startSync,
   syncProgress,
 } from './sources.ts';
@@ -142,6 +143,13 @@ async function api(
   const source = /^\/api\/sources\/(\d+)$/.exec(route);
   if (method === 'DELETE' && source) {
     removeSource(db, Number(source[1]));
+    return send(response, 200, { ok: true });
+  }
+
+  const sourceTags = /^\/api\/sources\/(\d+)\/tags$/.exec(route);
+  if (method === 'POST' && sourceTags) {
+    const body = (await readJson(request)) as { tagIds: number[] };
+    setSourceTags(db, Number(sourceTags[1]), body.tagIds);
     return send(response, 200, { ok: true });
   }
 

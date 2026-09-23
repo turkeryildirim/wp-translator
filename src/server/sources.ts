@@ -1,4 +1,9 @@
 import type { Db } from '../db/open.ts';
+import {
+  importOfficialGlossary,
+  OFFICIAL_GLOSSARY_CSV,
+  parseGlossaryCsv,
+} from '../glossary/officialGlossary.ts';
 import { syncTrustedSource } from '../glossary/sync.ts';
 import { parsePo } from '../po/parse.ts';
 import { fetchExport } from '../wporg/fetch.ts';
@@ -37,6 +42,27 @@ export function listSources(db: Db): TrustedSourceRow[] {
   for (const tag of tags) bySource.set(tag.id, [...(bySource.get(tag.id) ?? []), tag.tagId]);
 
   return rows.map((row) => ({ ...row, tagIds: bySource.get(row.id) ?? [] }));
+}
+
+/** Where the official glossary's terms land. The seeded tag, or the first one. */
+function defaultTagId(db: Db): number {
+  const row = db
+    .prepare(`SELECT id FROM tags ORDER BY name = 'wordpress' DESC, id LIMIT 1`)
+    .get() as { id: number } | undefined;
+  if (row) return row.id;
+
+  return Number(db.prepare(`INSERT INTO tags (name) VALUES ('wordpress')`).run().lastInsertRowid);
+}
+
+/** Replace a source's tags. The seeded list puts everything under one tag; this is how it is split. */
+export function setSourceTags(db: Db, id: number, tagIds: readonly number[]): void {
+  const add = db.prepare(
+    `INSERT OR IGNORE INTO trusted_source_tags (trusted_source_id, tag_id) VALUES (?, ?)`,
+  );
+  db.transaction(() => {
+    db.prepare(`DELETE FROM trusted_source_tags WHERE trusted_source_id = ?`).run(id);
+    for (const tagId of tagIds) add.run(id, tagId);
+  })();
 }
 
 export function addSource(db: Db, url: string, tagIds: readonly number[], label?: string): number {
@@ -92,6 +118,8 @@ export interface SyncProgress {
   /** The source being fetched right now. */
   current: string | null;
   errors: { source: string; message: string }[];
+  /** Terms taken from the official WordPress Turkish glossary. */
+  glossaryTerms: number | null;
   finishedAt: string | null;
 }
 
@@ -101,6 +129,7 @@ const idle = (): SyncProgress => ({
   total: 0,
   current: null,
   errors: [],
+  glossaryTerms: null,
   finishedAt: null,
 });
 
@@ -119,7 +148,10 @@ export function startSync(db: Db): SyncProgress {
   if (progress.running) return progress;
 
   const sources = listSources(db);
-  progress = { ...idle(), running: true, total: sources.length };
+  // +1 for the official glossary, which is refreshed in the same run: it is the
+  // same kind of work from the owner's side, and forgetting it would leave the
+  // terminology stale while the memory moved on.
+  progress = { ...idle(), running: true, total: sources.length + 1 };
 
   void (async () => {
     for (const source of sources) {
@@ -135,6 +167,19 @@ export function startSync(db: Db): SyncProgress {
       }
       progress.done += 1;
     }
+
+    progress.current = 'WordPress Türkçe sözlüğü';
+    try {
+      const csv = await (await fetch(OFFICIAL_GLOSSARY_CSV)).text();
+      const result = importOfficialGlossary(db, parseGlossaryCsv(csv), defaultTagId(db));
+      progress.glossaryTerms = result.added + result.kept;
+    } catch (error) {
+      progress.errors.push({
+        source: 'official glossary',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    progress.done += 1;
 
     progress.running = false;
     progress.current = null;

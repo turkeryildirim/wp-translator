@@ -30,7 +30,8 @@ const entries = () =>
 
 beforeEach(() => {
   db = openDb(':memory:');
-  tagId = Number(db.prepare(`INSERT INTO tags (name) VALUES ('wordpress')`).run().lastInsertRowid);
+  // A fresh database already seeds a `wordpress` tag, so use one of our own.
+  tagId = Number(db.prepare(`INSERT INTO tags (name) VALUES ('test-terms')`).run().lastInsertRowid);
 });
 
 describe('CSV parsing', () => {

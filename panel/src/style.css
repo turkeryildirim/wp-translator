@@ -137,3 +137,6 @@ code { font: 12px ui-monospace, monospace; background: var(--line);
   border-radius: 4px; background: var(--ambiguous); color: inherit;
   cursor: pointer; font-weight: 600; }
 .translate:disabled { cursor: default; opacity: .8; }
+
+.tagpick { font: inherit; padding: 2px 4px; border: 1px solid var(--line);
+  border-radius: 4px; background: var(--bg); color: inherit; max-width: 150px; }

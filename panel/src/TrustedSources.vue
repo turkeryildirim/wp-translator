@@ -6,6 +6,7 @@ import {
   listTags,
   removeSource,
   reorderSources,
+  setSourceTags,
   startSync,
   syncProgress,
   type SyncProgress,
@@ -53,6 +54,14 @@ async function move(index: number, delta: number): Promise<void> {
   await reorderSources(next.map((source) => source.id));
 }
 
+async function retag(source: TrustedSource, event: Event): Promise<void> {
+  const chosen = [...(event.target as HTMLSelectElement).selectedOptions].map((option) =>
+    Number(option.value),
+  );
+  await setSourceTags(source.id, chosen);
+  await load();
+}
+
 async function sync(): Promise<void> {
   progress.value = await startSync();
   poll ??= setInterval(async () => {
@@ -95,7 +104,9 @@ onUnmounted(() => {
       {{ progress.done }} / {{ progress.total }} · {{ progress.current }}
     </p>
     <p v-else-if="progress?.finishedAt" class="status">
-      Güncelleme bitti: {{ progress.done }} kaynak.
+      Güncelleme bitti: {{ progress.done - 1 }} kaynak<span v-if="progress.glossaryTerms">
+        + resmî sözlükten {{ progress.glossaryTerms }} terim</span
+      >.
       <span v-if="progress.errors.length" class="failure-inline">
         {{ progress.errors.length }} hata
       </span>
@@ -137,8 +148,17 @@ onUnmounted(() => {
             </a>
           </td>
           <td class="muted">{{ source.family }}</td>
-          <td class="muted">
-            {{ tags.filter((t) => source.tagIds.includes(t.id)).map((t) => t.name).join(', ') || '—' }}
+          <td>
+            <select multiple size="1" class="tagpick" @change="retag(source, $event)">
+              <option
+                v-for="tag in tags"
+                :key="tag.id"
+                :value="tag.id"
+                :selected="source.tagIds.includes(tag.id)"
+              >
+                {{ tag.name }}
+              </option>
+            </select>
           </td>
           <td class="num">{{ source.entries.toLocaleString('tr') }}</td>
           <td class="muted">{{ source.lastSyncedAt ?? 'hiç' }}</td>
@@ -147,6 +167,13 @@ onUnmounted(() => {
       </tbody>
     </table>
 
+    <p class="hint">
+      Bu liste kurulumla birlikte gelir: WordPress çekirdeği, büyük eklentiler, tema, mobil
+      uygulamalar ve meta siteler. Hepsi tek bir <code>wordpress</code> etiketi altında başlar.
+      <b>Ayırmak sizin kararınız</b> — örneğin WooCommerce'i kendi etiketine almak,
+      <code>item</code> kelimesinin orada <code>ürün</code>, başka yerde <code>öge</code> çıkmasını
+      sağlayan şey.
+    </p>
     <p class="hint">
       Sıra önemli: iki kaynak aynı metni farklı çevirdiğinde çoğunluk kazanır, berabere kalırsa
       üstteki. Ölçümde çakışmaların %88'i beraberlik, yani kararı çoğu zaman bu sıra veriyor.

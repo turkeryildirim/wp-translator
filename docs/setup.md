@@ -48,6 +48,27 @@ The free roster rotates. A model that answered yesterday can start returning
 appears in its place. Leave the model unset so opencode's own default is used,
 or pick one in Settings knowing it may need changing.
 
+## What a fresh database already has
+
+Nothing to paste in. On first open it carries:
+
+- **41 trusted sources** — WordPress core and its sub-projects, the large
+  plugins with their readmes, a theme, both mobile apps with release notes, and
+  the meta sites. All under one `wordpress` tag, ranked core first.
+- **The Turkish style guide** — TDK's spelling rules reduced to decisions a
+  translator applies, plus the WordPress title-case rule. Editable in the panel;
+  seeding happens once, so later edits are never overwritten.
+
+The **official WordPress Turkish glossary** is not seeded, because it needs a
+network fetch. Pressing **Güncelle** on the trusted-sources screen downloads it
+along with every source: 41 exports plus 511 terms, about 54 000 glossary
+entries, a little over a minute.
+
+**Splitting the tag is the owner's call.** Everything starts under `wordpress`.
+Giving WooCommerce its own tag is what makes `item` come out as `ürün` there and
+`öge` elsewhere; until that split exists the two senses share a tag and rank
+decides.
+
 ## Running
 
 ```
