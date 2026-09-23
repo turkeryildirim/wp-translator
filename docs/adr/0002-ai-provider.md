@@ -56,3 +56,5 @@ The batch is handed over as a **JSON file** via `--file` rather than inlined in 
 **Verified in Phase 4** against `opencode/mimo-v2.6-flash-free` (OpenCode Zen, free tier): a 20-string batch returned in 14.6 s as a bare JSON array with all 20 ids intact and all quality checks passing, with **no tool calls** — `--file` is treated as content to translate. Injecting a glossary block into the prompt changed all four covered terms to the glossary's wording and left the rest alone (R22, R23).
 
 **`--format json` requires stdin to be closed** or the command hangs indefinitely (R21). This is undocumented.
+
+`opencode mini` is not an alternative: despite the name it is the lightweight **interactive** interface, has no `--format` flag, and exits with *"opencode mini requires a TTY stdout"* when driven from a program. `run` is the only non-interactive entry point.
