@@ -136,6 +136,13 @@ Each says what the screen is, why it is empty, and the one action that fills it:
 
 ## Frontend approach
 
-Follows ADR-0001: TypeScript, running under the same Node process that owns the database.
+**Vue 3 + Vite**, TypeScript, talking to the Node process that owns the database over a JSON API.
 
-**Open:** the rendering approach and framework. The review table is the only genuinely interactive surface, and its requirements are specific: render thousands of rows without stalling (virtualised), keep keyboard focus stable while rows are edited and re-sorted, and update a row in place after an approve without re-fetching the page.
+The review table is the only genuinely interactive surface, and it sets the requirements: render thousands of rows without stalling, which means row virtualisation; keep keyboard focus stable while rows are edited, approved and re-sorted underneath it; and update a row in place after an approve rather than re-fetching.
+
+Every other screen is a form or a list and imposes nothing.
+
+Two things to get right early, because they are awkward to retrofit:
+
+- **Focus and virtualisation interact badly by default.** A virtualised list unmounts rows that scroll out of view, and the focused row is exactly the one that must not be unmounted mid-edit. The edit state belongs to the table, keyed by unit id, not to the row component.
+- **Approving re-sorts.** Under the default sort an approved row leaves its position. The cursor must land on the next *unreviewed* row, not on whatever slid into the old index — otherwise `Enter` held down approves the wrong strings, which is the one mistake that is both easy and expensive.

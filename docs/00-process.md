@@ -32,7 +32,7 @@ Each phase produces one document. **The owner signs it off before the next phase
 | 0 | `docs/` skeleton and baseline | Closed |
 | 1 | `01-business-logic.md` | Closed |
 | 2 | `02-architecture.md`, `adr/0001-tech-stack.md`, `adr/0002-ai-provider.md` | Closed |
-| 3 | `03-web-ui.md` | Open |
+| 3 | `03-web-ui.md` | Awaiting sign-off |
 | 4 | Implementation, in vertical slices | Not started |
 
 ---
@@ -80,6 +80,7 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D39 | Request shape | The batch is a **JSON array attached as a file** (`opencode run --file`), not per-string prompts. The reply's JSON is extracted and parsed, elements matched back by opaque id. |
 | D40 | Cost tracking | **None.** opencode runs on a subscription, so tokens and money are not recorded. Progress is strings completed. |
 | D41 | Terminology in the prompt | Glossary entries whose source appears as a 1–3 word n-gram inside a batch's strings are injected into the request as a terminology block. No new table — short glossary entries *are* the terms. |
+| D42 | Frontend | **Vue 3 + Vite**, TypeScript, JSON API to the Node process. Chosen on the review table's needs: virtualisation, stable keyboard focus, in-place row updates. |
 | D35 | Glossary key | `(source, msgctxt, tag)`. Matching prefers the unit's own `msgctxt` and falls back to the context-less row; a unit without context matches only context-less entries. Resolves R9. |
 | D34 | Style guide form | A large free-text field in the panel, written by the owner, passed to the AI as part of the prompt. No structured rule editor. Per D12 the same form applies per tag. |
 
@@ -210,8 +211,10 @@ So the glossary earns its keep in two different ways: full-string reuse handles 
 
 | Phase | Skills |
 |-------|--------|
+| 0 | `wordpress` |
 | 1 | `product-management:write-spec` |
-| 2 | `engineering:system-design`, `sql-expert`, `engineering:architecture`, `claude-api` *(only if ADR-0002 selects Claude)* |
+| 2 | `engineering:system-design`, `sql-expert` |
 | 3 | `design:ux-copy` |
-| 4 | `design:accessibility-review` once there is a built UI to audit |
-| 4 | `code-standards`, plus the stack's own skill once ADR-0001 closes: `javascript` / `react` / `vuejs`, or `php` / `laravel` / `phpunit`, or `golang`. `wordpress` when plugin/theme specifics come up. `docker` if containerised. |
+| 4 | `code-standards` throughout; `javascript` for the Node side, `vuejs` and `vuejs-tester` for the panel; `wordpress` when plugin/theme specifics come up; `design:accessibility-review` once there is a UI to audit |
+
+Deliberately **not** used: `architecture-advisor` (audits an existing codebase — this one started empty), `design:design-system` (a component system is not what a single-user tool needs), and the Claude Docs connector / `anthropic-skills:docs` (these documents are local files by request).
