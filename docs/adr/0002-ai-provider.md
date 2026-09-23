@@ -40,6 +40,15 @@ The interface stays — it takes a batch of source strings plus the assembled co
 
 - **Setup prerequisite, currently unmet.** As installed, opencode has no authenticated providers and no models — `opencode auth list` reports none and `opencode models` is empty. Nothing can translate until the owner authenticates at least one provider.
 
-## Open
+## How it is driven
 
-Whether to drive opencode over its HTTP API or through `opencode run --format json`. Both work; the trade-off is session reuse and no process-per-batch against a smaller surface to break when opencode changes.
+**`opencode run --format json`**, one invocation per batch, rather than the HTTP API. The CLI surface is far smaller than 113 operations and the flags are more stable than the API shape — the published docs already describe a different API than the installed version exposes.
+
+Measured (R17):
+
+- **Startup costs 0.09–0.13 s** with the background service running, 0.45 s cold. The CLI talks to that same service, so it is not paying for a runtime each time. At roughly 290 batches for WooCommerce this is about 30 seconds in total, against model latency measured in minutes — not a reason to prefer the API.
+- **`--format json` emits newline-delimited streaming events**, not a single JSON document: `{"type":"step_start",…}`, `{"type":"text",…}`, each carrying `sessionID`, `messageID` and a `part`. The implementation reads the stream and assembles the text parts.
+- **With no model configured, `opencode run` hangs** rather than failing. It emits `step_start`, then stalls. This makes the preflight check mandatory rather than merely tidy: before a batch runs, the tool confirms the service is up and `opencode models` is non-empty, and refuses with a clear message otherwise.
+- A fresh session per batch is the default and is what we want — no context bleeding from the previous batch into the next.
+
+**To verify in Phase 4:** whether `cost` and `tokens` appear in the CLI's JSON stream as they do on the HTTP API's assistant messages. If not, cost reporting reads them back with `opencode api session.message.list` for the session the run reports. This needs a configured provider to test.

@@ -299,7 +299,9 @@ Measured against **capped** excerpt sizes (R12), that puts a **50-string batch a
 
 **Cost.** opencode reports `cost` in USD and `tokens` (input, output, reasoning, cache) on every assistant message, so per-batch cost is read back rather than estimated, and aggregates per project.
 
-**Running under opencode.** Translation uses a dedicated opencode agent with tools disabled. An unconstrained agent can attempt a tool call, which raises a permission request that nothing will answer, and the batch hangs. Startup verifies the service is reachable and at least one model is configured before any project can be translated.
+**Running under opencode.** Each batch is one `opencode run --format json --model … --agent …` invocation, whose newline-delimited event stream is read and assembled. Translation uses a dedicated opencode agent with **tools disabled**: an unconstrained agent can attempt a tool call, which raises a permission request that nothing will answer, and the batch hangs.
+
+A **preflight check** runs before any translation: the background service is reachable and `opencode models` is non-empty. This is not defensive tidiness — with no model configured `opencode run` stalls rather than failing, so without the check a project would appear to translate forever (R17).
 
 ---
 
