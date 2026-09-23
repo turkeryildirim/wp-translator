@@ -82,7 +82,7 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D41 | Terminology in the prompt | Glossary entries whose source appears as a 1–3 word n-gram inside a batch's strings are injected into the request as a terminology block. No new table — short glossary entries *are* the terms. |
 | D42 | Frontend | **Vue 3 + Vite**, TypeScript, JSON API to the Node process. Chosen on the review table's needs: virtualisation, stable keyboard focus, in-place row updates. |
 | D35 | Glossary key | `(source, msgctxt, tag)`. Matching prefers the unit's own `msgctxt` and falls back to the context-less row; a unit without context matches only context-less entries. Resolves R9. |
-| D34 | Style guide form | A large free-text field in the panel, written by the owner, passed to the AI as part of the prompt. No structured rule editor. Per D12 the same form applies per tag. |
+| D34 | Style guide form | A large free-text field in the panel, written by the owner, passed to the AI as part of the prompt. No structured rule editor. Per D12 the same form applies per tag. Seed content lives in `style-guide/tr-genel.md`. |
 
 ---
 
@@ -211,11 +211,14 @@ So the glossary earns its keep in two different ways: full-string reuse handles 
 
 **R23 — terminology injection changes the output, verified.** The same batch run twice, once with a four-term glossary block in the prompt. Without it the model produced `Katman konumu`, `Renk formatı`, `Hex rengi`; with it, **all four terms came back exactly as the glossary gave them**, matching the human translations. Strings outside the glossary were unaffected. This is the mechanism R19 argued for, working.
 
+**R21b — placeholders do not take Turkish suffixes in practice.** Across WordPress core, WooCommerce and BuddyPress — about 26 000 translated strings — a placeholder is followed by a space 52 % of the time, by punctuation 32 %, and by the end of the string 14 %. Only **2** strings attach a real Turkish suffix to one, and both are unsound: `%s'ın siteleri` yields `Ayşe'ın` when the value is *Ayşe*, where Turkish requires `Ayşe'nin`. The suffix cannot be chosen because the runtime value's final sound is unknown, so the established practice is to restructure the sentence instead. This is now a rule in the style guide rather than a matter of taste.
+
 ## 6. Open questions
 
 | # | Question | Phase |
 |---|----------|-------|
 | O20 | Interface language: English or Turkish? D14 settled the documentation, not the UI. | 3 |
+| O21 | Per-tag style rules (e-commerce, forms, SEO…) have no content yet; the general guide is seeded, the tag-specific ones are not. | 4 |
 | — | None blocking. Phase 4 prerequisite: the owner authenticates at least one provider in opencode and defines a tool-free translation agent there. |
 
 ---
