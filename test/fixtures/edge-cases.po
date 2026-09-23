@@ -1,0 +1,38 @@
+# Turkish translation, crafted to cover the cases that break naive parsers.
+msgid ""
+msgstr ""
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=n > 1;\n"
+"Language: tr\n"
+"Project-Id-Version: Edge Cases\n"
+
+#. The string "0" is falsy in several languages; parsers drop it.
+#: includes/class-counter.php:12
+msgid "0"
+msgstr "0"
+
+#: includes/class-counter.php:14
+msgctxt "maxlength"
+msgid "0"
+msgstr "0"
+
+#: includes/admin/class-settings.php:88
+msgctxt "Editor Name"
+msgid "Classic editor"
+msgstr "Klasik düzenleyici"
+
+#: templates/cart.php:31
+msgid "%1$s item in %2$s"
+msgid_plural "%1$s items in %2$s"
+msgstr[0] "%2$s içinde %1$s öge"
+msgstr[1] "%2$s içinde %1$s öge"
+
+#: templates/notice.php:7
+msgid "Read the <a href=\"%s\">documentation</a>."
+msgstr "<a href=\"%s\">Belgeleri</a> okuyun."
+
+#: includes/class-label.php:3
+msgid "SKU: "
+msgstr "Stok kodu: "
