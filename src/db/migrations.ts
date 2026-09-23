@@ -54,6 +54,14 @@ export const migrations: readonly Migration[] = [
         ON glossary_entries (tag_id, source_text);
     `,
   },
+  {
+    version: 3,
+    // The export has to carry the catalogue's own headers back out: Plural-Forms
+    // decides how many msgstr slots an entry has (R3), and Language names the
+    // locale. Regenerating them would work for GlotPress, which matches on
+    // entries, but it would quietly discard whatever else the project declared.
+    sql: `ALTER TABLE projects ADD COLUMN po_headers TEXT;`,
+  },
 ];
 
 export const latestVersion = migrations[migrations.length - 1]!.version;

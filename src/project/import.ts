@@ -26,8 +26,10 @@ export interface ProjectInput {
  */
 export function importProject(db: Db, project: ProjectInput, catalogue: Catalogue): number {
   const insertProject = db.prepare(
-    `INSERT INTO projects (family, project_path, sub_project, translate_url, slug, name, version, imported_at)
-     VALUES (@family, @projectPath, @subProject, @translateUrl, @slug, @name, @version, datetime('now'))`,
+    `INSERT INTO projects
+       (family, project_path, sub_project, translate_url, slug, name, version, po_headers, imported_at)
+     VALUES (@family, @projectPath, @subProject, @translateUrl, @slug, @name, @version, @headers,
+             datetime('now'))`,
   );
   const insertUnit = db.prepare(
     `INSERT INTO translation_units
@@ -45,6 +47,7 @@ export function importProject(db: Db, project: ProjectInput, catalogue: Catalogu
         slug: project.slug ?? null,
         name: project.name ?? null,
         version: project.version ?? null,
+        headers: JSON.stringify(catalogue.headers),
       }).lastInsertRowid,
     );
 

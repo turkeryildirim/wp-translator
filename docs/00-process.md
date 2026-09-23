@@ -230,6 +230,16 @@ Coverage against projects deliberately left out of the list:
 
 The shape R19 predicted holds: exact matching settles roughly a tenth, and terminology covers the rest. Classic Editor rises from 34 % to 58.5 % because Gutenberg is now a source and shares its vocabulary.
 
+**R26 — the round trip holds through the database, measured.** Real catalogues imported, every translated unit settled with its own translation, then exported and re-parsed:
+
+| Catalogue | translated | exported | lost | altered | `msgctxt` | plurals |
+|---|---:|---:|---:|---:|---|---|
+| WooCommerce | 14 372 | 14 372 | 0 | 0 | 706 → 706 | 223 → 223 |
+| WordPress core | 8 142 | 8 142 | 0 | 0 | 1 182 → 1 182 | 119 → 119 |
+| iOS app | 4 342 | 4 342 | 0 | 0 | 4 342 → 4 342 | — |
+
+Export takes 534 ms for WooCommerce. The iOS row is the sharpest check on D24: every one of its strings carries `msgctxt`, and every one survives storage even though nothing in the system ever reads it.
+
 ## 6. Open questions
 
 | # | Question | Phase |
