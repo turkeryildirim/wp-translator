@@ -56,7 +56,7 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D13 | Users / auth | None. Single user, local. |
 | D14 | Docs language | English. |
 | D15 | Stack | **Node + TypeScript + SQLite** — `adr/0001-tech-stack.md`. Only stack measured to round-trip a real export without loss, and the owner's preference. |
-| D16 | AI provider | **A pluggable `TranslationProvider` interface** — `adr/0002-ai-provider.md`. The concrete provider roster is supplied by the owner later; nothing else waits on it. |
+| D16 | AI provider | **A `TranslationProvider` interface with one implementation: opencode** — `adr/0002-ai-provider.md`. Model and provider choice moves into opencode's own configuration. |
 | D17 | Sync autonomy | The trusted-source cycle runs unattended: existing entries updated, new added, entries removed upstream deleted. The owner supplies the list and presses the button; nothing else is confirmed. A sync removes that source's **link** to an entry; the entry goes only when no source still vouches for it (R14). |
 | D18 | Tag cardinality | A project carries **several** tags. |
 | D19 | Tag vocabulary | **Open and owner-controlled.** AI proposes; the owner may correct or add tags. |
@@ -173,11 +173,13 @@ Real cases: `May` → `May` (abbreviation) against `Mayıs` (full month); `F j, 
 
 **R15 — majority voting rarely decides; the ranking does.** Five trusted sources (WP core, WooCommerce, Yoast, Astra, Contact Form 7) loaded under one tag give 25 318 entries over 26 407 links. 877 entries are vouched for by more than one source, and **402 of those disagree** — `Uncategorized` is `Genel` in core but `Kategorilendirilmemiş` in Yoast; `Add New` is `Yeni Ekle` against `Yeni ekle`. Of the disagreements, majority resolves **49 (12 %)**; the remaining **88 % are two-way ties** that fall to `rank`. Overlap is mostly pairwise, so the order of the trusted-source list is what actually decides, and it deserves to be set deliberately.
 
+**R16 — opencode as the AI gateway, verified against v2.0.11.** Background HTTP server (`opencode service start`), random port reported by `opencode service status`, basic auth with the password in `~/.config/opencode/service.json`. OpenAPI 3.1 at `/openapi.json`, 113 operations; `/doc` serves the web UI, not the spec. Sequence: `session.create` → `session.switchModel` → `session.switchAgent` → `session.prompt` → `session.message.list`. `session.prompt` takes `{id, text, files, agents, skills, metadata, delivery, resume}` — **no per-request `model` or `tools`**; model is a session call and tool restriction lives in opencode's own agent config, read-only over HTTP. Assistant messages carry `cost` in USD and `tokens` split into input, output, reasoning and cache. **As installed it is unconfigured**: no authenticated providers, no models.
+
 ## 6. Open questions
 
 | # | Question | Phase |
 |---|----------|-------|
-| — | None open. The provider roster for ADR-0002 is pending from the owner, needed for Phase 4. |
+| — | None blocking. Phase 4 prerequisite: the owner authenticates at least one provider in opencode and defines a tool-free translation agent there. |
 
 ---
 

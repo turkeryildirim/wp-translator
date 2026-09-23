@@ -12,7 +12,7 @@ How the system described in [`01-business-logic.md`](01-business-logic.md) is bu
 
 ## AI provider
 
-A pluggable **`TranslationProvider`** interface — [`adr/0002-ai-provider.md`](adr/0002-ai-provider.md). It takes a batch of source strings plus the assembled context bundle and returns translations keyed back to their units. The concrete roster is supplied by the owner; nothing else in the design waits on it.
+A **`TranslationProvider`** interface with one implementation: **opencode** — [`adr/0002-ai-provider.md`](adr/0002-ai-provider.md). It takes a batch of source strings plus the assembled context bundle and returns translations keyed back to their units. Which model answers is opencode's configuration, not this codebase's.
 
 ---
 
@@ -297,9 +297,9 @@ Measured against **capped** excerpt sizes (R12), that puts a **50-string batch a
 
 **Failure handling.** A batch is the retry unit. Partial results from a failed batch are discarded rather than half-stored, so a re-run is idempotent. Translation is resumable: the job records which units it has covered, and re-running picks up the untranslated remainder — necessary because WooCommerce at 50 strings per batch is roughly 290 requests.
 
-**Cost.** The provider records tokens in and out per batch, aggregated per project, so cost is observed rather than estimated.
+**Cost.** opencode reports `cost` in USD and `tokens` (input, output, reasoning, cache) on every assistant message, so per-batch cost is read back rather than estimated, and aggregates per project.
 
-**Open:** whether the fixed portion is worth caching at the provider level, which depends on the roster ADR-0002 leaves open.
+**Running under opencode.** Translation uses a dedicated opencode agent with tools disabled. An unconstrained agent can attempt a tool call, which raises a permission request that nothing will answer, and the batch hangs. Startup verifies the service is reachable and at least one model is configured before any project can be translated.
 
 ---
 
