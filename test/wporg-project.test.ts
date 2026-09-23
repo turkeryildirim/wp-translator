@@ -58,6 +58,14 @@ describe('export URL', () => {
     );
   });
 
+  it('omits the filter for a whole catalogue', () => {
+    // A project being translated needs every string, not the subset in one state.
+    const url = exportUrl('wp-plugins/classic-editor/dev', { status: 'all' });
+
+    expect(url).not.toContain('filters');
+    expect(url).toContain('?format=po');
+  });
+
   it('round-trips a parsed URL', () => {
     const ref = parseProjectUrl(`${P}/apps/ios/dev/tr/default/`);
     expect(exportUrl(ref.projectPath)).toContain('/projects/apps/ios/dev/tr/default/');

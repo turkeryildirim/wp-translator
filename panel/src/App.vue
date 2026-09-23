@@ -4,8 +4,10 @@ import { listProjects, listUnits, type Project, type Unit } from './api.ts';
 import ReviewTable from './ReviewTable.vue';
 import TrustedSources from './TrustedSources.vue';
 import GlossaryBrowser from './GlossaryBrowser.vue';
+import TagsAndStyle from './TagsAndStyle.vue';
+import AddProject from './AddProject.vue';
 
-type Screen = 'review' | 'sources' | 'glossary';
+type Screen = 'review' | 'add' | 'sources' | 'glossary' | 'tags';
 const screen = ref<Screen>('review');
 
 const projects = ref<Project[]>([]);
@@ -43,6 +45,12 @@ function onChanged(saved: Unit): void {
   }
 }
 
+async function onProjectAdded(id: number): Promise<void> {
+  projects.value = await listProjects();
+  selected.value = id;
+  screen.value = 'review';
+}
+
 onMounted(async () => {
   projects.value = await listProjects();
   selected.value = projects.value[0]?.id ?? null;
@@ -55,17 +63,27 @@ watch([selected, filter], load);
   <div class="app">
     <nav class="screens">
       <button
-        v-for="option in (['review', 'sources', 'glossary'] as const)"
+        v-for="option in (['review', 'add', 'sources', 'glossary', 'tags'] as const)"
         :key="option"
         :class="{ on: screen === option }"
         @click="screen = option"
       >
-        {{ { review: 'İnceleme', sources: 'Güvenilir kaynaklar', glossary: 'Sözlük' }[option] }}
+        {{
+          {
+            review: 'İnceleme',
+            add: 'Proje ekle',
+            sources: 'Güvenilir kaynaklar',
+            glossary: 'Sözlük',
+            tags: 'Etiket ve üslup',
+          }[option]
+        }}
       </button>
     </nav>
 
     <TrustedSources v-if="screen === 'sources'" />
     <GlossaryBrowser v-else-if="screen === 'glossary'" />
+    <TagsAndStyle v-else-if="screen === 'tags'" />
+    <AddProject v-else-if="screen === 'add'" @added="onProjectAdded" />
 
     <template v-else>
     <header>
@@ -101,13 +119,13 @@ watch([selected, filter], load);
     <p v-else-if="!units.length" class="status">
       Bu filtrede bir şey yok. Dışa aktarmaya hazır olabilirsiniz.
     </p>
-    <ReviewTable v-else :units="units" @changed="onChanged" />
+    <ReviewTable v-else :units="units" @changed="onChanged" @bulk="load" />
     </template>
 
     <footer v-if="screen === 'review'">
       <kbd>j</kbd>/<kbd>k</kbd> gez · <kbd>Enter</kbd> onayla · <kbd>e</kbd> düzenle ·
       <kbd>Ctrl+Enter</kbd> kaydet ve onayla · <kbd>boşluk</kbd> ayrıntı ·
-      <kbd>1</kbd>–<kbd>9</kbd> aday seç
+      <kbd>1</kbd>–<kbd>9</kbd> aday seç · <kbd>x</kbd> toplu seçim
     </footer>
   </div>
 </template>

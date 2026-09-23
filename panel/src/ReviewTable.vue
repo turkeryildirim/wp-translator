@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { saveUnit, type Unit } from './api.ts';
+import { bulkApprove, saveUnit, type Unit } from './api.ts';
 import UnitDetailPanel from './UnitDetailPanel.vue';
 
 const props = defineProps<{ units: Unit[] }>();
-const emit = defineEmits<{ changed: [Unit] }>();
+const emit = defineEmits<{ changed: [Unit]; bulk: [] }>();
 
 const ROW_HEIGHT = 34;
 const OVERSCAN = 8;
@@ -16,6 +16,15 @@ const editing = ref(false);
 // not lose its state.
 const drafts = ref(new Map<number, string>());
 const expanded = ref(new Set<number>());
+const picked = ref(new Set<number>());
+const bulkNotice = ref('');
+
+// Only units the quality checks pass can be approved in bulk. Bulk approval is
+// the only way 3 818 strings are survivable, and also how one mistake becomes
+// three thousand.
+const approvable = computed(() =>
+  props.units.filter((unit) => picked.value.has(unit.id) && unit.failures.length === 0),
+);
 const viewport = ref<HTMLElement | null>(null);
 const scrollTop = ref(0);
 const viewportHeight = ref(600);
@@ -104,6 +113,29 @@ function chooseCandidate(position: number): void {
   if (unit && candidate) setDraft(unit, candidate.translation);
 }
 
+function togglePick(): void {
+  const unit = current.value;
+  if (!unit) return;
+  const next = new Set(picked.value);
+  if (next.has(unit.id)) next.delete(unit.id);
+  else next.add(unit.id);
+  picked.value = next;
+}
+
+async function approvePicked(): Promise<void> {
+  const ids = approvable.value.map((unit) => unit.id);
+  if (ids.length === 0) return;
+
+  const result = await bulkApprove(ids);
+  const refusedHere = picked.value.size - ids.length;
+  bulkNotice.value =
+    `${result.approved} string onaylandı.` +
+    (refusedHere > 0 ? ` ${refusedHere} tanesi kalite kontrolünden kaldığı için atlandı.` : '');
+
+  picked.value = new Set();
+  emit('bulk');
+}
+
 function toggleDetail(): void {
   const unit = current.value;
   if (!unit) return;
@@ -146,6 +178,10 @@ function onKey(event: KeyboardEvent): void {
       event.preventDefault();
       void startEdit();
       break;
+    case 'x':
+      event.preventDefault();
+      togglePick();
+      break;
     case ' ':
       event.preventDefault();
       toggleDetail();
@@ -183,6 +219,18 @@ watch(
 
 <template>
   <div class="review">
+    <div v-if="picked.size || bulkNotice" class="bulkbar">
+      <template v-if="picked.size">
+        <button class="primary" :disabled="!approvable.length" @click="approvePicked">
+          {{ approvable.length }} string onayla
+        </button>
+        <span v-if="picked.size > approvable.length" class="failure-inline">
+          {{ picked.size - approvable.length }} tanesi bloklandığı için hariç
+        </span>
+        <button @click="picked = new Set()">Seçimi temizle</button>
+      </template>
+      <span v-if="bulkNotice" class="notice">{{ bulkNotice }}</span>
+    </div>
     <div
       ref="viewport"
       class="viewport"
@@ -198,10 +246,12 @@ watch(
             blocked: row.unit.failures.length > 0,
             ambiguous: row.unit.candidates.length > 0,
             settled: row.unit.state === 'ok',
+            picked: picked.has(row.unit.id),
           }"
           :style="{ top: row.index * 34 + 'px' }"
           @click="cursor = row.index"
         >
+          <span class="pick">{{ picked.has(row.unit.id) ? '☑' : '' }}</span>
           <span class="state">{{
             row.unit.state === 'ok' ? '✓' : row.unit.failures.length ? '!' : '·'
           }}</span>

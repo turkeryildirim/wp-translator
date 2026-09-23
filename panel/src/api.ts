@@ -138,3 +138,43 @@ export const updateEntry = (id: number, translation: string) =>
   post<{ entry: GlossaryEntry; overwrittenOnNextSync: boolean }>(`/api/glossary/${id}`, {
     translation,
   });
+
+export interface StyleRule {
+  tagId: number | null;
+  tagName: string | null;
+  body: string;
+  updatedAt: string | null;
+}
+
+export interface MergePreview {
+  moving: number;
+  colliding: number;
+  projects: number;
+  sources: number;
+}
+
+export interface AddProjectResult {
+  projectId: number;
+  strings: number;
+  match: { filled: number; ambiguous: number; unmatched: number };
+  suggestedTags: string[];
+}
+
+export const createTag = (name: string) => post<{ id: number }>('/api/tags', { name });
+export const renameTag = (id: number, name: string) => post<{ ok: true }>(`/api/tags/${id}`, { name });
+export const previewMerge = (from: number, to: number) =>
+  post<MergePreview>('/api/tags/merge', { from, to, preview: true });
+export const mergeTags = (from: number, to: number, policy: 'keep-target' | 'take-source') =>
+  post<MergePreview & { policy: string }>('/api/tags/merge', { from, to, policy });
+
+export const listStyleRules = () => json<StyleRule[]>('/api/style-rules');
+export const saveStyleRule = (tagId: number | null, body: string) =>
+  post<{ ok: true }>('/api/style-rules', { tagId, body });
+
+export const addProject = (url: string, tagIds: number[]) =>
+  post<AddProjectResult>('/api/projects', { url, tagIds });
+export const removeProject = (id: number) =>
+  json<{ ok: true }>(`/api/projects/${id}`, { method: 'DELETE' });
+
+export const bulkApprove = (ids: number[]) =>
+  post<{ approved: number; refused: number }>('/api/units/bulk-approve', { ids });

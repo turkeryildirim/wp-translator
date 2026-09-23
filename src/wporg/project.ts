@@ -71,15 +71,20 @@ function stripLocale(segments: string[]): string[] {
 
 export interface ExportOptions {
   locale?: string;
-  /** `current` only, by default: `waiting` is unreviewed and would dilute the glossary (D26). */
-  status?: 'current' | 'waiting' | 'untranslated';
+  /**
+   * `current` by default, which is what a trusted source wants: `waiting` is
+   * unreviewed and would dilute the glossary (D26).
+   *
+   * `all` omits the filter and returns the whole catalogue, which is what a
+   * project being translated wants — it needs every string, not the subset that
+   * happens to be in one state today.
+   */
+  status?: 'current' | 'waiting' | 'untranslated' | 'all';
 }
 
 export function exportUrl(projectPath: string, options: ExportOptions = {}): string {
   const locale = options.locale ?? 'tr';
   const status = options.status ?? 'current';
-  return (
-    `https://translate.wordpress.org/projects/${projectPath}/${locale}/default/export-translations/` +
-    `?format=po&filters%5Bstatus%5D=${status}`
-  );
+  const base = `https://translate.wordpress.org/projects/${projectPath}/${locale}/default/export-translations/?format=po`;
+  return status === 'all' ? base : `${base}&filters%5Bstatus%5D=${status}`;
 }

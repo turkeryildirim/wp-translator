@@ -12,6 +12,16 @@ import {
   unitDetail,
   type UnitFilter,
 } from './review.ts';
+import { addProject, bulkApprove, removeProject } from './projects.ts';
+import {
+  createTag,
+  listStyleRules,
+  mergeTags,
+  previewMerge,
+  renameTag,
+  saveStyleRule,
+  type MergePolicy,
+} from './tags.ts';
 import {
   addSource,
   listSources,
@@ -156,6 +166,59 @@ async function api(
       const body = (await readJson(request)) as { translation: string };
       return send(response, 200, updateEntry(db, Number(entry[1]), body.translation));
     }
+  }
+
+  if (method === 'POST' && route === '/api/tags') {
+    const body = (await readJson(request)) as { name: string };
+    return send(response, 200, { id: createTag(db, body.name) });
+  }
+
+  const tag = /^\/api\/tags\/(\d+)$/.exec(route);
+  if (method === 'POST' && tag) {
+    const body = (await readJson(request)) as { name: string };
+    renameTag(db, Number(tag[1]), body.name);
+    return send(response, 200, { ok: true });
+  }
+
+  if (method === 'POST' && route === '/api/tags/merge') {
+    const body = (await readJson(request)) as {
+      from: number;
+      to: number;
+      policy?: MergePolicy;
+      preview?: boolean;
+    };
+    return send(
+      response,
+      200,
+      body.preview
+        ? previewMerge(db, body.from, body.to)
+        : mergeTags(db, body.from, body.to, body.policy),
+    );
+  }
+
+  if (route === '/api/style-rules') {
+    if (method === 'GET') return send(response, 200, listStyleRules(db));
+    if (method === 'POST') {
+      const body = (await readJson(request)) as { tagId: number | null; body: string };
+      saveStyleRule(db, body.tagId, body.body);
+      return send(response, 200, { ok: true });
+    }
+  }
+
+  if (method === 'POST' && route === '/api/projects') {
+    const body = (await readJson(request)) as { url: string; tagIds?: number[] };
+    return send(response, 200, await addProject(db, body.url, body.tagIds ?? []));
+  }
+
+  const project = /^\/api\/projects\/(\d+)$/.exec(route);
+  if (method === 'DELETE' && project) {
+    removeProject(db, Number(project[1]));
+    return send(response, 200, { ok: true });
+  }
+
+  if (method === 'POST' && route === '/api/units/bulk-approve') {
+    const body = (await readJson(request)) as { ids: number[] };
+    return send(response, 200, bulkApprove(db, body.ids));
   }
 
   send(response, 404, { error: `No route for ${method} ${route}` });
