@@ -283,25 +283,39 @@ Capping each line at 300 characters and the whole excerpt at 2 000 brings this t
 
 ## AI pipeline
 
-**Context bundle**, assembled per batch:
+**The request is a JSON document, attached as a file.** Rather than describing strings one at a time, the tool writes a JSON array of the units needing translation and attaches it with `opencode run --file`, under a prompt that says to translate the source values into Turkish and return the same structure. The response carries JSON, which is extracted and parsed.
 
-- fixed: the general style guide, plus per-tag rules for the project's tags, plus project metadata and readme (≈1 400 tokens)
-- per string: source text, `msgctxt`, `#.` comment, derived surface or a capped source excerpt (≈250 tokens median)
-- glossary terms relevant to the batch
+Each element is `{i, s, c?, u?, x?}` — an opaque id, the source string, `msgctxt` where present, the derived usage surface, and a capped source excerpt. The reply is `{i, t}` per element, plus plural forms where the source has them.
 
-Measured against **capped** excerpt sizes (R12), that puts a **50-string batch at roughly 17 600 input tokens** and a 100-string batch at 34 000. Batch size is a setting; 50 is the starting point, small enough that a failure re-runs cheaply and large enough that the fixed portion is amortised.
+Alongside it go the fixed parts of the context (D8): the general style guide, per-tag rules for the project's tags, project metadata and readme, and the glossary terms relevant to the batch.
 
-**Identity across the round trip.** Strings are sent with opaque ids and matched back by id, never by position or by the source text — a provider that reorders, merges or subtly rewrites a source string must not be able to silently misalign translations. Any id in the response that was not sent, or any sent id missing from the response, fails the batch rather than being guessed at.
+**Chunk by projected output, not by preference.** Measured on WooCommerce:
 
-**Validation before storage.** Every returned translation runs the D9 quality checks before it is written. Output lands in `review` regardless of provider (D22).
+| Strings | Request JSON | Response JSON |
+|---:|---:|---:|
+| 100 | ~4 200 tok | ~3 400 tok |
+| 500 | ~15 100 tok | ~12 500 tok |
+| 1 000 | ~26 400 tok | ~24 400 tok |
+| 2 000 | ~49 500 tok | ~48 600 tok |
+| **14 530 (whole project)** | ~288 000 tok | **~292 000 tok** |
 
-**Failure handling.** A batch is the retry unit. Partial results from a failed batch are discarded rather than half-stored, so a re-run is idempotent. Translation is resumable: the job records which units it has covered, and re-running picks up the untranslated remainder — necessary because WooCommerce at 50 strings per batch is roughly 290 requests.
+The **response** is the binding constraint. A whole-project request for WooCommerce would need roughly 292 000 output tokens in one turn, far past any model's per-response cap, and a truncated reply is worse than a refused one because it looks like a result.
 
-**Cost.** opencode reports `cost` in USD and `tokens` (input, output, reasoning, cache) on every assistant message, so per-batch cost is read back rather than estimated, and aggregates per project.
+So: one request for the whole project when the projected output fits the model's output limit, and chunks otherwise. Most plugins genuinely fit — WooCommerce is the extreme, and only the strings the glossary did not already fill are ever sent.
 
-**Running under opencode.** Each batch is one `opencode run --format json --model … --agent …` invocation, whose newline-delimited event stream is read and assembled. Translation uses a dedicated opencode agent with **tools disabled**: an unconstrained agent can attempt a tool call, which raises a permission request that nothing will answer, and the batch hangs.
+**Excerpts are included selectively.** A capped excerpt costs roughly 134 tokens at the median (R12), which at a thousand strings would dominate the request. Excerpts go only to strings whose usage surface came back `unknown`; the rest carry the surface label alone.
+
+**Identity across the round trip.** Elements are matched back by `i`, never by position and never by re-matching the source text. Any id in the response that was not sent, or any sent id missing from the response, fails the chunk rather than being guessed at — which is also how a truncated reply is caught.
+
+**Validation before storage.** Every returned translation runs the D9 quality checks before it is written. Output lands in `review` regardless (D22).
+
+**Failure handling.** A chunk is the retry unit. Partial results from a failed chunk are discarded rather than half-stored, so a re-run is idempotent, and translation resumes over whatever is still untranslated.
+
+**Running under opencode.** Each chunk is one `opencode run --format json --file <payload> --model … --agent …` invocation, whose newline-delimited event stream is read and assembled before the JSON is extracted. Translation uses a dedicated opencode agent with **tools disabled**: an unconstrained agent can attempt a tool call, which raises a permission request that nothing will answer, and the run hangs.
 
 A **preflight check** runs before any translation: the background service is reachable and `opencode models` is non-empty. This is not defensive tidiness — with no model configured `opencode run` stalls rather than failing, so without the check a project would appear to translate forever (R17).
+
+**No cost accounting.** opencode runs on a subscription, so tokens and money are not tracked. Progress is reported as strings completed. Subscription plans do carry rate limits, so a chunk that fails for throttling is retried rather than treated as a translation failure.
 
 ---
 

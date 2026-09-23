@@ -24,7 +24,7 @@ The interface stays — it takes a batch of source strings plus the assembled co
 - OpenAPI 3.1 at `/openapi.json`, 113 operations. (`/doc` serves the web UI, not the spec.)
 - The call sequence is `session.create` → `session.switchModel` → `session.switchAgent` → `session.prompt` → `session.message.list`.
 - `GET /api/provider` and `GET /api/model` enumerate what is configured.
-- **Assistant messages carry `cost` in USD and `tokens` broken into input, output, reasoning and cache.** The cost reporting the pipeline needs comes for free, per model, rather than being reimplemented per provider.
+- Assistant messages carry `cost` in USD and `tokens` broken into input, output, reasoning and cache. Not used here — opencode runs on a subscription, so the tool tracks progress in strings, not money (D40).
 
 ## Consequences
 
@@ -51,4 +51,6 @@ Measured (R17):
 - **With no model configured, `opencode run` hangs** rather than failing. It emits `step_start`, then stalls. This makes the preflight check mandatory rather than merely tidy: before a batch runs, the tool confirms the service is up and `opencode models` is non-empty, and refuses with a clear message otherwise.
 - A fresh session per batch is the default and is what we want — no context bleeding from the previous batch into the next.
 
-**To verify in Phase 4:** whether `cost` and `tokens` appear in the CLI's JSON stream as they do on the HTTP API's assistant messages. If not, cost reporting reads them back with `opencode api session.message.list` for the session the run reports. This needs a configured provider to test.
+The batch is handed over as a **JSON file** via `--file` rather than inlined in the prompt (D39), and the reply's JSON is extracted from the assembled text.
+
+**To verify in Phase 4:** how reliably the model returns parseable JSON at chunk size, and whether a `--file` attachment is treated as content to translate rather than as a file to read with a tool. Both need a configured provider to test.

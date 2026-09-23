@@ -77,6 +77,8 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D36 | Source precedence | When trusted sources disagree, the translation **most sources agree on** wins; ties fall to `trusted_sources.rank`, which the owner orders. Deterministic regardless of sync order. |
 | D37 | Tag conflict | When a project's tags yield **different** translations for one string, it is **not** auto-filled. The unit goes to `review` with the candidates shown, and the owner picks. |
 | D38 | opencode integration | Driven through **`opencode run --format json`**, one invocation per batch, not the HTTP API. Smaller and more stable surface; startup overhead is ~0.1 s. |
+| D39 | Request shape | The batch is a **JSON array attached as a file** (`opencode run --file`), not per-string prompts. The reply's JSON is extracted and parsed, elements matched back by opaque id. |
+| D40 | Cost tracking | **None.** opencode runs on a subscription, so tokens and money are not recorded. Progress is strings completed. |
 | D35 | Glossary key | `(source, msgctxt, tag)`. Matching prefers the unit's own `msgctxt` and falls back to the context-less row; a unit without context matches only context-less entries. Resolves R9. |
 | D34 | Style guide form | A large free-text field in the panel, written by the owner, passed to the AI as part of the prompt. No structured rule editor. Per D12 the same form applies per tag. |
 
@@ -177,6 +179,8 @@ Real cases: `May` → `May` (abbreviation) against `Mayıs` (full month); `F j, 
 **R16 — opencode as the AI gateway, verified against v2.0.11.** Background HTTP server (`opencode service start`), random port reported by `opencode service status`, basic auth with the password in `~/.config/opencode/service.json`. OpenAPI 3.1 at `/openapi.json`, 113 operations; `/doc` serves the web UI, not the spec. Sequence: `session.create` → `session.switchModel` → `session.switchAgent` → `session.prompt` → `session.message.list`. `session.prompt` takes `{id, text, files, agents, skills, metadata, delivery, resume}` — **no per-request `model` or `tools`**; model is a session call and tool restriction lives in opencode's own agent config, read-only over HTTP. Assistant messages carry `cost` in USD and `tokens` split into input, output, reasoning and cache. **As installed it is unconfigured**: no authenticated providers, no models.
 
 **R17 — `opencode run` behaviour, measured.** Startup is 0.09–0.13 s with the background service running and 0.45 s cold, because the CLI talks to that service rather than starting a runtime; ~290 batches for WooCommerce cost about 30 s in total. `--format json` emits **newline-delimited streaming events** (`step_start`, `text`, …) each carrying `sessionID`, `messageID` and a `part`, not one JSON document. **With no model configured the command hangs** rather than erroring — it emits `step_start` and stalls — so a preflight check on service reachability and a non-empty `opencode models` is mandatory, not optional.
+
+**R18 — the response, not the request, bounds the chunk.** Building the JSON payload from WooCommerce's 14 530 strings: request ≈288 000 tokens, **response ≈292 000 tokens**. No model emits that in one turn, and a truncated reply is worse than a refusal because it reads as a result. Measured chunk sizes: 500 strings ≈12 500 output tokens, 1 000 ≈24 400, 2 000 ≈48 600. Most plugins fit in a single request; WooCommerce is the extreme, and only strings the glossary did not fill are sent at all.
 
 ## 6. Open questions
 
