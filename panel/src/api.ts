@@ -178,3 +178,20 @@ export const removeProject = (id: number) =>
 
 export const bulkApprove = (ids: number[]) =>
   post<{ approved: number; refused: number }>('/api/units/bulk-approve', { ids });
+
+export interface TranslateProgress {
+  running: boolean;
+  projectId: number | null;
+  done: number;
+  total: number;
+  translated: number;
+  flagged: number;
+  errors: { chunk: number; message: string }[];
+  finishedAt: string | null;
+}
+
+export const startTranslation = (projectId: number, options: { agent?: string; model?: string } = {}) =>
+  post<TranslateProgress>(`/api/projects/${projectId}/translate`, options);
+
+export const translateProgress = (projectId: number) =>
+  json<TranslateProgress>(`/api/projects/${projectId}/translate`);

@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { listProjects, listUnits, type Project, type Unit } from './api.ts';
+import {
+  listProjects,
+  listUnits,
+  startTranslation,
+  translateProgress,
+  type Project,
+  type TranslateProgress,
+  type Unit,
+} from './api.ts';
 import ReviewTable from './ReviewTable.vue';
 import TrustedSources from './TrustedSources.vue';
 import GlossaryBrowser from './GlossaryBrowser.vue';
@@ -16,6 +24,28 @@ const units = ref<Unit[]>([]);
 const filter = ref<'review' | 'blocked' | 'ambiguous' | 'all'>('review');
 const search = ref('');
 const loading = ref(false);
+const translating = ref<TranslateProgress | null>(null);
+let translatePoll: ReturnType<typeof setInterval> | null = null;
+
+// Everything the glossary could not fill. The button says the number so the
+// owner knows what they are starting before they start it.
+const pending = computed(() => project.value?.untranslated ?? 0);
+
+async function translate(): Promise<void> {
+  if (selected.value === null) return;
+  translating.value = await startTranslation(selected.value, { agent: 'wp-translator' });
+
+  translatePoll ??= setInterval(async () => {
+    if (selected.value === null) return;
+    translating.value = await translateProgress(selected.value);
+    if (!translating.value.running) {
+      clearInterval(translatePoll!);
+      translatePoll = null;
+      projects.value = await listProjects();
+      await load();
+    }
+  }, 1500);
+}
 
 const project = computed(() => projects.value.find((p) => p.id === selected.value));
 
@@ -110,11 +140,34 @@ watch([selected, filter], load);
 
       <input v-model="search" placeholder="Ara…" @keyup.enter="load" />
 
+      <button
+        v-if="pending > 0"
+        class="translate"
+        :disabled="translating?.running"
+        @click="translate"
+      >
+        {{
+          translating?.running
+            ? `Çevriliyor — ${translating.done} / ${translating.total}`
+            : `${pending.toLocaleString('tr')} string'i AI ile çevir`
+        }}
+      </button>
+
       <span v-if="project" class="progress">
         {{ project.ok }} / {{ project.total }} tamam · {{ project.review }} incelenecek
       </span>
     </header>
 
+    <p v-if="translating && !translating.running && translating.finishedAt" class="status">
+      Çeviri bitti: {{ translating.translated }} string incelemeye hazır<span
+        v-if="translating.flagged"
+        >, {{ translating.flagged }} tanesi kalite kontrolünden kaldı</span
+      >.
+      <span v-if="translating.errors.length" class="failure-inline">
+        {{ translating.errors.length }} parça başarısız — yeniden çalıştırmak kaldığı yerden devam
+        eder.
+      </span>
+    </p>
     <p v-if="loading" class="status">Yükleniyor…</p>
     <p v-else-if="!units.length" class="status">
       Bu filtrede bir şey yok. Dışa aktarmaya hazır olabilirsiniz.

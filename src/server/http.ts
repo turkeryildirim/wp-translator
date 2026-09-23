@@ -13,6 +13,7 @@ import {
   type UnitFilter,
 } from './review.ts';
 import { addProject, bulkApprove, removeProject } from './projects.ts';
+import { startTranslation, translateProgress } from './translate.ts';
 import {
   createTag,
   listStyleRules,
@@ -214,6 +215,19 @@ async function api(
   if (method === 'DELETE' && project) {
     removeProject(db, Number(project[1]));
     return send(response, 200, { ok: true });
+  }
+
+  const translate = /^\/api\/projects\/(\d+)\/translate$/.exec(route);
+  if (translate) {
+    if (method === 'POST') {
+      const body = (await readJson(request)) as {
+        chunkSize?: number;
+        model?: string;
+        agent?: string;
+      };
+      return send(response, 200, startTranslation(db, Number(translate[1]), body));
+    }
+    if (method === 'GET') return send(response, 200, translateProgress());
   }
 
   if (method === 'POST' && route === '/api/units/bulk-approve') {
