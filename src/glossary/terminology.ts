@@ -2,8 +2,16 @@ import type { Db } from '../db/open.ts';
 
 export interface Term {
   source: string;
-  /** Every translation the glossary holds for this term, across the project's tags. */
-  translations: string[];
+  /** Every reading the glossary holds for this term, across the project's tags. */
+  readings: TermReading[];
+}
+
+export interface TermReading {
+  translation: string;
+  /** noun, verb, … from the official glossary. `archive` is arşiv or arşivle by this. */
+  pos?: string;
+  /** The official glossary's own note, where it has one. */
+  note?: string;
 }
 
 /** Terms are short by definition; anything longer is a sentence, not a term. */
@@ -34,23 +42,29 @@ export function collectTerms(db: Db, projectId: number, sources: readonly string
 
   const rows = db
     .prepare(
-      `SELECT g.source_text AS source, g.translation
+      `SELECT g.source_text AS source, g.translation, g.pos, g.note
          FROM glossary_entries g
         WHERE g.tag_id IN (SELECT tag_id FROM project_tags WHERE project_id = ?)
-          AND length(g.source_text) <= ${MAX_LENGTH}`,
+          AND length(g.source_text) <= ${MAX_LENGTH}
+        ORDER BY g.source_text, g.pos, g.translation`,
     )
-    .all(projectId) as { source: string; translation: string }[];
+    .all(projectId) as { source: string; translation: string; pos: string | null; note: string | null }[];
 
-  const found = new Map<string, Set<string>>();
+  const found = new Map<string, Map<string, TermReading>>();
   for (const row of rows) {
     if (!candidates.has(row.source.toLowerCase())) continue;
-    (found.get(row.source) ?? found.set(row.source, new Set()).get(row.source)!).add(
-      row.translation,
-    );
+    const readings = found.get(row.source) ?? found.set(row.source, new Map()).get(row.source)!;
+    const key = `${row.pos ?? ''}\u0000${row.translation}`;
+    if (readings.has(key)) continue;
+
+    const reading: TermReading = { translation: row.translation };
+    if (row.pos) reading.pos = row.pos;
+    if (row.note) reading.note = row.note;
+    readings.set(key, reading);
   }
 
   return [...found]
-    .map(([source, translations]) => ({ source, translations: [...translations].sort() }))
+    .map(([source, readings]) => ({ source, readings: [...readings.values()] }))
     .sort((a, b) => a.source.localeCompare(b.source));
 }
 

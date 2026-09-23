@@ -94,14 +94,15 @@ function prepare(db: Db) {
          (source_hash, source_text, source_plural, msgctxt, tag_id,
           translation, translation_plural, origin)
        VALUES (@hash, @text, @plural, @msgctxt, @tagId, @translation, @translationPlural, 'trusted')
-       ON CONFLICT (source_hash, ifnull(msgctxt, ''), tag_id) DO NOTHING`,
+       ON CONFLICT (source_hash, ifnull(msgctxt, ''), tag_id) WHERE pos IS NULL DO NOTHING`,
     ),
 
     linkSource: db.prepare(
       `INSERT INTO glossary_entry_sources (entry_id, trusted_source_id, translation, last_seen_sync_id)
        SELECT id, @trustedSourceId, @translation, @syncRunId
          FROM glossary_entries
-        WHERE source_hash = @hash AND ifnull(msgctxt, '') = ifnull(@msgctxt, '') AND tag_id = @tagId
+        WHERE source_hash = @hash AND ifnull(msgctxt, '') = ifnull(@msgctxt, '')
+          AND pos IS NULL AND tag_id = @tagId
        ON CONFLICT (entry_id, trusted_source_id) DO UPDATE SET
          translation = excluded.translation,
          last_seen_sync_id = excluded.last_seen_sync_id`,

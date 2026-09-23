@@ -12,11 +12,11 @@ let projectId: number;
 const addTag = (name: string): number =>
   Number(db.prepare(`INSERT INTO tags (name) VALUES (?)`).run(name).lastInsertRowid);
 
-const addTerm = (tagId: number, source: string, translation: string): void => {
+const addTerm = (tagId: number, source: string, translation: string, pos?: string): void => {
   db.prepare(
-    `INSERT INTO glossary_entries (source_hash, source_text, msgctxt, tag_id, translation, origin)
-     VALUES (?, ?, NULL, ?, ?, 'owner')`,
-  ).run(sourceHash(source), source, tagId, translation);
+    `INSERT INTO glossary_entries (source_hash, source_text, msgctxt, pos, tag_id, translation, origin)
+     VALUES (?, ?, NULL, ?, ?, ?, 'owner')`,
+  ).run(sourceHash(source), source, pos ?? null, tagId, translation);
 };
 
 beforeEach(() => {
@@ -36,7 +36,7 @@ describe('terminology retrieval', () => {
     addTerm(ecommerce, 'Item', 'Ürün');
 
     expect(collectTerms(db, projectId, ['Remove this item from the cart'])).toEqual([
-      { source: 'Item', translations: ['Ürün'] },
+      { source: 'Item', readings: [{ translation: 'Ürün' }] },
     ]);
   });
 
@@ -50,7 +50,7 @@ describe('terminology retrieval', () => {
     addTerm(ecommerce, 'Add to cart', 'Sepete ekle');
 
     expect(collectTerms(db, projectId, ['The Add to cart button is hidden'])).toEqual([
-      { source: 'Add to cart', translations: ['Sepete ekle'] },
+      { source: 'Add to cart', readings: [{ translation: 'Sepete ekle' }] },
     ]);
   });
 
@@ -62,7 +62,7 @@ describe('terminology retrieval', () => {
     setProjectTags(db, projectId, [ecommerce, other]);
 
     expect(collectTerms(db, projectId, ['Delete item'])).toEqual([
-      { source: 'Item', translations: ['Öge', 'Ürün'] },
+      { source: 'Item', readings: [{ translation: 'Öge' }, { translation: 'Ürün' }] },
     ]);
   });
 
@@ -89,6 +89,23 @@ describe('terminology retrieval', () => {
     addTerm(ecommerce, 'Item', 'Ürün');
 
     expect(collectTerms(db, projectId, ['One item', 'Another item', 'Third item'])).toHaveLength(1);
+  });
+
+  it('keeps noun and verb readings of the same term apart', () => {
+    // The official glossary distinguishes these, and it is the item→ürün/öge
+    // problem at term level: `archive` is arşiv as a noun, arşivle as a verb.
+    addTerm(ecommerce, 'archive', 'arşiv', 'noun');
+    addTerm(ecommerce, 'archive', 'arşivle', 'verb');
+
+    expect(collectTerms(db, projectId, ['Move to archive'])).toEqual([
+      {
+        source: 'archive',
+        readings: [
+          { translation: 'arşiv', pos: 'noun' },
+          { translation: 'arşivle', pos: 'verb' },
+        ],
+      },
+    ]);
   });
 
   it('returns nothing for an empty batch', () => {

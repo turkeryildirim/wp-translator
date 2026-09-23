@@ -1,17 +1,10 @@
 import Database from 'better-sqlite3';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { latestVersion, migrations } from './migrations.ts';
 
 export type Db = Database.Database;
 
-/** Bumped whenever `schema.sql` changes in a way an existing database must follow. */
-const SCHEMA_VERSION = 1;
-
-const schemaSql = (): string =>
-  readFileSync(fileURLToPath(new URL('./schema.sql', import.meta.url)), 'utf-8');
-
 /**
- * Open the database, creating it on first use.
+ * Open the database, creating it on first use and bringing it up to date.
  *
  * `better-sqlite3` is synchronous, which suits a single-user local tool: there
  * is no connection pool and no reason to wrap a local file in async plumbing.
@@ -22,17 +15,21 @@ export function openDb(path: string): Db {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
-  const version = db.pragma('user_version', { simple: true }) as number;
-  if (version === 0) {
-    db.exec(schemaSql());
-    db.pragma(`user_version = ${SCHEMA_VERSION}`);
-    return db;
+  const current = db.pragma('user_version', { simple: true }) as number;
+
+  if (current > latestVersion) {
+    throw new Error(
+      `Database schema is version ${current}, newer than this build understands (${latestVersion}). ` +
+        'Update wp-translator rather than opening it with this one.',
+    );
   }
 
-  if (version > SCHEMA_VERSION) {
-    throw new Error(
-      `Database schema is version ${version}, newer than this build understands (${SCHEMA_VERSION}).`,
-    );
+  for (const migration of migrations) {
+    if (migration.version <= current) continue;
+    db.transaction(() => {
+      db.exec(migration.sql);
+      db.pragma(`user_version = ${migration.version}`);
+    })();
   }
 
   return db;

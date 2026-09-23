@@ -27,6 +27,11 @@ interface Candidate {
  * the context-less one. A unit without context matches only context-less
  * entries: falling back to an arbitrary context-bearing entry is exactly the
  * collapse the glossary key exists to prevent.
+ *
+ * Rows carrying a `pos` are skipped. Those come from the official WordPress
+ * glossary and are *terminology*, curated to tell the model how a word is
+ * rendered — not approved translations of a whole string in an unknown context.
+ * They reach the model through `collectTerms` instead.
  */
 export function applyGlossary(db: Db, projectId: number): MatchResult {
   const tagIds = db
@@ -44,7 +49,8 @@ export function applyGlossary(db: Db, projectId: number): MatchResult {
   const candidatesFor = db.prepare(
     `SELECT id AS entryId, translation, translation_plural AS translationPlural
        FROM glossary_entries
-      WHERE source_hash = ? AND ifnull(msgctxt, '') = ? AND tag_id IN (${placeholders})`,
+      WHERE source_hash = ? AND ifnull(msgctxt, '') = ? AND pos IS NULL
+        AND tag_id IN (${placeholders})`,
   );
   const units = db.prepare(
     `SELECT id, source_hash AS hash, msgctxt FROM translation_units
