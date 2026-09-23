@@ -216,6 +216,20 @@ So the glossary earns its keep in two different ways: full-string reuse handles 
 
 **R23b — the official glossary needs two invariants, not one.** It holds 513 terms: 418 nouns, 56 verbs, 20 expressions, 15 adjectives. Part of speech is a real distinction (`archive` is `arşiv` as a noun, `arşivle` as a verb), but it also offers **alternatives under one part of speech** — `author` is both `yazar` and `geliştirici`, `border` both `Kenarlık` and `Sınır`. Keying terms on source + part of speech alone made the import overwrite itself, so a second run reported 16 changes and never settled. Translation memory and terminology therefore carry separate partial unique indexes: one translation per source/context/tag for memory, and source + part of speech + translation for terms. Re-import is now exact — 511 rows, second run adds and removes nothing.
 
+**R24 — the rate limit is real, and pacing is not optional.** Fetching the 41 trusted sources back to back returned one **HTTP 429**, on the thirtieth request. The response carries no `Retry-After` and no rate-limit headers, and the same URL succeeded twenty seconds later with 418 strings — so it is a wait, not a failure, and the sync must pace itself and treat 429 as backoff rather than an error. R5's note that no limit is *advertised* stands; it was never evidence that none exists.
+
+**R25 — the seeded glossary, measured end to end.** All 41 trusted sources plus the official term list: **53 722 rows** (53 211 translation memory, 511 terminology) over 60 727 source links, built in 7.5 s. **5 511 entries are vouched for by more than one source**, which is the case a single owner column could not express (R14), now at eight times the scale it was first measured at.
+
+Coverage against projects deliberately left out of the list:
+
+| Target | strings | memory match | terms found |
+|---|---:|---:|---:|
+| Astra | 4 141 | 398 (9.6 %) | 1 742 |
+| WP Super Cache | 495 | 39 (7.9 %) | 753 |
+| Classic Editor | 53 | 31 (58.5 %) | 136 |
+
+The shape R19 predicted holds: exact matching settles roughly a tenth, and terminology covers the rest. Classic Editor rises from 34 % to 58.5 % because Gutenberg is now a source and shares its vocabulary.
+
 ## 6. Open questions
 
 | # | Question | Phase |
