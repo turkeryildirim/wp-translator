@@ -21,8 +21,15 @@ export interface CheckFailure {
   message: string;
 }
 
-/** `%s`, `%d`, `%1$s`, `%%` — the forms WordPress strings actually use. */
-const PRINTF = /%(?:\d+\$)?[sdfxX]|%%/g;
+/**
+ * `%s`, `%d`, `%1$s`, `%%` from PHP and JavaScript, plus the forms the mobile
+ * apps use: `%@` and `%1$@` on iOS, and length modifiers such as `%ld`.
+ *
+ * `%@` matters more than it looks — the iOS catalogue carries 313 of them, so a
+ * pattern without it reports that catalogue as clean while ignoring its most
+ * common placeholder.
+ */
+const PRINTF = /%(?:\d+\$)?(?:ll|l|z|h)?[@sdifuxXgGc]|%%/g;
 /** `{count}`, `%(name)s` — common in JavaScript-side and Python-influenced strings. */
 const BRACE = /\{[a-zA-Z_][\w.]*\}|%\([a-zA-Z_]\w*\)[sdf]/g;
 /** Opening, closing and self-closing tags, compared by name and attributes. */

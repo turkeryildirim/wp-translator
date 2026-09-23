@@ -47,6 +47,20 @@ describe('quality checks', () => {
     expect(rules({ msgid: '50%% off', msgstr: '%%50 indirim' })).toEqual([]);
   });
 
+  it('understands the iOS object placeholder', () => {
+    // The iOS catalogue carries 313 of these; a pattern without %@ reports it clean.
+    expect(rules({ msgid: 'Posted to %@', msgstr: 'Gönderildi' })).toEqual([
+      'printf-placeholders',
+    ]);
+    expect(rules({ msgid: 'Posted to %@', msgstr: '%@ hedefine gönderildi' })).toEqual([]);
+  });
+
+  it('understands positional object placeholders and length modifiers', () => {
+    expect(rules({ msgid: '%1$@ of %2$@', msgstr: '%2$@ içinde %1$@' })).toEqual([]);
+    expect(rules({ msgid: '%ld items', msgstr: '%ld öge' })).toEqual([]);
+    expect(rules({ msgid: '%1$ld of %2$d', msgstr: '%1$ld / %2$d' })).toEqual([]);
+  });
+
   it('catches a lost HTML tag', () => {
     expect(
       rules({ msgid: 'Read the <a href="%s">docs</a>.', msgstr: 'Belgeleri okuyun.' }),
