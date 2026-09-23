@@ -317,7 +317,7 @@ So: one request for the whole project when the projected output fits the model's
 
 **Failure handling.** A chunk is the retry unit. Partial results from a failed chunk are discarded rather than half-stored, so a re-run is idempotent, and translation resumes over whatever is still untranslated.
 
-**Running under opencode.** Each chunk is one `opencode run --format json --file <payload> --model … --agent …` invocation, whose newline-delimited event stream is read and assembled before the JSON is extracted. Translation uses a dedicated opencode agent with **tools disabled**: an unconstrained agent can attempt a tool call, which raises a permission request that nothing will answer, and the run hangs.
+**Running under opencode.** Each chunk is one `opencode run --format json --file <payload> --model … --agent … < /dev/null` invocation — **stdin must be closed or the command never returns** (R21) — whose newline-delimited event stream is read and assembled before the JSON is extracted. Translation uses a dedicated opencode agent with **tools disabled**: an unconstrained agent can attempt a tool call, which raises a permission request that nothing will answer, and the run hangs.
 
 A **preflight check** runs before any translation: the background service is reachable and `opencode models` is non-empty. This is not defensive tidiness — with no model configured `opencode run` stalls rather than failing, so without the check a project would appear to translate forever (R17).
 

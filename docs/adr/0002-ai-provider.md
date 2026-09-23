@@ -53,4 +53,6 @@ Measured (R17):
 
 The batch is handed over as a **JSON file** via `--file` rather than inlined in the prompt (D39), and the reply's JSON is extracted from the assembled text.
 
-**To verify in Phase 4:** how reliably the model returns parseable JSON at chunk size, and whether a `--file` attachment is treated as content to translate rather than as a file to read with a tool. Both need a configured provider to test.
+**Verified in Phase 4** against `opencode/mimo-v2.6-flash-free` (OpenCode Zen, free tier): a 20-string batch returned in 14.6 s as a bare JSON array with all 20 ids intact and all quality checks passing, with **no tool calls** — `--file` is treated as content to translate. Injecting a glossary block into the prompt changed all four covered terms to the glossary's wording and left the rest alone (R22, R23).
+
+**`--format json` requires stdin to be closed** or the command hangs indefinitely (R21). This is undocumented.

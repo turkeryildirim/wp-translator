@@ -32,8 +32,8 @@ Each phase produces one document. **The owner signs it off before the next phase
 | 0 | `docs/` skeleton and baseline | Closed |
 | 1 | `01-business-logic.md` | Closed |
 | 2 | `02-architecture.md`, `adr/0001-tech-stack.md`, `adr/0002-ai-provider.md` | Closed |
-| 3 | `03-web-ui.md` | Awaiting sign-off |
-| 4 | Implementation, in vertical slices | Not started |
+| 3 | `03-web-ui.md` | Closed |
+| 4 | Implementation, in vertical slices | Open |
 
 ---
 
@@ -180,7 +180,9 @@ Real cases: `May` → `May` (abbreviation) against `Mayıs` (full month); `F j, 
 
 **R16 — opencode as the AI gateway, verified against v2.0.11.** Background HTTP server (`opencode service start`), random port reported by `opencode service status`, basic auth with the password in `~/.config/opencode/service.json`. OpenAPI 3.1 at `/openapi.json`, 113 operations; `/doc` serves the web UI, not the spec. Sequence: `session.create` → `session.switchModel` → `session.switchAgent` → `session.prompt` → `session.message.list`. `session.prompt` takes `{id, text, files, agents, skills, metadata, delivery, resume}` — **no per-request `model` or `tools`**; model is a session call and tool restriction lives in opencode's own agent config, read-only over HTTP. Assistant messages carry `cost` in USD and `tokens` split into input, output, reasoning and cache. **As installed it is unconfigured**: no authenticated providers, no models.
 
-**R17 — `opencode run` behaviour, measured.** Startup is 0.09–0.13 s with the background service running and 0.45 s cold, because the CLI talks to that service rather than starting a runtime; ~290 batches for WooCommerce cost about 30 s in total. `--format json` emits **newline-delimited streaming events** (`step_start`, `text`, …) each carrying `sessionID`, `messageID` and a `part`, not one JSON document. **With no model configured the command hangs** rather than erroring — it emits `step_start` and stalls — so a preflight check on service reachability and a non-empty `opencode models` is mandatory, not optional.
+**R17 — `opencode run` behaviour, measured.** Startup is 0.09–0.13 s with the background service running and 0.45 s cold, because the CLI talks to that service rather than starting a runtime; ~290 batches for WooCommerce cost about 30 s in total. `--format json` emits **newline-delimited streaming events** (`step_start`, `text`, …) each carrying `sessionID`, `messageID` and a `part`, not one JSON document.
+
+**R21 — `--format json` hangs unless stdin is closed.** The same prompt returns in about two seconds with the default format and never returns with `--format json`, writing zero bytes. Redirecting `< /dev/null` makes it complete immediately. This is **not in the documentation**, which describes the flag only as "newline-delimited JSON for scripts". Every invocation must close stdin. An earlier observation attributed a hang to having no model configured; the isolated cause is this, and the no-model case was never separated from it.
 
 **R18 — the response, not the request, bounds the chunk.** Building the JSON payload from WooCommerce's 14 530 strings: request ≈288 000 tokens, **response ≈292 000 tokens**. No model emits that in one turn, and a truncated reply is worse than a refusal because it reads as a result. Measured chunk sizes: 500 strings ≈12 500 output tokens, 1 000 ≈24 400, 2 000 ≈48 600. Most plugins fit in a single request; WooCommerce is the extreme, and only strings the glossary did not fill are sent at all.
 
@@ -198,6 +200,16 @@ Strings average 3–6 known terms each, and 60–76 % of them contain a term the
 So the glossary earns its keep in two different ways: full-string reuse handles roughly a tenth of a project, and terminology handed to the AI is what makes the other nine tenths consistent. Injecting the matched terms costs ~4 700 tokens for a 500-string batch against ~15 100 for the batch itself, and the n-gram lookup takes 6 ms.
 
 **R20 — most strings carry no technical structure, so the checks cannot help there.** Share of a project's strings with no placeholder, no HTML, no plural and under 80 characters: Astra 92 %, WooCommerce 81 %, Contact Form 7 78 %, WP Super Cache 51 %. For those the blocking quality checks find nothing, because nothing is malformed — review is pure semantic judgement on short text. Combined with the review volume (Astra leaves 3 818 strings after glossary matching, over five hours at five seconds each), this makes a dense list the primary review surface and reserves the detailed single-string view for the minority that has structure.
+
+**R22 — the translation round trip works end to end, verified.** 20 real WooCommerce strings (10 plain, 5 with placeholders, 3 with HTML, 2 plural) sent as a JSON file to `mimo-v2.6-flash-free`:
+
+- 14.6 s, exit 0
+- **no tool calls** — `--file` is passed as content to translate, not read through a tool, which is what the design needs
+- the reply is a bare JSON array, no markdown fence, no prose
+- **20 of 20 ids returned**, none missing, none invented
+- **20 of 20 passed the quality checks** — every placeholder and HTML tag preserved, plurals present
+
+**R23 — terminology injection changes the output, verified.** The same batch run twice, once with a four-term glossary block in the prompt. Without it the model produced `Katman konumu`, `Renk formatı`, `Hex rengi`; with it, **all four terms came back exactly as the glossary gave them**, matching the human translations. Strings outside the glossary were unaffected. This is the mechanism R19 argued for, working.
 
 ## 6. Open questions
 
