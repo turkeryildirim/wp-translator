@@ -64,3 +64,77 @@ export const saveUnit = (unitId: number, edit: { msgstr?: string; msgstrPlural?:
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(edit),
   });
+
+export interface Tag {
+  id: number;
+  name: string;
+  entries: number;
+}
+
+export interface TrustedSource {
+  id: number;
+  translateUrl: string;
+  projectPath: string;
+  family: string;
+  label: string | null;
+  rank: number;
+  lastSyncedAt: string | null;
+  entries: number;
+  tagIds: number[];
+}
+
+export interface SyncProgress {
+  running: boolean;
+  done: number;
+  total: number;
+  current: string | null;
+  errors: { source: string; message: string }[];
+  finishedAt: string | null;
+}
+
+export interface GlossaryEntry {
+  id: number;
+  sourceText: string;
+  sourcePlural: string | null;
+  msgctxt: string | null;
+  pos: string | null;
+  note: string | null;
+  translation: string;
+  translationPlural: string | null;
+  origin: 'trusted' | 'owner';
+  tag: string;
+  sources: number;
+}
+
+export interface EntrySource {
+  label: string | null;
+  projectPath: string;
+  rank: number;
+  translation: string;
+}
+
+const post = <T>(url: string, body: unknown) =>
+  json<T>(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+export const listTags = () => json<Tag[]>('/api/tags');
+
+export const listSources = () => json<TrustedSource[]>('/api/sources');
+export const addSource = (url: string, tagIds: number[], label?: string) =>
+  post<{ id: number }>('/api/sources', { url, tagIds, label });
+export const removeSource = (id: number) =>
+  json<{ ok: true }>(`/api/sources/${id}`, { method: 'DELETE' });
+export const reorderSources = (ids: number[]) => post<{ ok: true }>('/api/sources/reorder', { ids });
+export const startSync = () => post<SyncProgress>('/api/sources/sync', {});
+export const syncProgress = () => json<SyncProgress>('/api/sources/sync');
+
+export const searchGlossary = (params: Record<string, string>) =>
+  json<{ rows: GlossaryEntry[]; total: number }>(`/api/glossary?${new URLSearchParams(params)}`);
+export const entrySources = (id: number) => json<EntrySource[]>(`/api/glossary/${id}`);
+export const updateEntry = (id: number, translation: string) =>
+  post<{ entry: GlossaryEntry; overwrittenOnNextSync: boolean }>(`/api/glossary/${id}`, {
+    translation,
+  });

@@ -2,6 +2,11 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { listProjects, listUnits, type Project, type Unit } from './api.ts';
 import ReviewTable from './ReviewTable.vue';
+import TrustedSources from './TrustedSources.vue';
+import GlossaryBrowser from './GlossaryBrowser.vue';
+
+type Screen = 'review' | 'sources' | 'glossary';
+const screen = ref<Screen>('review');
 
 const projects = ref<Project[]>([]);
 const selected = ref<number | null>(null);
@@ -48,6 +53,21 @@ watch([selected, filter], load);
 
 <template>
   <div class="app">
+    <nav class="screens">
+      <button
+        v-for="option in (['review', 'sources', 'glossary'] as const)"
+        :key="option"
+        :class="{ on: screen === option }"
+        @click="screen = option"
+      >
+        {{ { review: 'İnceleme', sources: 'Güvenilir kaynaklar', glossary: 'Sözlük' }[option] }}
+      </button>
+    </nav>
+
+    <TrustedSources v-if="screen === 'sources'" />
+    <GlossaryBrowser v-else-if="screen === 'glossary'" />
+
+    <template v-else>
     <header>
       <select v-model="selected">
         <option v-for="p in projects" :key="p.id" :value="p.id">
@@ -82,8 +102,9 @@ watch([selected, filter], load);
       Bu filtrede bir şey yok. Dışa aktarmaya hazır olabilirsiniz.
     </p>
     <ReviewTable v-else :units="units" @changed="onChanged" />
+    </template>
 
-    <footer>
+    <footer v-if="screen === 'review'">
       <kbd>j</kbd>/<kbd>k</kbd> gez · <kbd>Enter</kbd> onayla · <kbd>e</kbd> düzenle ·
       <kbd>Ctrl+Enter</kbd> kaydet ve onayla · <kbd>boşluk</kbd> ayrıntı ·
       <kbd>1</kbd>–<kbd>9</kbd> aday seç

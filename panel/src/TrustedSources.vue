@@ -1,0 +1,155 @@
+<script setup lang="ts">
+import { onMounted, onUnmounted, ref } from 'vue';
+import {
+  addSource,
+  listSources,
+  listTags,
+  removeSource,
+  reorderSources,
+  startSync,
+  syncProgress,
+  type SyncProgress,
+  type Tag,
+  type TrustedSource,
+} from './api.ts';
+
+const sources = ref<TrustedSource[]>([]);
+const tags = ref<Tag[]>([]);
+const url = ref('');
+const chosenTags = ref<number[]>([]);
+const error = ref('');
+const progress = ref<SyncProgress | null>(null);
+let poll: ReturnType<typeof setInterval> | null = null;
+
+async function load(): Promise<void> {
+  [sources.value, tags.value] = await Promise.all([listSources(), listTags()]);
+}
+
+async function add(): Promise<void> {
+  error.value = '';
+  try {
+    await addSource(url.value.trim(), chosenTags.value);
+    url.value = '';
+    await load();
+  } catch (problem) {
+    error.value = problem instanceof Error ? problem.message : String(problem);
+  }
+}
+
+async function drop(source: TrustedSource): Promise<void> {
+  if (!confirm(`"${source.label ?? source.projectPath}" kaldırılsın mı?\n\nBu kaynağın tek başına desteklediği sözlük girdileri de silinir.`)) return;
+  await removeSource(source.id);
+  await load();
+}
+
+/** Order decides most disagreements, so it is edited directly rather than inferred. */
+async function move(index: number, delta: number): Promise<void> {
+  const next = [...sources.value];
+  const target = index + delta;
+  if (target < 0 || target >= next.length) return;
+
+  [next[index], next[target]] = [next[target]!, next[index]!];
+  sources.value = next;
+  await reorderSources(next.map((source) => source.id));
+}
+
+async function sync(): Promise<void> {
+  progress.value = await startSync();
+  poll ??= setInterval(async () => {
+    progress.value = await syncProgress();
+    if (!progress.value.running) {
+      clearInterval(poll!);
+      poll = null;
+      await load();
+    }
+  }, 700);
+}
+
+onMounted(load);
+onUnmounted(() => {
+  if (poll) clearInterval(poll);
+});
+</script>
+
+<template>
+  <section class="screen">
+    <div class="toolbar">
+      <input
+        v-model="url"
+        class="grow"
+        placeholder="https://translate.wordpress.org/projects/…/tr/default/"
+        @keyup.enter="add"
+      />
+      <select v-model="chosenTags" multiple size="1">
+        <option v-for="tag in tags" :key="tag.id" :value="tag.id">{{ tag.name }}</option>
+      </select>
+      <button @click="add">Ekle</button>
+      <button class="primary" :disabled="progress?.running" @click="sync">
+        {{ progress?.running ? 'Güncelleniyor…' : 'Güncelle' }}
+      </button>
+    </div>
+
+    <p v-if="error" class="failure">{{ error }}</p>
+
+    <p v-if="progress?.running" class="status">
+      {{ progress.done }} / {{ progress.total }} · {{ progress.current }}
+    </p>
+    <p v-else-if="progress?.finishedAt" class="status">
+      Güncelleme bitti: {{ progress.done }} kaynak.
+      <span v-if="progress.errors.length" class="failure-inline">
+        {{ progress.errors.length }} hata
+      </span>
+    </p>
+    <ul v-if="progress?.errors.length" class="errors">
+      <li v-for="problem in progress.errors" :key="problem.source">
+        <b>{{ problem.source }}</b> — {{ problem.message }}
+      </li>
+    </ul>
+
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>Sıra</th>
+          <th>Proje</th>
+          <th>Aile</th>
+          <th>Etiket</th>
+          <th class="num">Girdi</th>
+          <th>Son güncelleme</th>
+          <th />
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="(source, index) in sources" :key="source.id">
+          <td class="rank">
+            {{ index + 1 }}
+            <button :disabled="index === 0" title="Yukarı" @click="move(index, -1)">↑</button>
+            <button
+              :disabled="index === sources.length - 1"
+              title="Aşağı"
+              @click="move(index, 1)"
+            >
+              ↓
+            </button>
+          </td>
+          <td>
+            <a :href="source.translateUrl" target="_blank" rel="noreferrer">
+              {{ source.label ?? source.projectPath }}
+            </a>
+          </td>
+          <td class="muted">{{ source.family }}</td>
+          <td class="muted">
+            {{ tags.filter((t) => source.tagIds.includes(t.id)).map((t) => t.name).join(', ') || '—' }}
+          </td>
+          <td class="num">{{ source.entries.toLocaleString('tr') }}</td>
+          <td class="muted">{{ source.lastSyncedAt ?? 'hiç' }}</td>
+          <td><button @click="drop(source)">Kaldır</button></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="hint">
+      Sıra önemli: iki kaynak aynı metni farklı çevirdiğinde çoğunluk kazanır, berabere kalırsa
+      üstteki. Ölçümde çakışmaların %88'i beraberlik, yani kararı çoğu zaman bu sıra veriyor.
+    </p>
+  </section>
+</template>

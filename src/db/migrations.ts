@@ -62,6 +62,21 @@ export const migrations: readonly Migration[] = [
     // entries, but it would quietly discard whatever else the project declared.
     sql: `ALTER TABLE projects ADD COLUMN po_headers TEXT;`,
   },
+  {
+    version: 4,
+    // Which tags a source writes into. syncTrustedSource took these as an
+    // argument, which is fine for a script but leaves the panel with nowhere to
+    // record the owner's choice.
+    sql: `
+      CREATE TABLE trusted_source_tags (
+        trusted_source_id INTEGER NOT NULL REFERENCES trusted_sources(id) ON DELETE CASCADE,
+        tag_id            INTEGER NOT NULL REFERENCES tags(id)            ON DELETE CASCADE,
+        PRIMARY KEY (trusted_source_id, tag_id)
+      ) STRICT, WITHOUT ROWID;
+
+      CREATE INDEX idx_trusted_source_tags_tag ON trusted_source_tags (tag_id);
+    `,
+  },
 ];
 
 export const latestVersion = migrations[migrations.length - 1]!.version;

@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import type { Db } from '../db/open.ts';
 import { exportProject } from '../project/export.ts';
+import { entrySources, listTags, searchGlossary, updateEntry, type GlossaryQuery } from './glossary.ts';
 import {
   listProjects,
   listUnits,
@@ -11,6 +12,14 @@ import {
   unitDetail,
   type UnitFilter,
 } from './review.ts';
+import {
+  addSource,
+  listSources,
+  removeSource,
+  reorderSources,
+  startSync,
+  syncProgress,
+} from './sources.ts';
 
 export interface ServerOptions {
   db: Db;
@@ -108,6 +117,47 @@ async function api(
     return send(response, 200, { ok: true });
   }
 
+  if (method === 'GET' && route === '/api/tags') return send(response, 200, listTags(db));
+
+  if (route === '/api/sources') {
+    if (method === 'GET') return send(response, 200, listSources(db));
+    if (method === 'POST') {
+      const body = (await readJson(request)) as { url: string; tagIds?: number[]; label?: string };
+      const id = addSource(db, body.url, body.tagIds ?? [], body.label);
+      return send(response, 200, { id });
+    }
+  }
+
+  const source = /^\/api\/sources\/(\d+)$/.exec(route);
+  if (method === 'DELETE' && source) {
+    removeSource(db, Number(source[1]));
+    return send(response, 200, { ok: true });
+  }
+
+  if (method === 'POST' && route === '/api/sources/reorder') {
+    const body = (await readJson(request)) as { ids: number[] };
+    reorderSources(db, body.ids);
+    return send(response, 200, { ok: true });
+  }
+
+  if (route === '/api/sources/sync') {
+    if (method === 'POST') return send(response, 200, startSync(db));
+    if (method === 'GET') return send(response, 200, syncProgress());
+  }
+
+  if (method === 'GET' && route === '/api/glossary') {
+    return send(response, 200, searchGlossary(db, readGlossaryQuery(url)));
+  }
+
+  const entry = /^\/api\/glossary\/(\d+)$/.exec(route);
+  if (entry) {
+    if (method === 'GET') return send(response, 200, entrySources(db, Number(entry[1])));
+    if (method === 'POST') {
+      const body = (await readJson(request)) as { translation: string };
+      return send(response, 200, updateEntry(db, Number(entry[1]), body.translation));
+    }
+  }
+
   send(response, 404, { error: `No route for ${method} ${route}` });
 }
 
@@ -125,6 +175,27 @@ function readFilter(url: URL): UnitFilter {
   if (Number.isFinite(limit) && limit > 0) filter.limit = limit;
 
   return filter;
+}
+
+function readGlossaryQuery(url: URL): GlossaryQuery {
+  const query: GlossaryQuery = {};
+  const search = url.searchParams.get('q');
+  if (search) query.search = search;
+
+  const tagId = Number(url.searchParams.get('tag'));
+  if (Number.isFinite(tagId) && tagId > 0) query.tagId = tagId;
+
+  const kind = url.searchParams.get('kind');
+  if (kind === 'memory' || kind === 'term') query.kind = kind;
+  if (url.searchParams.get('contested') === '1') query.contested = true;
+
+  const limit = Number(url.searchParams.get('limit'));
+  if (Number.isFinite(limit) && limit > 0) query.limit = Math.min(limit, 500);
+
+  const offset = Number(url.searchParams.get('offset'));
+  if (Number.isFinite(offset) && offset > 0) query.offset = offset;
+
+  return query;
 }
 
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
