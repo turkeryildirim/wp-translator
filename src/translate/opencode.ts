@@ -6,8 +6,16 @@ import { buildPrompt } from './prompt.ts';
 import type { ResponseItem, TranslationProvider, TranslationRequest } from './types.ts';
 
 export interface OpencodeOptions {
-  /** `provider/model`, e.g. `opencode/mimo-v2.6-flash-free`. */
-  model: string;
+  /**
+   * `provider/model`, e.g. `opencode/space-bunny-free`.
+   *
+   * Optional, and left unset by default. opencode's free roster rotates —
+   * a model that answered yesterday can start refusing with "the free tier can
+   * only be used from within OpenCode" — so pinning one here turns a provider-
+   * side change into a broken tool. Unset means opencode's own default, which
+   * follows the roster.
+   */
+  model?: string;
   /**
    * An opencode agent with tools disabled.
    *
@@ -50,7 +58,8 @@ export class OpencodeProvider implements TranslationProvider {
     prompt: string,
     signal: AbortSignal | undefined,
   ): Promise<string> {
-    const args = ['run', '--format', 'json', '--model', this.options.model, '--file', payloadPath];
+    const args = ['run', '--format', 'json', '--file', payloadPath];
+    if (this.options.model) args.push('--model', this.options.model);
     if (this.options.agent) args.push('--agent', this.options.agent);
     args.push(prompt);
 
