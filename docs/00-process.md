@@ -203,6 +203,7 @@ So the glossary earns its keep in two different ways: full-string reuse handles 
 
 | # | Question | Phase |
 |---|----------|-------|
+| O20 | Interface language: English or Turkish? D14 settled the documentation, not the UI. | 3 |
 | — | None blocking. Phase 4 prerequisite: the owner authenticates at least one provider in opencode and defines a tool-free translation agent there. |
 
 ---

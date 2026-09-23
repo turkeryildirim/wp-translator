@@ -275,7 +275,7 @@ Adding file-content signals (`add_menu_page`, `add_meta_box`, `WP_List_Table`, `
 
 98 % of referenced files are present in the release ZIP, consistent with the `dev`-versus-release gap recorded in R7.
 
-**Source excerpts must be capped.** For strings the heuristics cannot place, the natural fallback is to show the AI the code around the reference. Measured on WooCommerce, an uncapped ±6-line window has a median of 601 characters but a p90 of **65 425** — because 14 % of referenced files are minified bundles, one carrying a single line of 1.73 million characters, and **31 % of all references point into them**.
+**Source excerpts are capped.** Strings the heuristics cannot place carry the code around their reference instead of a surface label. The cap is not optional: on WooCommerce an uncapped ±6-line window has a median of 601 characters but a p90 of **65 425**, because 14 % of referenced files are minified bundles — one carrying a single line of 1.73 million characters — and **31 % of all references point into them**.
 
 Capping each line at 300 characters and the whole excerpt at 2 000 brings this to a median of 134 tokens, p90 437, hard maximum 500. A file whose longest line exceeds 2 000 characters is treated as minified and yields no excerpt at all — a 300-character slice of a bundle is noise, not context.
 
@@ -285,7 +285,7 @@ Capping each line at 300 characters and the whole excerpt at 2 000 brings this t
 
 **The request is a JSON document, attached as a file.** Rather than describing strings one at a time, the tool writes a JSON array of the units needing translation and attaches it with `opencode run --file`, under a prompt that says to translate the source values into Turkish and return the same structure. The response carries JSON, which is extracted and parsed.
 
-Each element is `{i, s, c?, u?, x?}` — an opaque id, the source string, `msgctxt` where present, the derived usage surface, and a capped source excerpt. The reply is `{i, t}` per element, plus plural forms where the source has them.
+Each element is `{i, s, c?, u?, x?}` — an opaque id, the source string, `msgctxt` where present, the derived usage surface, and a capped source excerpt on the strings that need one. The reply is `{i, t}` per element, plus plural forms where the source has them.
 
 Alongside it go the fixed parts of the context (D8): the general style guide, per-tag rules for the project's tags, project metadata and readme, and a **terminology block**.
 

@@ -4,6 +4,8 @@ The panel for the workflows in [`01-business-logic.md`](01-business-logic.md), b
 
 A single-user local tool: no login, no registration, no roles, no onboarding. Design effort goes into review throughput and nowhere else.
 
+The copy below is illustrative. **Whether the interface is in English or Turkish is not decided** — D14 covers the documentation only.
+
 ---
 
 ## What the numbers demand
@@ -49,6 +51,8 @@ A table, one row per string, with columns: state, source, translation, and a mar
 
 Rows are compact enough that twenty or more are visible at once. The source and translation sit side by side so the eye compares them horizontally without scrolling.
 
+**A row can arrive with candidates instead of a translation.** Where a project's tags disagreed, nothing was auto-filled (D37): the translation cell holds the competing translations, each labelled with the tag that produced it, and the row cannot be approved until one is chosen. `1`, `2`, … pick by position and `Tab` cycles; `Enter` then applies the chosen one. This is a whole-string version of the ambiguous-term problem, and it is the case the domain tags exist to expose — so it is shown, not resolved by a coin toss.
+
 Selecting a row expands a detail panel beneath or beside it, carrying what the table cannot: `msgctxt`, the `#.` extractor comment, the `#:` references, the derived usage surface, the source-code excerpt where one was fetched, and which glossary terms were sent to the AI for that string. The detail panel opens automatically for rows with technical structure and stays closed for the plain ones.
 
 ### Keyboard
@@ -64,6 +68,8 @@ Bulk review is only tolerable on keys. The full map is part of this design, not 
 | `Esc` | cancel the edit |
 | `Ctrl+Enter` | save the edit and approve |
 | `Space` | toggle the detail panel |
+| `1`…`9` | on a row with competing candidates, choose one |
+| `Tab` | cycle candidates on such a row |
 | `x` | toggle row selection for bulk actions |
 | `/` | focus the filter box |
 | `g` then `u` | jump to the first unreviewed row |
@@ -78,10 +84,11 @@ Reviewing 3 818 strings in source order wastes the user's attention on the easy 
 - quality-check failures (blocked, and overridden)
 - has placeholders, has HTML, is plural, is long
 - provenance: glossary, AI, already edited by hand
+- glossary candidates disagree — the D37 rows, waiting on a choice
 - contains a term the glossary translates more than one way — the `item → ürün / öge` cases, where the AI was most likely to pick wrong
 - free-text search across source and translation
 
-Default sort puts blocked strings first, then strings carrying ambiguous terms, then the rest.
+Default sort puts blocked strings first, then rows waiting on a candidate choice, then strings carrying ambiguous terms, then the rest.
 
 ### Bulk actions
 
@@ -89,7 +96,7 @@ Approving a filtered set at once is the only way the volume is survivable, but i
 
 - bulk approve acts on the current selection, never on "all matching the filter" implicitly
 - the count is in the button: **Approve 412 strings**
-- strings failing a quality check are excluded from bulk approve and the button says so
+- strings failing a quality check, and rows still waiting on a candidate choice, are excluded from bulk approve and the button says so
 - undo is available for the last bulk action
 
 ---
