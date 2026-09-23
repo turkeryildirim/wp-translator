@@ -287,7 +287,13 @@ Capping each line at 300 characters and the whole excerpt at 2 000 brings this t
 
 Each element is `{i, s, c?, u?, x?}` — an opaque id, the source string, `msgctxt` where present, the derived usage surface, and a capped source excerpt. The reply is `{i, t}` per element, plus plural forms where the source has them.
 
-Alongside it go the fixed parts of the context (D8): the general style guide, per-tag rules for the project's tags, project metadata and readme, and the glossary terms relevant to the batch.
+Alongside it go the fixed parts of the context (D8): the general style guide, per-tag rules for the project's tags, project metadata and readme, and a **terminology block**.
+
+**Terminology retrieval.** Every 1–3 word n-gram of each source string in the chunk is looked up against short glossary entries under the project's tags; the matches become a `{source, translations[]}` list in the request. No new table is needed — a short glossary entry is a term (D41).
+
+Measured on Astra: a 500-string chunk matches 344 distinct terms costing ~4 700 tokens against the chunk's own ~15 100, and the lookup takes 6 ms. A 1 000-string chunk matches 549 terms at ~7 600 tokens. Restricting the block to terms the glossary translates more than one way cuts it to ~1 600 tokens for 500 strings; sending all matches is the default, since the ambiguous ones are only knowable as ambiguous relative to what else is in the glossary.
+
+This is where consistency actually comes from. Exact matching reaches about a tenth of a project (R19); terminology reaches 70–100 % of it.
 
 **Chunk by projected output, not by preference.** Measured on WooCommerce:
 

@@ -120,6 +120,20 @@ Trusted sources are drawn from **every** family: some core, apps and meta projec
 
 ## Domain tags
 
+## What the glossary is for
+
+It does two jobs, and the second is the larger one.
+
+**Full-string reuse.** When a source string has been translated before under a matching tag, that translation is applied and the string never reaches the AI. Measured against projects outside the glossary, this covers roughly a tenth of a project — 11.8 % of Contact Form 7, 7.8 % of Astra.
+
+**Terminology for the AI.** The remaining nine tenths are strings nobody has translated before, and consistency there comes from the AI being told how terms have been translated. That reach is far wider: **70–100 % of a project's strings contain at least one term the glossary knows**, three to six of them on average, and most of those strings contain a term with more than one known translation — precisely the `item → ürün / öge` case.
+
+No separate term list is kept. A short glossary entry *is* a term, so the terminology handed to the AI is drawn from the same rows, selected by which of them appear inside the strings being translated.
+
+---
+
+## Domain tags
+
 Tags describe what a project *is about*, and they are what makes `item → ürün` possible in one project and `item → öge` in another. They attach to the project, and through it to every translation unit in that project and every glossary entry derived from it.
 
 - A project carries several tags.

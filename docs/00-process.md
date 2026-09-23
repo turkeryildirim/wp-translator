@@ -31,8 +31,8 @@ Each phase produces one document. **The owner signs it off before the next phase
 |-------|----------|-------|
 | 0 | `docs/` skeleton and baseline | Closed |
 | 1 | `01-business-logic.md` | Closed |
-| 2 | `02-architecture.md`, `adr/0001-tech-stack.md`, `adr/0002-ai-provider.md` | Awaiting sign-off |
-| 3 | `03-web-ui.md` | Not started |
+| 2 | `02-architecture.md`, `adr/0001-tech-stack.md`, `adr/0002-ai-provider.md` | Closed |
+| 3 | `03-web-ui.md` | Open |
 | 4 | Implementation, in vertical slices | Not started |
 
 ---
@@ -79,6 +79,7 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D38 | opencode integration | Driven through **`opencode run --format json`**, one invocation per batch, not the HTTP API. Smaller and more stable surface; startup overhead is ~0.1 s. |
 | D39 | Request shape | The batch is a **JSON array attached as a file** (`opencode run --file`), not per-string prompts. The reply's JSON is extracted and parsed, elements matched back by opaque id. |
 | D40 | Cost tracking | **None.** opencode runs on a subscription, so tokens and money are not recorded. Progress is strings completed. |
+| D41 | Terminology in the prompt | Glossary entries whose source appears as a 1–3 word n-gram inside a batch's strings are injected into the request as a terminology block. No new table — short glossary entries *are* the terms. |
 | D35 | Glossary key | `(source, msgctxt, tag)`. Matching prefers the unit's own `msgctxt` and falls back to the context-less row; a unit without context matches only context-less entries. Resolves R9. |
 | D34 | Style guide form | A large free-text field in the panel, written by the owner, passed to the AI as part of the prompt. No structured rule editor. Per D12 the same form applies per tag. |
 
@@ -181,6 +182,19 @@ Real cases: `May` → `May` (abbreviation) against `Mayıs` (full month); `F j, 
 **R17 — `opencode run` behaviour, measured.** Startup is 0.09–0.13 s with the background service running and 0.45 s cold, because the CLI talks to that service rather than starting a runtime; ~290 batches for WooCommerce cost about 30 s in total. `--format json` emits **newline-delimited streaming events** (`step_start`, `text`, …) each carrying `sessionID`, `messageID` and a `part`, not one JSON document. **With no model configured the command hangs** rather than erroring — it emits `step_start` and stalls — so a preflight check on service reachability and a non-empty `opencode models` is mandatory, not optional.
 
 **R18 — the response, not the request, bounds the chunk.** Building the JSON payload from WooCommerce's 14 530 strings: request ≈288 000 tokens, **response ≈292 000 tokens**. No model emits that in one turn, and a truncated reply is worse than a refusal because it reads as a result. Measured chunk sizes: 500 strings ≈12 500 output tokens, 1 000 ≈24 400, 2 000 ≈48 600. Most plugins fit in a single request; WooCommerce is the extreme, and only strings the glossary did not fill are sent at all.
+
+**R19 — exact-string matching covers little; terminology covers almost everything.** A glossary built from WP core, WooCommerce and Yoast (24 118 entries) was matched against projects not in it:
+
+| Target | strings | exact-string match | contains ≥1 glossary term |
+|---|---:|---:|---:|
+| Contact Form 7 | 432 | 51 (11.8 %) | 399 (**92.4 %**) |
+| Astra | 4 141 | 323 (7.8 %) | 2 907 (**70.2 %**) |
+| WP Super Cache | 495 | 32 (6.5 %) | 456 (**92.1 %**) |
+| Classic Editor | 53 | 16 (30.2 %) | 53 (**100 %**) |
+
+Strings average 3–6 known terms each, and 60–76 % of them contain a term the glossary translates **more than one way** — which is exactly the `item → ürün / öge` problem the domain tag exists to solve.
+
+So the glossary earns its keep in two different ways: full-string reuse handles roughly a tenth of a project, and terminology handed to the AI is what makes the other nine tenths consistent. Injecting the matched terms costs ~4 700 tokens for a 500-string batch against ~15 100 for the batch itself, and the n-gram lookup takes 6 ms.
 
 ## 6. Open questions
 
