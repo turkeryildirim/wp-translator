@@ -134,6 +134,10 @@ export interface SyncProgress {
   current: string | null;
   errors: { source: string; message: string }[];
   glossaryTerms: number | null;
+  /** Rows merged away because they differed only by context and agreed (R27). */
+  collapsed: number | null;
+  /** True when only the picked sources ran, so the counts are partial. */
+  partial: boolean;
   finishedAt: string | null;
 }
 
@@ -175,7 +179,9 @@ export const listSources = () => json<TrustedSource[]>('/api/sources');
 export const addSource = (url: string, tagIds: number[], label?: string) =>
   post<{ id: number }>('/api/sources', { url, tagIds, label }, 'Kaynak eklendi');
 export const reorderSources = (ids: number[]) => post<{ ok: true }>('/api/sources/reorder', { ids }, 'Sıra kaydedildi');
-export const startSync = () => post<SyncProgress>('/api/sources/sync', {}, 'Güncelleme başlatıldı');
+/** No `ids` means every source, plus the official term list. */
+export const startSync = (ids?: number[]) =>
+  post<SyncProgress>('/api/sources/sync', ids ? { ids } : {}, 'Güncelleme başlatıldı');
 export const syncProgress = () => json<SyncProgress>('/api/sources/sync');
 
 export const searchGlossary = (params: Record<string, string>) =>

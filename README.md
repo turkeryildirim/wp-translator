@@ -94,7 +94,7 @@ most of them measured rather than reasoned. A few that shaped the code:
 ## Tests
 
 ```bash
-npm test            # 169 tests
+npm test            # 173 tests
 npm run typecheck   # tsc
 npx vue-tsc --noEmit -p tsconfig.json
 ```

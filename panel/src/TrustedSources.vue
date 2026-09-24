@@ -179,8 +179,15 @@ async function onHandleKey(index: number, event: KeyboardEvent): Promise<void> {
   (document.querySelectorAll('.draghandle')[index + delta] as HTMLElement | undefined)?.focus();
 }
 
-async function sync(): Promise<void> {
-  progress.value = await startSync();
+/**
+ * Sources actually fetched. A full run also refreshes the official term list and
+ * counts it in `done`, so that one has to come back off; a picked run does not
+ * touch it.
+ */
+const syncedCount = (done: SyncProgress): number => (done.partial ? done.done : done.done - 1);
+
+async function sync(ids?: number[]): Promise<void> {
+  progress.value = await startSync(ids);
   poll ??= setInterval(async () => {
     progress.value = await syncProgress();
     if (!progress.value.running) {
@@ -200,7 +207,7 @@ function report(done: SyncProgress): void {
     return;
   }
   const merged = done.collapsed ? `, ${done.collapsed} yinelenen girdi birleştirildi` : '';
-  notify('ok', `Güncelleme bitti: ${done.done - 1} kaynak${merged}.`);
+  notify('ok', `Güncelleme bitti: ${syncedCount(done)} kaynak${merged}.`);
 }
 
 onMounted(load);
@@ -219,8 +226,8 @@ onUnmounted(() => {
         @keyup.enter="add"
       />
       <button :disabled="adding" @click="add">{{ adding ? 'Denetleniyor…' : 'Ekle' }}</button>
-      <button class="primary" :disabled="progress?.running" @click="sync">
-        {{ progress?.running ? 'Güncelleniyor…' : 'Güncelle' }}
+      <button class="primary" :disabled="progress?.running" @click="sync()">
+        {{ progress?.running ? 'Güncelleniyor…' : 'Tümünü güncelle' }}
       </button>
     </div>
 
@@ -236,6 +243,9 @@ onUnmounted(() => {
 
     <div v-if="picked.size" class="bulkbar">
       <b>{{ picked.size }} seçili</b>
+      <button class="primary" :disabled="progress?.running" @click="sync(pickedIds)">
+        Seçilenleri güncelle
+      </button>
       <button @click="dropPicked">Kaldır</button>
       <span class="muted">Etiket ekle:</span>
       <button v-for="tag in tags" :key="'a' + tag.id" @click="tagPicked(tag.id, 'add')">
@@ -252,7 +262,7 @@ onUnmounted(() => {
       {{ progress.done }} / {{ progress.total }} · {{ progress.current }}
     </p>
     <p v-else-if="progress?.finishedAt" class="status">
-      Güncelleme bitti: {{ progress.done - 1 }} kaynak<span v-if="progress.glossaryTerms">
+      Güncelleme bitti: {{ syncedCount(progress) }} kaynak<span v-if="progress.glossaryTerms">
         + resmî sözlükten {{ progress.glossaryTerms }} terim</span
       ><span v-if="progress.collapsed">
         · {{ progress.collapsed }} yinelenen girdi birleştirildi</span

@@ -198,6 +198,8 @@ export interface SyncProgress {
   errors: { source: string; message: string }[];
   /** Terms taken from the official WordPress Turkish glossary. */
   glossaryTerms: number | null;
+  /** True when only some sources were asked for, so the totals are partial. */
+  partial: boolean;
   /** Rows merged away because they differed only by context and agreed (R27). */
   collapsed: number | null;
   finishedAt: string | null;
@@ -211,6 +213,7 @@ const idle = (): SyncProgress => ({
   errors: [],
   glossaryTerms: null,
   collapsed: null,
+  partial: false,
   finishedAt: null,
 });
 
@@ -219,20 +222,33 @@ let progress: SyncProgress = idle();
 export const syncProgress = (): SyncProgress => progress;
 
 /**
- * Re-fetch every trusted source and re-import it.
+ * Re-fetch trusted sources and re-import them.
  *
- * Runs unattended (D17) and in the background: 41 sources take over a minute
+ * Runs unattended (D17) and in the background: all 41 sources take half a minute
  * once paced, and the service rate-limits a tight loop (R24), so the panel polls
  * rather than waiting on one request.
+ *
+ * `ids` narrows the run to the sources the owner picked. A source that has just
+ * been re-translated upstream is worth re-fetching on its own, and waiting for
+ * the other forty to confirm it is not. The official term list is left alone in
+ * that case: it is not one of these sources, and nothing about picking a few of
+ * them says the terminology is stale.
  */
-export function startSync(db: Db): SyncProgress {
+export function startSync(db: Db, ids?: readonly number[]): SyncProgress {
   if (progress.running) return progress;
 
-  const sources = listSources(db);
-  // +1 for the official glossary, which is refreshed in the same run: it is the
+  const partial = ids !== undefined && ids.length > 0;
+  const wanted = partial ? new Set(ids) : null;
+  const sources = listSources(db).filter((source) => wanted === null || wanted.has(source.id));
+  // +1 for the official glossary on a full run, refreshed alongside: it is the
   // same kind of work from the owner's side, and forgetting it would leave the
   // terminology stale while the memory moved on.
-  progress = { ...idle(), running: true, total: sources.length + 1 };
+  progress = {
+    ...idle(),
+    running: true,
+    partial,
+    total: sources.length + (partial ? 0 : 1),
+  };
 
   void (async () => {
     for (const source of sources) {
@@ -249,18 +265,20 @@ export function startSync(db: Db): SyncProgress {
       progress.done += 1;
     }
 
-    progress.current = 'WordPress Türkçe sözlüğü';
-    try {
-      const csv = await (await fetch(OFFICIAL_GLOSSARY_CSV)).text();
-      const result = importOfficialGlossary(db, parseGlossaryCsv(csv), defaultTagId(db));
-      progress.glossaryTerms = result.added + result.kept;
-    } catch (error) {
-      progress.errors.push({
-        source: 'official glossary',
-        message: error instanceof Error ? error.message : String(error),
-      });
+    if (!partial) {
+      progress.current = 'WordPress Türkçe sözlüğü';
+      try {
+        const csv = await (await fetch(OFFICIAL_GLOSSARY_CSV)).text();
+        const result = importOfficialGlossary(db, parseGlossaryCsv(csv), defaultTagId(db));
+        progress.glossaryTerms = result.added + result.kept;
+      } catch (error) {
+        progress.errors.push({
+          source: 'official glossary',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      progress.done += 1;
     }
-    progress.done += 1;
 
     // Once, at the end, rather than after each source: the work is a scan of
     // the whole glossary, and running it 41 times would repeat it for rows no

@@ -177,7 +177,10 @@ async function api(
   }
 
   if (route === '/api/sources/sync') {
-    if (method === 'POST') return send(response, 200, startSync(db));
+    if (method === 'POST') {
+      const body = (await readJson(request)) as { ids?: number[] } | null;
+      return send(response, 200, startSync(db, body?.ids));
+    }
     if (method === 'GET') return send(response, 200, syncProgress());
   }
 
