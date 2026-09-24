@@ -10,6 +10,7 @@ import {
   type Tag,
 } from './api.ts';
 import Pager from './Pager.vue';
+import Reveal from './Reveal.vue';
 
 const PAGE = 100;
 
@@ -176,11 +177,11 @@ watch(page, load);
             @click="select(row)"
           >
             <td>
-              {{ row.sourceText }}
+              <Reveal :value="row.sourceText" />
               <em v-if="row.pos" class="pos">{{ row.pos }}</em>
               <em v-if="row.msgctxt" class="ctx">{{ row.msgctxt }}</em>
             </td>
-            <td>{{ row.translation }}</td>
+            <td><Reveal :value="row.translation" /></td>
             <td class="muted">{{ row.tag }}</td>
             <td class="num">{{ row.sources || (row.origin === 'owner' ? '—' : 0) }}</td>
           </tr>
@@ -188,8 +189,15 @@ watch(page, load);
       </table>
 
       <aside v-if="selected" class="detail">
-        <h3>{{ selected.sourceText }}</h3>
+        <h3><Reveal :value="selected.sourceText" /></h3>
+        <p v-if="selected.sourcePlural" class="note">
+          çoğul: <Reveal :value="selected.sourcePlural" />
+        </p>
         <p v-if="selected.note" class="note">{{ selected.note }}</p>
+
+        <!-- The box cannot show what it holds, so the stored wording is shown
+             above it. Whitespace is exactly what an edit gets wrong. -->
+        <p class="note stored"><Reveal :value="selected.translation" /></p>
 
         <label>
           Çeviri
