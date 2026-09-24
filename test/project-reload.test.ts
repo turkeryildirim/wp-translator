@@ -45,8 +45,8 @@ describe('reloading a project from the service', () => {
   });
 
   it('counts the owner’s work before discarding it', async () => {
-    // The warning names a number rather than a risk, and it has to be the real
-    // one — the owner is deciding whether they have exported yet.
+    // The warning names this number, and the owner uses it to decide whether
+    // they have exported yet.
     const unitId = listUnits(db, projectId, { view: 'untranslated' }).rows[0]!.id;
     saveUnit(db, unitId, { msgstr: 'Kaydet' });
     expect(ownWork(db, projectId)).toBe(1);
@@ -69,8 +69,7 @@ describe('reloading a project from the service', () => {
   });
 
   it('refuses an empty catalogue instead of emptying the project', async () => {
-    // An empty export is what a moved or renamed project looks like. Obeying it
-    // would discard everything and report success.
+    // What a moved or renamed project looks like.
     serve(po([]));
 
     await expect(reloadProject(db, projectId)).rejects.toThrow(/empty catalogue/);

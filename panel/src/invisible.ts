@@ -26,36 +26,27 @@ const SPACE: Marker = { text: '·', label: 'boşluk', note: 'baş, son ya da ard
 const NAMED: Marker = { text: '‹U+…›', label: 'görünmez karakter', note: 'kod noktasıyla' };
 
 /**
- * Every marker `reveal` can produce, in the order a reader meets them.
- *
- * Built from the same table the rendering uses, so a marker cannot reach the
- * screen without reaching the legend — a stand-in nobody can look up is worse
- * than the character it replaces.
+ * Every marker `reveal` can produce, built from the same table the rendering
+ * uses so the legend cannot fall out of step with the screen.
  */
 export const LEGEND: readonly Marker[] = [SPACE, ...Object.values(GLYPH), NAMED];
 
 const titleOf = (marker: Marker): string => `${marker.label} (${marker.note})`;
 
 /**
- * Anything else with no appearance: format characters, the other space
- * separators, line and paragraph separators, and C0/C1 controls. These are
- * named by codepoint rather than given a glyph, because there is no convention
- * for them and a wrong guess reads as ordinary text.
+ * Anything else with no appearance: format characters, other space separators,
+ * line and paragraph separators, C0/C1 controls. Named by codepoint, since
+ * there is no convention for them and an invented glyph reads as ordinary text.
  */
 const NAMELESS = /[\p{Cf}\p{Zs}\p{Zl}\p{Zp}\p{Cc}]/u;
 
 /**
- * Split a string so a reader can see what is in it.
+ * Split a string into plain runs and stand-ins for the characters it does not
+ * draw — a trailing space, a tab, a missing `\n`, a stray directional mark.
  *
- * A translation is judged against its source character by character, and the
- * characters most likely to be wrong are the ones neither string shows: a
- * trailing space, a tab that became spaces, a `\n` that went missing. One of
- * the owner's own entries differed from another only by a leading U+200E, which
- * made two rows look like duplicates of each other.
- *
- * Single spaces between words are left alone. Marking every one of them turns
- * the column into dots and hides the cases that matter, which is the opposite
- * of the point; a space is only shown when it leads, trails, or comes in a run.
+ * Single spaces between words are left alone: marking every one turns the
+ * column into dots and hides the cases that matter. A space is shown only when
+ * it leads, trails, or comes in a run.
  */
 export function reveal(value: string): Segment[] {
   const segments: Segment[] = [];

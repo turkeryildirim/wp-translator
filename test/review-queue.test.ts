@@ -36,8 +36,7 @@ describe('importing what the service already translated', () => {
   });
 
   it('keeps a translation the export carried instead of dropping it', () => {
-    // `meta/wordcamp` arrived as 3 116 untranslated strings when 2 413 of them
-    // were already done, because the importer inserted no msgstr at all.
+    // Without this the project arrives wholly untranslated.
     const { counts } = listUnits(db, projectId);
 
     expect(counts.translated).toBe(3);
@@ -49,9 +48,8 @@ describe('importing what the service already translated', () => {
   });
 
   it('does not take an upstream translation on trust', () => {
-    // Measured on bbPress: one approved translation renders `,` as a space, and
-    // eight of wordcamp's 2 413 fail a check. Upstream approval is not a reason
-    // to skip them — these are exactly what a GTE is looking for.
+    // Upstream approval is not a reason to skip the checks; these are exactly
+    // what a GTE is looking for.
     const blocked = listUnits(db, projectId, { view: 'blocked' });
 
     expect(blocked.total).toBe(1);
@@ -68,7 +66,6 @@ describe('paging the queue', () => {
   });
 
   it('returns one page and the total, not the whole catalogue', () => {
-    // It used to load and enrich every row, then slice in JS.
     const page = listUnits(db, projectId, { limit: 100, offset: 0 });
 
     expect(page.rows).toHaveLength(100);
@@ -129,10 +126,8 @@ describe('approving and rejecting a whole filter', () => {
 
 describe('a doubtful upstream translation', () => {
   it('arrives untranslated rather than as somebody’s approved work', () => {
-    // GlotPress hides fuzzy behind an export filter, but it does not hide the
-    // consequence: in the unfiltered export a fuzzy entry carries no msgstr at
-    // all. Measured on bbPress, all 11 of them. So it is redone rather than
-    // quietly accepted, and no second request is needed to find that out (R32).
+    // In the unfiltered export a fuzzy entry carries no msgstr at all, so it is
+    // redone rather than quietly accepted.
     projectId = add([
       { msgid: 'Use %1$s and %2$s' },
       { msgid: 'Fine', msgstr: 'İyi' },
@@ -146,8 +141,7 @@ describe('a doubtful upstream translation', () => {
 
 describe('the blocked column', () => {
   it('follows an edit rather than being recomputed per row', () => {
-    // The queue filters and pages on it in SQL; recomputing is what forced the
-    // screen to load every row.
+    // The queue filters and pages on it in SQL, so it cannot be recomputed.
     projectId = add([{ msgid: '%1$s and %2$s', msgstr: 'doğru %1$s ve %2$s' }]);
     const unitId = listUnits(db, projectId).rows[0]!.id;
 

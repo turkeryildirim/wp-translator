@@ -58,8 +58,8 @@ beforeEach(() => {
 describe('one string arriving under many contexts', () => {
   it('is one entry, whatever the sources called it', () => {
     // `&larr;` came from eight contexts across two projects, all translated the
-    // same way. Keyed on context it was eight rows; keyed on the translation it
-    // is the single fact it always was (D44).
+    // same way. Keyed on the translation rather than the context, that is one
+    // entry.
     fullUpdate();
 
     expect(arrow()).toEqual([

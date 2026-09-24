@@ -1,10 +1,9 @@
 /**
  * A single entry of a PO catalogue.
  *
- * `msgctxt` is carried verbatim from import to export and is never read for
- * matching (D24). GlotPress matches an incoming entry by singular + plural +
- * context, so an entry that loses its context does not match its original and
- * the translation is dropped on import.
+ * `msgctxt` is carried verbatim from import to export and never read for
+ * matching: GlotPress identifies an entry by singular + plural + context, so an
+ * export that drops it loses those translations.
  */
 export interface TranslationUnit {
   /** Position in the source catalogue. Kept for display; export does not depend on it. */

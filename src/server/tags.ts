@@ -16,10 +16,8 @@ export interface MergeResult extends MergePreview {
 }
 
 /**
- * Turkish-aware normalisation.
- *
- * SQLite's `NOCASE` folds ASCII only — `içerik` and `İÇERİK` compare unequal
- * (R10) — so the collation is a second line of defence and this is the first.
+ * Turkish-aware normalisation. SQLite's `NOCASE` folds ASCII only, so the
+ * collation is a second line of defence and this is the first.
  */
 export function normaliseTagName(name: string): string {
   return name.trim().toLocaleLowerCase('tr-TR').replace(/\s+/g, ' ');
@@ -75,14 +73,12 @@ export function previewMerge(db: Db, fromId: number, toId: number): MergePreview
 }
 
 /**
- * Merge one tag into another (D33).
+ * Merge one tag into another.
  *
- * Entries that do not collide move across. Where both tags hold the same source
- * under the same context and part of speech, the unique index refuses the move,
- * and that collision is the interesting case — it is the same disagreement as
- * D29. One policy covers the whole merge rather than asking per entry: a merge
- * can collide on hundreds of rows, and answering that many prompts is not a
- * workflow anyone finishes.
+ * Entries that do not collide move across; where both tags hold the same entry
+ * the unique index refuses the move, and `policy` decides which side wins. One
+ * policy covers the whole merge, because a merge can collide on hundreds of
+ * rows and nobody answers that many prompts.
  */
 export function mergeTags(
   db: Db,

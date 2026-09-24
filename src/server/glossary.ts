@@ -13,7 +13,7 @@ export interface GlossaryRow {
   tag: string;
   /** How many trusted sources carry this entry. */
   sources: number;
-  /** How many contexts this translation has been seen under (D44). */
+  /** How many contexts this translation has been seen under. */
   contexts: number;
   /** How many translations this string has under this tag, including this one. */
   readings: number;
@@ -40,26 +40,19 @@ export interface GlossaryPage {
 }
 
 /**
- * Search the glossary.
+ * Search the glossary, one page at a time.
  *
- * Substring search over tens of thousands of rows is a `LIKE '%…%'`, which the
- * index on `source_text` cannot serve. At the measured size — around 49 500
- * rows for the owner's 41 sources — a scan is still a few milliseconds, so FTS5
- * is not pulled in until it is actually needed.
- *
- * The page is chosen first and decorated second. Ordering needs a temp B-tree,
- * so a single statement with the counts in its select list evaluates them for
- * every row it sorts rather than for the hundred it returns — one page measured
- * 40 s that way, and better-sqlite3 is synchronous, so that is 40 s during
- * which the server answers nothing (R30).
+ * Substring search cannot use an index, but a scan of this table is a few
+ * milliseconds, so FTS5 is not pulled in. The page is chosen first and
+ * decorated second: ordering needs a temp B-tree, so counts in the select list
+ * of a single statement would be evaluated for every row it sorts.
  */
 export function searchGlossary(db: Db, query: GlossaryQuery = {}): GlossaryPage {
   const where: string[] = [];
   const params: unknown[] = [];
 
   if (query.search) {
-    // `instr` over a folded copy rather than `LIKE`: SQLite's folding is ASCII
-    // only, so `İÇERİK` did not match `içerik` while `SAVE` matched `save`.
+    // `instr` over a folded copy rather than `LIKE`, whose folding is ASCII only.
     const columns = searchColumns('g.source_text', 'g.translation', query.scope);
     where.push(match(columns, query.caseSensitive));
     for (const _ of columns) params.push(query.search);
@@ -71,8 +64,8 @@ export function searchGlossary(db: Db, query: GlossaryQuery = {}): GlossaryPage 
   if (query.kind === 'memory') where.push('g.pos IS NULL');
   if (query.kind === 'term') where.push('g.pos IS NOT NULL');
   if (query.contested) {
-    // Disagreement is now visible in the rows themselves rather than hidden in
-    // the links: two translations of one string are two entries (D44).
+    // Two translations of one string are two entries, so disagreement is a
+    // property of the rows rather than of the links.
     where.push(
       `g.pos IS NULL AND (SELECT count(*) FROM glossary_entries o
          WHERE o.source_hash = g.source_hash AND o.tag_id = g.tag_id AND o.pos IS NULL) > 1`,
@@ -114,8 +107,7 @@ export function searchGlossary(db: Db, query: GlossaryQuery = {}): GlossaryPage 
   return { rows, total };
 }
 
-/** The columns a query looks in. Narrowing is the point: `Save` appears in
- *  hundreds of translations that are not about saving anything. */
+/** The columns a query looks in; narrowing keeps `Save` out of the Turkish column. */
 export const searchColumns = (
   source: string,
   translation: string,
@@ -125,11 +117,7 @@ export const searchColumns = (
 
 /**
  * A substring test over those columns, case-folded unless the owner asked
- * otherwise.
- *
- * Sensitive search is plain `instr`, which compares bytes — that is exactly
- * what "exactly as I typed it" means, and it is the only way to find `Save`
- * without also finding `save`.
+ * otherwise. Sensitive search is plain `instr`, a byte comparison.
  */
 export const match = (columns: readonly string[], sensitive?: boolean): string =>
   `(${columns
@@ -151,7 +139,7 @@ export function entryContexts(db: Db, entryId: number): string[] {
     .map((row) => (row as { msgctxt: string }).msgctxt);
 }
 
-/** Which sources vouch for an entry. They all vouch for its wording (D44). */
+/** Which sources vouch for an entry. They all vouch for its exact wording. */
 export function entrySources(db: Db, entryId: number): EntrySource[] {
   return db
     .prepare(
@@ -189,23 +177,16 @@ const ENTRY_SELECT = `
 export interface EntryUpdate {
   entry: GlossaryRow;
   /**
-   * True when the source's own wording will reappear beside this one.
-   *
-   * The translation is part of an entry's identity (D44), so editing one does
-   * not overwrite what a trusted source says — the source still carries its
-   * wording and puts it back on the next update, as a second reading. The
-   * owner's entry ranks above it, so the edit is what gets filled in.
+   * True when the source's own wording will reappear beside this one on the next
+   * update, as a second reading. The owner's entry ranks above it.
    */
   sourceWordingReturns: boolean;
 }
 
 /**
- * Change an entry's translation.
- *
- * The edit also makes the entry the owner's. It has to: the translation is part
- * of the key, so an edited entry no longer matches what any source vouches for,
- * and the sweep deletes a trusted entry nothing vouches for (R14) — the edit
- * would disappear on the next update.
+ * Change an entry's translation, which also makes it the owner's. It has to be:
+ * the translation is part of the key, so an edited entry matches no source's
+ * wording and the sweep would delete it as unvouched.
  */
 export function updateEntry(db: Db, entryId: number, translation: string): EntryUpdate {
   const before = db
@@ -221,8 +202,6 @@ export function updateEntry(db: Db, entryId: number, translation: string): Entry
     ).run(translation, entryId);
   } catch (problem) {
     // The key is source plus translation, so this wording is already an entry.
-    // Merging the two is not this function's job and silently discarding the
-    // edit is worse, so the owner is told which one to use.
     if (problem instanceof Error && problem.message.includes('UNIQUE')) {
       throw new Error(`Bu kaynak için "${translation}" çevirisi sözlükte zaten var.`);
     }

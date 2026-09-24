@@ -21,9 +21,8 @@ export class RateLimited extends Error {
  * Fetch a PO export, pacing and retrying.
  *
  * The service advertises no rate-limit headers and sends no `Retry-After`, but
- * the limit is real: fetching 41 trusted sources back to back returned one 429,
- * which succeeded again twenty seconds later. So the pacing is deliberate rather
- * than defensive, and a 429 is a wait rather than a failure.
+ * the limit is real, so the pacing is deliberate rather than defensive and a
+ * 429 is treated as a wait rather than a failure.
  */
 export async function fetchExport(url: string, options: FetchOptions = {}): Promise<string> {
   const { attempts, backoffMs } = { ...DEFAULTS, ...options };
@@ -48,10 +47,8 @@ export async function fetchExport(url: string, options: FetchOptions = {}): Prom
 }
 
 /**
- * Fetch several exports in order, pausing between them.
- *
- * Sequential on purpose: the point is to stay under the limit, and a trusted
- * source sync is not latency-sensitive.
+ * Fetch several exports in order, pausing between them. Sequential on purpose:
+ * the point is to stay under the rate limit.
  */
 export async function* fetchExports(
   urls: readonly string[],

@@ -12,12 +12,9 @@ const planOf = (db: ReturnType<typeof openDb>, sql: string): string =>
     .join(' | ');
 
 describe('the statements run for every string of every source', () => {
-  // These two run once per unit per tag — 58 000 times in a full update. Written
-  // with `OR` instead of two seeks, they stopped matching
-  // idx_glossary_memory_key and fell back to idx_glossary_tag, which is every
-  // row in the glossary because almost all of them carry one tag. Measured at
-  // 6.777 ms against 0.007 ms per lookup, and better-sqlite3 is synchronous, so
-  // the server stopped answering rather than merely running slowly.
+  // These run once per unit per tag, so losing the index turns the sync into a
+  // scan of the whole glossary — and better-sqlite3 is synchronous, so the
+  // server stops answering rather than merely running slowly.
   it.each(['linkSource', 'recordContext'] as const)(
     'looks %s up by index, never by scan',
     (name) => {

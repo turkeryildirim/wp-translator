@@ -30,10 +30,9 @@ const SUB_PROJECTS = new Set([
 /**
  * Read a translate.wordpress.org project URL.
  *
- * The project space is not uniform (R8): plugins carry a sub-project, themes do
- * not, core nests two levels deep, and apps split by platform. Both URL forms
- * are accepted — the canonical `/projects/<path>/tr/default/` and the
- * `/locale/tr/default/<type>/<slug>/` page that lists a project's sub-projects.
+ * The project space is not uniform: plugins carry a sub-project, themes do not,
+ * core nests two levels deep, apps split by platform. Both URL forms are
+ * accepted, the canonical one and the locale page that lists sub-projects.
  */
 export function parseProjectUrl(url: string): ProjectRef {
   const { pathname } = new URL(url);
@@ -72,12 +71,9 @@ function stripLocale(segments: string[]): string[] {
 export interface ExportOptions {
   locale?: string;
   /**
-   * `current` by default, which is what a trusted source wants: `waiting` is
-   * unreviewed and would dilute the glossary (D26).
-   *
-   * `all` omits the filter and returns the whole catalogue, which is what a
-   * project being translated wants — it needs every string, not the subset that
-   * happens to be in one state today.
+   * `current` by default, which is what a trusted source wants; `waiting` is
+   * unreviewed and would dilute the glossary. `all` omits the filter and
+   * returns the whole catalogue, which is what a project to translate needs.
    */
   status?: 'current' | 'waiting' | 'untranslated' | 'all';
 }

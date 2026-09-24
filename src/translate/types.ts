@@ -42,11 +42,8 @@ export interface TranslationRequest {
 }
 
 /**
- * A translation provider.
- *
- * One implementation — opencode (ADR-0002). The interface exists so the model
- * choice lives in opencode's configuration rather than in this codebase, and so
- * a local model is a setting rather than a rewrite.
+ * A translation provider. The interface exists so the model choice lives in
+ * opencode's configuration rather than in this codebase.
  */
 export interface TranslationProvider {
   readonly name: string;

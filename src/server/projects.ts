@@ -16,11 +16,8 @@ export interface AddProjectResult {
 }
 
 /**
- * Add a project to translate.
- *
- * Only `dev` or `stable` carry the UI strings; the sub-project the owner pasted
- * is used as given (D27). Metadata comes from wordpress.org where the family has
- * it, and is simply absent otherwise rather than faked.
+ * Add a project to translate, using the sub-project the owner pasted. Metadata
+ * comes from wordpress.org where the family has it, and is absent otherwise.
  */
 export async function addProject(
   db: Db,
@@ -30,9 +27,7 @@ export async function addProject(
   const ref = parseProjectUrl(url);
 
   // The whole catalogue in one request. GlotPress puts status in an export
-  // filter rather than in the PO, so `fuzzy` and `waiting` would cost a request
-  // each — and they need not, because a fuzzy entry comes through here with an
-  // empty translation and is simply redone (R32).
+  // filter rather than in the PO, and a fuzzy entry reaches us untranslated.
   const [po, metadata] = await Promise.all([
     fetchExport(exportUrl(ref.projectPath, { status: 'all' })),
     fetchMetadata(ref.family, ref.slug),
@@ -89,19 +84,10 @@ export interface ReloadResult {
 /**
  * Fetch the project again and replace its catalogue.
  *
- * Upstream moves: strings are added, changed and withdrawn, and a translation
- * the owner is reviewing may already be approved on the service. The only way
- * to see that is to fetch it again.
- *
- * This **discards** the units and everything on them — the AI's output, the
- * owner's edits and approvals, the quality-check exceptions — and takes what
- * the service has instead. Merging is not attempted: a source string can change
- * under a `msgctxt` that did not, and guessing which side of that is current
- * would quietly keep a translation of something nobody wrote any more. The
- * caller is told the count beforehand so the choice is an informed one.
- *
- * The project row survives, so its tags, its id and the owner's place in the
- * panel all stay put.
+ * **Discards** the units and everything on them — the model's output, the
+ * owner's edits and approvals, the check exceptions. No merge is attempted,
+ * because a source string can change under a `msgctxt` that did not. The
+ * project row survives, so its tags and its id stay put.
  */
 export async function reloadProject(db: Db, projectId: number): Promise<ReloadResult> {
   const project = db
@@ -111,8 +97,7 @@ export async function reloadProject(db: Db, projectId: number): Promise<ReloadRe
 
   const catalogue = parsePo(await fetchExport(exportUrl(project.projectPath, { status: 'all' })));
   if (catalogue.units.length === 0) {
-    // Refused rather than applied: an empty catalogue is what a moved or
-    // renamed project looks like, and obeying it would empty the project.
+    // An empty catalogue is what a moved or renamed project looks like.
     throw new Error(`${project.projectPath} returned an empty catalogue; nothing was changed.`);
   }
 
@@ -149,12 +134,8 @@ export interface BulkResult {
 }
 
 /**
- * Approve many units at once.
- *
- * Bulk approval is the only way the volume is survivable — Astra leaves 3 818
- * strings — and also how one mistake becomes three thousand. Units that fail a
- * quality check are excluded rather than silently included, and the caller is
- * told how many were left behind.
+ * Approve many units at once. Units that fail a quality check are excluded
+ * rather than silently included, and the caller is told how many.
  */
 export function bulkApprove(db: Db, unitIds: readonly number[]): BulkResult {
   const result: BulkResult = { approved: 0, refused: 0 };

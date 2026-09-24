@@ -34,12 +34,8 @@ const draft = ref('');
 const notice = ref('');
 
 /**
- * Which request is the current one.
- *
- * Holding the arrows down fires a page per click, and every one of them is a
- * scan of the glossary on a synchronous database. The arrows going dead while a
- * page is in flight is the real guard; this is the second one, so that a reply
- * that arrives after a newer request cannot paint an older page over it.
+ * Which request is the current one, so a reply arriving after a newer request
+ * cannot paint an older page over it.
  */
 let ticket = 0;
 
@@ -63,8 +59,7 @@ async function load(): Promise<void> {
 
     rows.value = result.rows;
     total.value = result.total;
-    // Cleared only once the rows are on screen, so the arrows do not come back
-    // to life a frame before the page they loaded.
+    // Cleared once the rows are on screen, not a frame before.
     await nextTick();
   } finally {
     if (mine === ticket) loading.value = false;
@@ -109,12 +104,9 @@ function applyFilters(): void {
 
 const screenEl = ref<HTMLElement | null>(null);
 /**
- * How tall the pinned detail panel is allowed to get.
- *
- * It is sticky, and a sticky box taller than what it is pinned inside has an
- * unreachable bottom — the Kaydet button disappeared below the window once an
- * entry had enough vouchers. The scrollport here is `.screen`, whose top is
- * fixed by the layout, so the room below it is what the panel may use.
+ * How tall the pinned detail panel may get. A sticky box taller than what it is
+ * pinned inside has an unreachable bottom, so it is bounded by the room below
+ * the scrollport's fixed top edge.
  */
 const dockMax = ref('100dvh');
 
@@ -214,15 +206,13 @@ watch(page, load);
         </p>
         <p v-if="selected.note" class="note">{{ selected.note }}</p>
 
-        <!-- The box cannot show what it holds, so the stored wording is shown
-             above it. Whitespace is exactly what an edit gets wrong. -->
+        <!-- The box cannot mark invisible characters, so the stored wording is
+             shown above it. -->
         <p class="note stored"><Reveal :value="selected.translation" /></p>
 
         <label>
           Çeviri
-          <!-- Enter inserts a newline here rather than saving: a translation can
-               legitimately contain one, and losing it to a shortcut is worse
-               than one extra click on Kaydet. -->
+          <!-- Enter inserts a newline; a translation can legitimately hold one. -->
           <textarea v-model="draft" rows="3" @keydown.ctrl.enter.prevent="save" />
         </label>
         <button class="primary" @click="save">Kaydet</button>
@@ -241,8 +231,7 @@ watch(page, load);
         </template>
         <template v-if="contexts.length">
           <h4>Geçtiği bağlamlar</h4>
-          <!-- Informational: matching ignores these. They answer why the same
-               string has more than one translation in the glossary. -->
+          <!-- Informational: matching ignores these. -->
           <ul class="vouchers">
             <li v-for="ctx in contexts" :key="ctx"><code>{{ ctx }}</code></li>
           </ul>
@@ -259,8 +248,7 @@ watch(page, load);
       </aside>
     </div>
 
-    <!-- Repeated at the foot: a hundred rows is further than a screen, and
-         paging from the bottom should not mean scrolling back up first. -->
+    <!-- Repeated at the foot; a page of rows is further than a screen. -->
     <Pager :page="page" :total="total" :page-size="PAGE" :busy="loading" @go="goTo" />
   </section>
 </template>

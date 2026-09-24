@@ -26,15 +26,9 @@ interface UnitRow {
 /**
  * Export a project as PO for import into GlotPress.
  *
- * Only `ok` units are written. GlotPress reads `#, fuzzy` as fuzzy status,
- * skips an entry whose `msgstr` is empty and ignores `#~` obsolete entries, so
- * anything unsettled is withheld rather than sent in a state that would be
- * silently reinterpreted.
- *
- * `msgctxt` travels untouched. GlotPress matches an incoming entry by singular +
- * plural + context, so an entry that loses its context matches no original and
- * its translation is dropped on import (R2) — which is why it is carried through
- * even though nothing here ever reads it.
+ * Only `ok` units are written: anything unsettled is withheld rather than sent
+ * in a state GlotPress would reinterpret. `msgctxt` travels untouched, because
+ * GlotPress identifies an entry by singular + plural + context.
  */
 export function exportProject(db: Db, projectId: number): ExportResult {
   const project = db

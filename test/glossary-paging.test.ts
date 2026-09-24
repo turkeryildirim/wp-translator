@@ -6,18 +6,9 @@ import { sourceHash } from '../src/glossary/key.ts';
 const ROWS = 20_000;
 /**
  * Generous on purpose: the failure it guards against is quadratic, not gradual.
- * Two things have to hold, and measured at this size neither alone is a
- * disaster while both together are (R30):
- *
- * |                              | with idx_glossary_source | without |
- * |------------------------------|-------------------------:|--------:|
- * | page chosen, then decorated  |                    10 ms |  251 ms |
- * | one statement                |                    44 ms | 45.9 s  |
- *
- * So this budget cannot tell which of the two was lost — but it catches losing
- * both, which is what happened, and a page of the owner's real glossary took
- * 40 s. Anything near the budget means the shape changed, not that the machine
- * is busy.
+ * The page must be chosen before it is decorated, and the sibling count needs
+ * `idx_glossary_source`; losing both turns a page into tens of seconds.
+ * Anything near this budget means the query shape changed.
  */
 const BUDGET_MS = 1000;
 

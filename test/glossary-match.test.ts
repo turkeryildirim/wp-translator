@@ -78,9 +78,9 @@ describe('glossary matching', () => {
   });
 
   it('does not match on case, because matching is byte-exact', () => {
-    // Lowercasing would gain 253 matches across WooCommerce, 197 of them to a
-    // different translation: `Saved for Later` is `Sonraya Kaydet`, `Saved for
-    // later` is `Sonraya kaydedildi` (R13).
+    // Lowercasing would gain matches that map to a different translation:
+    // `Saved for Later` is `Sonraya Kaydet`, `Saved for later` is `Sonraya
+    // kaydedildi`.
     addGlossaryEntry(ecommerce, 'Add to cart', 'Sepete ekle');
     const projectId = addProject([{ msgid: 'Add To Cart' }], [ecommerce]);
 
@@ -95,9 +95,8 @@ describe('glossary matching', () => {
   });
 
   it('ignores the unit’s context entirely', () => {
-    // Context used to choose the entry. Measured over three real plugins it
-    // decided none of the 281 matches it could have, because a glossary's
-    // contexts are the source project's own keys (R29).
+    // A glossary's contexts are the source project's own keys, which do not
+    // recur in someone else's plugin.
     addGlossaryEntry(ecommerce, 'About', 'Hakkında');
     const projectId = addProject([{ msgid: 'About', msgctxt: 'a context nobody has seen' }], [ecommerce]);
 
@@ -115,8 +114,7 @@ describe('glossary matching', () => {
   });
 
   it('falls to the highest-ranked source when support is level', () => {
-    // Measured over five sources, 88 % of disagreements are two-way ties, so
-    // the owner's ranking is what actually decides (R15, D36).
+    // Most disagreements are two-way ties, so the owner's ranking decides.
     rank('core', 1);
     rank('woocommerce', 2);
     // The lower-ranked wording is stored first, so passing cannot be an
@@ -130,8 +128,7 @@ describe('glossary matching', () => {
   });
 
   it('puts the owner’s own entry above every source', () => {
-    // The owner edited this deliberately; a source outvoting it would undo the
-    // edit on the next update.
+    // A source outvoting the owner would undo their edit on the next update.
     vouched(ecommerce, 'Item', 'Öğe', ['core', 'woocommerce', 'gutenberg']);
     addGlossaryEntry(ecommerce, 'Item', 'Ürün');
     const projectId = addProject([{ msgid: 'Item' }], [ecommerce]);

@@ -85,9 +85,8 @@ export function normaliseProjectUrl(input: string): string {
 /**
  * Check the project actually exports before storing it.
  *
- * A typo in the path returns 404 as a ~116 KB HTML page (R5b), so a source added
- * without this check sits in the list looking fine and fails on every Update.
- * Content type is the reliable signal: a real export is `application/octet-stream`.
+ * A typo in the path returns 404 as a large HTML page, so the content type is
+ * the reliable signal: a real export is `application/octet-stream`.
  */
 export async function verifyProjectUrl(url: string): Promise<void> {
   const ref = parseProjectUrl(url);
@@ -139,11 +138,8 @@ export interface BulkTagChange {
 }
 
 /**
- * Add or remove tags across many sources at once.
- *
- * The seeded list puts all 41 under one tag, and splitting it is the point —
- * giving WooCommerce its own tag is what makes `item` come out as `ürün` there.
- * Doing that one row at a time is the sort of chore people skip.
+ * Add or remove tags across many sources at once, since splitting the seeded
+ * single tag is the point and doing it row by row is a chore people skip.
  */
 export function bulkTagSources(db: Db, ids: readonly number[], change: BulkTagChange): number {
   const add = db.prepare(
@@ -218,17 +214,11 @@ let progress: SyncProgress = idle();
 export const syncProgress = (): SyncProgress => progress;
 
 /**
- * Re-fetch trusted sources and re-import them.
+ * Re-fetch trusted sources and re-import them, unattended and in the
+ * background; the service rate-limits a tight loop, so the panel polls.
  *
- * Runs unattended (D17) and in the background: all 41 sources take half a minute
- * once paced, and the service rate-limits a tight loop (R24), so the panel polls
- * rather than waiting on one request.
- *
- * `ids` narrows the run to the sources the owner picked. A source that has just
- * been re-translated upstream is worth re-fetching on its own, and waiting for
- * the other forty to confirm it is not. The official term list is left alone in
- * that case: it is not one of these sources, and nothing about picking a few of
- * them says the terminology is stale.
+ * @param ids narrows the run to these sources and leaves the official term
+ * list alone, since it is not one of them.
  */
 export function startSync(db: Db, ids?: readonly number[]): SyncProgress {
   if (progress.running) return progress;
@@ -236,9 +226,7 @@ export function startSync(db: Db, ids?: readonly number[]): SyncProgress {
   const partial = ids !== undefined && ids.length > 0;
   const wanted = partial ? new Set(ids) : null;
   const sources = listSources(db).filter((source) => wanted === null || wanted.has(source.id));
-  // +1 for the official glossary on a full run, refreshed alongside: it is the
-  // same kind of work from the owner's side, and forgetting it would leave the
-  // terminology stale while the memory moved on.
+  // +1 for the official glossary, refreshed alongside on a full run.
   progress = {
     ...idle(),
     running: true,

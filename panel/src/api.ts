@@ -55,16 +55,14 @@ export interface UnitDetail {
  * here too. Components were throwing into an unhandled rejection: a write that
  * failed left the screen looking exactly like a write that worked.
  *
- * `label` names the write for the corner message. A read passes none and stays
- * silent — nothing happened that the owner needs told.
+ * @param label names the write for the corner message; a read passes none.
  */
 const json = async <T>(input: string, init?: RequestInit, label?: string): Promise<T> => {
   let response: Response;
   try {
     response = await fetch(input, init);
   } catch (problem) {
-    // The server is a local process the owner starts by hand, so "it stopped"
-    // is a likely failure and worth saying plainly.
+    // The server is a local process the owner starts by hand.
     notify('error', `Sunucuya ulaşılamadı. Çalışıyor mu? (${describe(problem)})`);
     throw problem;
   }
@@ -114,11 +112,8 @@ export const listUnits = (projectId: number, params: Record<string, string> = {}
   json<UnitPage>(`/api/projects/${projectId}/units?${new URLSearchParams(params)}`);
 
 /**
- * Approve or reject everything the filter matches.
- *
- * The filter travels as a query string rather than a list of ids: "approve the
- * three thousand untranslated ones" should not mean sending three thousand
- * numbers to the server and back.
+ * Apply an action to the ticked rows, or to everything a filter matches. The
+ * filter travels as a query string rather than as the ids it stands for.
  */
 export type BulkAction = 'approve' | 'clear' | 'glossary';
 
@@ -141,10 +136,8 @@ export const bulkSetState = (
 export const unitDetail = (unitId: number) => json<UnitDetail>(`/api/units/${unitId}/detail`);
 
 /**
- * Record a deliberate exception to one quality check on one string.
- *
- * The reason is stored, not just the exception: a check that is wrong here is
- * usually wrong for a reason worth finding later.
+ * Record a deliberate exception to one quality check on one string, with the
+ * owner's reason.
  */
 export const overrideCheck = (unitId: number, rule: string, reason: string) =>
   post<{ ok: true }>(`/api/units/${unitId}/override`, { rule, reason }, 'Kural atlandı');
@@ -157,9 +150,8 @@ export const saveUnit = (unitId: number, edit: { msgstr?: string; msgstrPlural?:
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(edit),
     },
-    // Deliberately unlabelled. A save the quality checks refuse still answers
-    // 200, carrying `blocked`, so a label here would report success for exactly
-    // the write the owner needs warned about. ReviewTable reads the body.
+    // Unlabelled: a refused save still answers 200, carrying `blocked`, so the
+    // outcome is in the body and ReviewTable reports it.
   );
 
 export interface Tag {

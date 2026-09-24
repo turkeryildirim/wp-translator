@@ -21,19 +21,10 @@ export interface ProjectInput {
 /**
  * Store a project and its catalogue.
  *
- * A unit the export already translated is kept as translated and settled, with
- * `upstream = 'current'` recording that the work came from the service rather
- * than from here. Dropping it, as this used to, meant `meta/wordcamp` arrived
- * as 3 116 untranslated strings when 2 413 of them were already done — the
- * owner could neither see that nor avoid paying a model to redo it (D45).
- *
- * One request, so two statuses. GlotPress states status through an export
- * filter rather than a flag in the PO, and telling `waiting` and `fuzzy` apart
- * would cost a request each. It does not need to: measured on bbPress, all 11
- * of its fuzzy entries appear in the unfiltered export with an **empty**
- * `msgstr`, even though the `fuzzy`-filtered export gives them translations. So
- * a doubtful translation arrives here as untranslated and gets redone rather
- * than being quietly accepted — which is the outcome worth having (R32).
+ * A unit the export already translated stays translated and settled, with
+ * `upstream = 'current'` recording that the work came from the service. Only
+ * those two statuses exist here, because a fuzzy or waiting entry reaches the
+ * unfiltered export with no translation and lands as untranslated.
  */
 export function importProject(db: Db, project: ProjectInput, catalogue: Catalogue): number {
   const insertProject = db.prepare(
@@ -63,10 +54,8 @@ export function importProject(db: Db, project: ProjectInput, catalogue: Catalogu
 }
 
 /**
- * Write a catalogue's units under a project, in place of whatever is there.
- *
- * Shared by the first import and by a reload, so the two cannot disagree about
- * what a status means.
+ * Write a catalogue's units under a project, replacing whatever is there.
+ * Shared by the first import and by a reload.
  */
 export function replaceUnits(db: Db, projectId: number, catalogue: Catalogue): void {
   const insertUnit = db.prepare(
@@ -93,8 +82,7 @@ export function replaceUnits(db: Db, projectId: number, catalogue: Catalogue): v
       state: translated ? 'ok' : 'untranslated',
       upstream: translated ? 'current' : 'untranslated',
       // Checked on the way in, so the queue can filter on it in SQL. An
-      // upstream translation is not above suspicion — these are exactly the
-      // strings a GTE is looking for.
+      // upstream translation is not above suspicion.
       blocked: translated && checkTranslation(unit).length > 0 ? 1 : 0,
     });
   }

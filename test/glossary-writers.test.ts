@@ -68,8 +68,8 @@ describe('a project never writes to the glossary', () => {
   });
 
   it('not even a translation that contradicts an entry', () => {
-    // The collision the register used to describe. There is nothing to resolve:
-    // the project keeps its wording, the glossary keeps its own.
+    // There is nothing to resolve: the project keeps its wording, the glossary
+    // keeps its own.
     const unitId = listUnits(db, projectId).rows.find((row) => row.msgid === 'Save')!.id;
     saveUnit(db, unitId, { msgstr: 'Sakla' });
 

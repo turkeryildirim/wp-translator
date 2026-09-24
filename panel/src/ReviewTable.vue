@@ -7,8 +7,6 @@ import UnitDetailPanel from './UnitDetailPanel.vue';
 
 /**
  * Selection lives on the screen above, with the actions that consume it.
- * Keeping it here meant two places offering to select things, which is what
- * made the screen confusing to begin with.
  */
 const props = defineProps<{ units: Unit[]; picked: number[] }>();
 const emit = defineEmits<{ changed: [Unit]; bulk: []; 'update:picked': [number[]]; page: [] }>();
@@ -46,8 +44,7 @@ function clearDraft(unit: Unit): void {
 
 function move(delta: number): void {
   const next = cursor.value + delta;
-  // Past the end of a page, ask for the next one rather than stopping on the
-  // last row: the queue is paged now, and a project runs to thousands.
+  // Past the end of a page, ask for the next one.
   if (next >= props.units.length) {
     emit('page');
     return;
@@ -56,9 +53,8 @@ function move(delta: number): void {
   scrollIntoView(cursor.value);
 }
 
-// After approving, land on the next row still needing attention rather than on
-// whatever slid into this index — otherwise holding Enter approves the wrong
-// strings, which is the one mistake that is both easy and expensive.
+// Land on the next row still needing attention, not on whatever slid into this
+// index; otherwise holding Enter approves the wrong strings.
 function advance(): void {
   const next = props.units.findIndex((unit, index) => index > cursor.value && unit.state !== 'ok');
   if (next >= 0) {
@@ -88,11 +84,8 @@ function cancelEdit(): void {
 }
 
 /**
- * Empty a unit and move on.
- *
- * Rejecting is not a state of its own: the translation goes, the unit returns
- * to untranslated, and the next AI run picks it up. Saving an empty string is
- * what the server reads as that.
+ * Empty a unit and move on. Rejecting is not a state: the unit returns to
+ * untranslated and the next AI run picks it up.
  */
 async function reject(): Promise<void> {
   const unit = current.value;
@@ -110,8 +103,7 @@ async function approve(withEdit: boolean): Promise<void> {
   const unit = current.value;
   if (!unit) return;
 
-  // Blocked rows used to refuse silently, so approving one looked like a key
-  // that did not work. Say what is wrong and what the two ways out are.
+  // Say what is wrong and what the two ways out are, rather than doing nothing.
   if (unit.failures.length > 0) {
     notify(
       'error',
@@ -257,11 +249,8 @@ watch(
 
 <template>
   <div class="review">
-    <!-- A table, because this is tabular. It was a list of absolutely
-         positioned divs at a fixed height, which is what virtualisation needed
-         while the screen loaded a whole catalogue at once. Paging removed that
-         reason and left only its costs: a long string overlapped the row under
-         it, and the height lived in two files that could disagree. -->
+    <!-- A table, because this is tabular. Positioned boxes at a fixed height
+         overlap as soon as a string runs past one line. -->
     <div class="queue">
       <table class="grid">
         <thead>
@@ -324,8 +313,8 @@ watch(
 
       <label>
         Çeviri
-        <!-- The one place a translation is edited. It used to be a single-line
-             box inside a 40px row, which could not show what it held. -->
+        <!-- The one place a translation is edited; a row cannot hold a
+             sentence. -->
         <textarea
           ref="editor"
           class="target-editor"

@@ -43,8 +43,7 @@ const counts = ref<Record<QueueView, number>>({
 });
 const page = ref(0);
 const PAGE = 100;
-// Most of a mature project is already translated, and a GTE opens one to review
-// what is there rather than only to fill what is missing.
+// A GTE opens a project to review what is there, not only to fill what is missing.
 const filter = ref<QueueView>('translated');
 const picked = ref<number[]>([]);
 const search = ref('');
@@ -54,8 +53,7 @@ const loading = ref(false);
 const translating = ref<TranslateProgress | null>(null);
 let translatePoll: ReturnType<typeof setInterval> | null = null;
 
-// Everything the glossary could not fill. The button says the number so the
-// owner knows what they are starting before they start it.
+// Everything the glossary could not fill.
 const pending = computed(() => project.value?.untranslated ?? 0);
 
 const VIEWS: { view: QueueView; label: string; hint: string }[] = [
@@ -94,8 +92,7 @@ function pollTranslation(): void {
       translatePoll = null;
       projects.value = await listProjects();
       await load();
-      // Translation runs in chunks for minutes; its outcome belongs in the
-      // corner rather than only in a line the owner has scrolled past.
+      // A run takes minutes, so its outcome goes to the corner.
       const done = translating.value;
       if (done.errors.length)
         notify('error', `Çeviri bitti, ${done.errors.length} küme başarısız oldu.`);
@@ -168,10 +165,8 @@ const BULK_LABEL: Record<BulkChoice, string> = {
 };
 
 /**
- * One menu instead of a button per combination.
- *
- * Nothing runs without a selection, and the count is in the confirmation: the
- * cost of a mis-click here is measured in thousands of strings.
+ * Apply the chosen action to the selection, or to the whole filter. Nothing
+ * runs without a target, and the confirmation names the count.
  */
 async function runBulk(): Promise<void> {
   const action = bulkAction.value;
@@ -224,11 +219,8 @@ function clearSelection(): void {
 const reloading = ref(false);
 
 /**
- * Fetch the project again and take what the service has.
- *
- * The warning names the number rather than the risk. "Changes will be lost" is
- * something people click past; naming how many strings go is not. The count
- * comes from the server, so it is never a guess that has gone stale.
+ * Fetch the project again and take what the service has, discarding local work.
+ * The warning names how many strings go, asked of the server so it is current.
  */
 async function reload(): Promise<void> {
   const current = project.value;
@@ -297,9 +289,8 @@ onMounted(async () => {
   selected.value = projects.value[0]?.id ?? null;
 });
 
-// `page` is watched, which is what makes the pager work: `goTo` only moves the
-// number. A filter change resets the page and loads explicitly, so both can
-// fire — the in-flight ticket drops whichever reply is stale.
+// Watching `page` is what makes the pager work; `goTo` only moves the number.
+// A filter change also loads explicitly, and the ticket drops the stale reply.
 watch([selected, page], load);
 </script>
 
@@ -330,9 +321,8 @@ watch([selected, page], load);
     <AddProject v-else-if="screen === 'add'" @added="onProjectAdded" />
 
     <template v-else>
-    <!-- Fixed reading order, top to bottom: what the markers mean, what the
-         project is, what to run on it, what to look at, what to do with the
-         selection, then the rows between their two pagers. -->
+    <!-- Reading order: what the markers mean, what the project is, what to run
+         on it, what to look at, what to do with the selection, then the rows. -->
     <Legend />
     <p class="legend">
       <span class="muted">Satır:</span>
@@ -426,8 +416,7 @@ watch([selected, page], load);
         <option value="">Toplu işlem…</option>
         <option v-for="(label, key) in BULK_LABEL" :key="key" :value="key">{{ label }}</option>
       </select>
-      <!-- Dead until both a target and an action exist: the cost of a mis-click
-           here is measured in thousands of strings. -->
+      <!-- Dead until both a target and an action exist. -->
       <button class="primary" :disabled="!bulkAction || bulkCount === 0" @click="runBulk">
         Uygula{{ bulkCount ? ` (${bulkCount.toLocaleString('tr')})` : '' }}
       </button>

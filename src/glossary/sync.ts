@@ -10,25 +10,13 @@ export interface SyncResult {
 }
 
 /**
- * Import a trusted source's catalogue into the glossary.
+ * Import a trusted source's catalogue into the glossary, unattended.
  *
- * Runs unattended (D17): entries already present are updated, new ones added,
- * and anything the source no longer carries is dropped. Nothing asks for
- * confirmation.
- *
- * An entry is a source and a translation; context is not part of its identity
- * (D44). Two sources that translate one string the same way meet on one row
- * however differently they label it, and two that disagree sit side by side as
- * the alternatives they are. Contexts are kept alongside, as a record of where
- * a translation has been seen.
- *
- * The drop removes this source's *link*, not the entry. Several trusted sources
- * carry the same string — `Save` and `Cancel` are in core and in most plugins,
- * and WooCommerce alone shares 643 entries with core — so an entry survives
- * while any source still vouches for it (R14).
- *
- * Only translated entries are taken: an untranslated source string teaches the
- * glossary nothing.
+ * An entry is identified by its source *and* its translation, so sources that
+ * agree meet on one row and sources that differ sit side by side; contexts are
+ * recorded alongside but are not part of the key. Dropping a string removes
+ * this source's link, not the entry, which survives while any source still
+ * vouches for it.
  */
 export function syncTrustedSource(
   db: Db,
@@ -74,11 +62,7 @@ export function syncTrustedSource(
   })();
 }
 
-/**
- * Exported for the query-plan test, which is the only guard against this
- * module's statements quietly losing their index — the failure is invisible in
- * behaviour and only shows up as the server ceasing to answer.
- */
+/** Exported so `test/sync-plan.test.ts` can check these statements' query plans. */
 export function prepare(db: Db) {
   return {
     beginRun: db.prepare(`INSERT INTO sync_runs (trusted_source_id) VALUES (?)`),
@@ -93,8 +77,6 @@ export function prepare(db: Db) {
        WHERE id = ?`,
     ),
 
-    // Source and translation are the identity, so a string every source renders
-    // the same way is one row no matter how many contexts it arrived under.
     insertEntry: db.prepare(
       `INSERT INTO glossary_entries
          (source_hash, source_text, source_plural, msgctxt, tag_id,
@@ -104,12 +86,8 @@ export function prepare(db: Db) {
          WHERE pos IS NULL DO NOTHING`,
     ),
 
-    // Both of these run once per string per tag — 58 000 times in a full
-    // update — so both must reach the row by index. They spell the key exactly
-    // as idx_glossary_memory_key is built; anything the index cannot serve
-    // falls back to scanning the whole glossary, and better-sqlite3 is
-    // synchronous, so the server stops answering rather than merely slowing
-    // down (R28). `test/sync-plan.test.ts` holds them to it.
+    // Runs once per string per tag, so it must reach the row by index: it spells
+    // the key exactly as idx_glossary_memory_key is built.
     linkSource: db.prepare(
       `INSERT INTO glossary_entry_sources (entry_id, trusted_source_id, translation, last_seen_sync_id)
        SELECT id, @trustedSourceId, @translation, @syncRunId
@@ -121,9 +99,8 @@ export function prepare(db: Db) {
          last_seen_sync_id = excluded.last_seen_sync_id`,
     ),
 
-    // Where this translation has been seen. Not a key, and never read by
-    // matching — it answers "why does the glossary offer this?" when two
-    // translations of one string sit next to each other.
+    // Where this translation has been seen. Never read by matching; it answers
+    // why the glossary offers two translations of one string.
     recordContext: db.prepare(
       `INSERT OR IGNORE INTO glossary_entry_contexts (entry_id, msgctxt)
        SELECT id, @msgctxt FROM glossary_entries

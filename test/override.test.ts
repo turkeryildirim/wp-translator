@@ -41,9 +41,7 @@ describe('getting past a blocked string', () => {
   });
 
   it('clears when the owner overrides the rule instead', () => {
-    // The other way out, for a check that is wrong about this string. The
-    // endpoint existed with nothing calling it; approving a blocked row simply
-    // did nothing and said nothing.
+    // The other way out, for a check that is wrong about this string.
     const rule = listUnits(db, projectId).rows[0]!.failures[0]!.rule;
     overrideCheck(db, unitId, rule, 'Kaynak hatalı, çeviri doğru.');
 

@@ -10,11 +10,9 @@ const initialSchema = (): string =>
   readFileSync(fileURLToPath(new URL('./schema.sql', import.meta.url)), 'utf-8');
 
 /**
- * The seeded Turkish style guide.
- *
- * Read from the repository file rather than copied into a string literal, so
- * `style-guide/tr-genel.md` stays the single copy. Seeding happens once, on a
- * database's first open, so later edits in the panel are never overwritten.
+ * The seeded Turkish style guide, read from `style-guide/tr-genel.md` so that
+ * file stays the single copy. Seeded once, on first open, so later edits in the
+ * panel are never overwritten.
  */
 const styleGuide = (): string => {
   try {
@@ -28,22 +26,17 @@ const styleGuide = (): string => {
 };
 
 /**
- * Forward-only, applied in order, each inside a transaction with
- * `PRAGMA user_version` moved to match.
- *
- * `schema.sql` is version 1 and is not edited again — later changes are
- * migrations, so a database created months ago and one created today end up
- * identical rather than merely similar.
+ * Forward-only, applied in order, each in a transaction with `PRAGMA
+ * user_version` moved to match. `schema.sql` is version 1 and is never edited
+ * again, so every database ends up identical rather than merely similar.
  */
 export const migrations: readonly Migration[] = [
   { version: 1, get sql() { return initialSchema(); } },
   {
     version: 2,
-    // The official WordPress Turkish glossary distinguishes terms by part of
-    // speech — `archive` is `arşiv` as a noun and `arşivle` as a verb — which is
-    // the item→ürün/öge problem at term level. It cannot live in `msgctxt`:
-    // that column is written verbatim into exported PO files, so a term entry
-    // matching a whole string would corrupt the output.
+    // The official glossary distinguishes terms by part of speech — `archive`
+    // is `arşiv` as a noun and `arşivle` as a verb. It cannot live in `msgctxt`,
+    // which is written verbatim into exported PO files.
     sql: `
       ALTER TABLE glossary_entries ADD COLUMN pos TEXT;
       ALTER TABLE glossary_entries ADD COLUMN note TEXT;
@@ -51,8 +44,7 @@ export const migrations: readonly Migration[] = [
       -- Two invariants, not one, because the table now holds two kinds of row.
       --
       -- Translation memory (pos IS NULL): one translation per source, context
-      -- and tag. D29 and D37 depend on a second one being impossible to add
-      -- silently — it must surface as a constraint violation.
+      -- and tag, so a second cannot be added silently.
       --
       -- Terminology (pos IS NOT NULL): the official glossary deliberately offers
       -- alternatives under one part of speech — 'author' is both 'yazar' and
@@ -74,17 +66,13 @@ export const migrations: readonly Migration[] = [
   },
   {
     version: 3,
-    // The export has to carry the catalogue's own headers back out: Plural-Forms
-    // decides how many msgstr slots an entry has (R3), and Language names the
-    // locale. Regenerating them would work for GlotPress, which matches on
-    // entries, but it would quietly discard whatever else the project declared.
+    // The export carries the catalogue's own headers back out: Plural-Forms
+    // decides how many msgstr slots an entry has, and Language names the locale.
     sql: `ALTER TABLE projects ADD COLUMN po_headers TEXT;`,
   },
   {
     version: 4,
-    // Which tags a source writes into. syncTrustedSource took these as an
-    // argument, which is fine for a script but leaves the panel with nowhere to
-    // record the owner's choice.
+    // Which tags a source writes into.
     sql: `
       CREATE TABLE trusted_source_tags (
         trusted_source_id INTEGER NOT NULL REFERENCES trusted_sources(id) ON DELETE CASCADE,
@@ -97,19 +85,12 @@ export const migrations: readonly Migration[] = [
   },
   {
     version: 5,
-    // The owner's list, seeded so a fresh database is usable without adding 41
-    // sources by hand. They are human-translated, reviewed by several people
-    // over years, and kept current — not error-free, since the quality checks
-    // found 51 defects across five of them, but authoritative.
+    // The owner's list, seeded so a fresh database is usable without adding
+    // sources by hand: human-translated, reviewed over years and kept current.
+    // All land under one `wordpress` tag; splitting them is the owner's call.
     //
-    // All land under one `wordpress` tag. Splitting them is the owner's call:
-    // separating WooCommerce into its own tag is what makes `item` come out as
-    // `ürün` there and `öge` elsewhere, and until that split exists the two
-    // senses share a tag and the first one synced wins.
-    //
-    // Rank is the file order — core first, then the large plugins, then apps and
-    // meta. It decides most disagreements (R15), so it is a starting point the
-    // owner reorders rather than a fact.
+    // Rank is the file order — core first, then the large plugins, then apps
+    // and meta. It decides most disagreements, so the owner reorders it.
     sql: `
       INSERT OR IGNORE INTO tags (name) VALUES ('wordpress');
 
@@ -164,9 +145,8 @@ export const migrations: readonly Migration[] = [
   {
     version: 6,
     // The general guide: TDK's spelling rules reduced to decisions a translator
-    // applies, plus the WordPress title-case rule that costs the most. It goes
-    // into every translation request (D34) and is the main lever for
-    // consistency that a term glossary cannot express.
+    // applies, plus WordPress's title-case rule. It goes into every translation
+    // request and carries the consistency a term glossary cannot express.
     get sql() {
       const body = styleGuide().replace(/'/g, "''");
       return body
@@ -176,10 +156,8 @@ export const migrations: readonly Migration[] = [
   },
   {
     version: 7,
-    // Frozen history. Merged the rows that differed only by context and agreed
-    // on the translation; migration 8 subsumes it by dropping context from the
-    // key altogether. Kept verbatim so a database created before 8 and one
-    // created after end up identical rather than merely similar.
+    // Superseded by migration 8, which drops context from the key altogether.
+    // Kept verbatim so every database passes through the same states.
     sql: `
   CREATE TEMP TABLE mem AS
     SELECT id, source_hash, tag_id, msgctxt, translation,
@@ -205,10 +183,8 @@ export const migrations: readonly Migration[] = [
 
   CREATE INDEX temp.idx_map ON merge_map (drop_id);
 
-  -- Vouches first: a vouch is what keeps an entry alive (R14), and the
-  -- CASCADE on the delete below would otherwise take them with the row. Two
-  -- merged rows can carry the same source, so the survivor keeps the later
-  -- sighting; an older one would look stale to the next sweep.
+  -- Vouches first: they keep an entry alive, and the CASCADE below would take
+  -- them with the row. The survivor keeps the later sighting.
   INSERT INTO glossary_entry_sources (entry_id, trusted_source_id, translation, last_seen_sync_id)
   SELECT p.keep_id, s.trusted_source_id, s.translation, s.last_seen_sync_id
     FROM glossary_entry_sources s
@@ -233,19 +209,9 @@ export const migrations: readonly Migration[] = [
   },
   {
     version: 8,
-    // The glossary is keyed on what it is for: a source and a translation.
-    //
-    // Context was part of the key, which made one string arrive many times over
-    // — `About` held twelve rows, eleven of them `Hakkında`. Worse, the
-    // precision it bought was imaginary: measured over three real plugins, the
-    // context of a stored entry decided *none* of the 281 matches it could have
-    // (R29). Those contexts are the source project's own keys — `navigation.
-    // about`, `jetpackStats.button.cancel` — and they do not recur elsewhere.
-    //
-    // So context stops being a key and becomes what it always was in practice:
-    // a note about where a translation has been seen. Several translations of
-    // one string now sit side by side as the alternatives they are, and
-    // matching ranks them (D44).
+    // Keys the glossary on what it is for: a source and a translation. Context
+    // becomes a note of where a translation has been seen, so several
+    // translations of one string sit side by side and matching ranks them.
     sql: `
       DROP INDEX idx_glossary_memory_key;
 
@@ -269,7 +235,7 @@ export const migrations: readonly Migration[] = [
         SELECT id AS drop_id, keep_id FROM keeper WHERE id <> keep_id;
       CREATE INDEX temp.idx_map ON merge_map (drop_id);
 
-      -- Vouches move before the rows go, or ON DELETE CASCADE takes them (R14).
+      -- Vouches move before the rows go, or ON DELETE CASCADE takes them.
       INSERT INTO glossary_entry_sources (entry_id, trusted_source_id, translation, last_seen_sync_id)
       SELECT p.keep_id, s.trusted_source_id, s.translation, s.last_seen_sync_id
         FROM glossary_entry_sources s
@@ -296,29 +262,21 @@ export const migrations: readonly Migration[] = [
   },
   {
     version: 9,
-    // `readings` counts the other translations of a string, and its subquery
-    // had no index to reach them by: it fell to idx_glossary_tag, which is
-    // every row in the glossary because almost all of them carry one tag. One
-    // page of the browser took 40 s (R30).
+    // Gives the glossary browser's `readings` subquery an index to reach a
+    // string's other translations by; without one it scans the whole table.
     sql: `CREATE INDEX idx_glossary_source ON glossary_entries (source_hash, tag_id);`,
   },
   {
     version: 10,
-    // The import used to drop whatever the export already carried, so every
-    // project arrived wholly untranslated. `upstream` records what the service
-    // had when the project came in, which is what tells an approved string the
-    // owner has never seen from one they settled themselves (D45).
+    // `upstream` records what the service had when the project came in, which
+    // separates an approved string the owner has never seen from one they
+    // settled themselves.
+    // Only two values, because GlotPress states status through an export filter
+    // rather than a flag in the PO; a fuzzy entry reaches us with an empty
+    // translation and lands as untranslated.
     //
-    // Only two values, because only two reach us. GlotPress states status
-    // through an export filter rather than a flag in the PO, and in the
-    // unfiltered export a fuzzy entry arrives with an empty translation — so it
-    // lands as untranslated and is redone (R32). Naming `waiting` and `fuzzy`
-    // here would be naming states nothing can produce.
-    //
-    // `blocked` is the quality-check result, stored rather than recomputed:
-    // the review queue has to filter and page in SQL, and running the checks
-    // per row to answer "which are blocked" is what made the screen load all
-    // 3 116 rows at once (R30 again, in a second place).
+    // `blocked` is the quality-check result, stored so the review queue can
+    // filter and page on it in SQL rather than checking every row.
     sql: `
       ALTER TABLE translation_units ADD COLUMN upstream TEXT
         CHECK (upstream IN ('current','untranslated'));

@@ -25,24 +25,15 @@ export interface ImportResult {
 }
 
 /**
- * Import the official WordPress Turkish glossary.
+ * Import the official WordPress Turkish glossary, the term list the Turkish
+ * team maintains by hand.
  *
- * This is the term list the Turkish translation team maintains by hand, and it
- * is what R19 argued the system was missing: exact full-string matching reaches
- * about a tenth of a project, while terminology reaches 70–100 % of it.
- *
- * Terms are stored as ordinary glossary entries under `origin = 'owner'`, so a
- * trusted-source sweep never removes them — they do not belong to any project.
- *
- * `pos` and the translation are both part of the key. The glossary distinguishes
- * by part of speech (`archive` is `arşiv` as a noun, `arşivle` as a verb) and it
- * also offers alternatives under one part of speech (`author` is both `yazar`
- * and `geliştirici`). Keying on the term alone would make the import overwrite
- * itself, so a re-run would never settle.
- *
- * The import **replaces** the term rows under `tagId`: a reading dropped
- * upstream is dropped here too. Because of that the tag should be dedicated to
- * this import rather than shared with the owner's own terms.
+ * Terms are stored under `origin = 'owner'` so a trusted-source sweep never
+ * removes them. Both `pos` and the translation are part of the key, because the
+ * glossary distinguishes by part of speech and also offers alternatives under
+ * one part of speech; keying on the term alone would make the import overwrite
+ * itself. It **replaces** the term rows under `tagId`, so that tag should be
+ * dedicated to this import.
  */
 export function importOfficialGlossary(
   db: Db,

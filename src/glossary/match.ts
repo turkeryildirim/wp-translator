@@ -3,7 +3,7 @@ import type { Db } from '../db/open.ts';
 export interface MatchResult {
   /** Filled from the glossary and complete. */
   filled: number;
-  /** Of those, how many had another translation on offer (D44). */
+  /** Of those, how many had another translation on offer. */
   alternatives: number;
   /** No glossary entry; these go to the AI. */
   unmatched: number;
@@ -16,31 +16,14 @@ interface Candidate {
 }
 
 /**
- * Fill a project's units from the glossary.
+ * Fill a project's untranslated units from the glossary, best translation first.
  *
- * Matching is byte-exact on the source string — no normalisation. Measured over
- * WooCommerce's 14 159 distinct sources, lowercasing would gain 253 matches of
- * which 197 map to a *different* translation, and nothing malformed exists for
- * the quality checks to catch, so a wrong match is silent (R13).
+ * Matching is byte-exact on the source string and ignores `msgctxt`; where a
+ * string has several known translations the best-supported one is filled in and
+ * the rest are offered as candidates. Terminology rows (`pos IS NOT NULL`) are
+ * skipped — they say how a word is rendered, not how a whole string is.
  *
- * A unit's `msgctxt` takes no part. It used to choose between entries, and
- * measured over three real plugins it decided *none* of the 281 matches it
- * could have: the contexts a glossary holds are the source project's own keys,
- * and they do not recur in someone else's plugin (R29). The answer came from
- * the context-less row every time, which meant the glossary quietly picked one
- * translation and hid the others.
- *
- * So every translation of a string is offered, best first, and the best one is
- * filled in. Best is the owner's own entry, then the one the most trusted
- * sources vouch for, then the one the highest-ranked source carries (D36).
- * Measured, that agrees with what the old context-less row gave in 91 % of the
- * cases where it could differ, and where it differs it is usually the better
- * supported reading — `Mail` becomes `E-posta` rather than `Posta`.
- *
- * Rows carrying a `pos` are skipped. Those come from the official WordPress
- * glossary and are *terminology*, curated to tell the model how a word is
- * rendered — not approved translations of a whole string in an unknown context.
- * They reach the model through `collectTerms` instead.
+ * @param ids narrows it to these units; without it, every untranslated one.
  */
 export function applyGlossary(db: Db, projectId: number, ids?: readonly number[]): MatchResult {
   const tagIds = db
@@ -68,16 +51,13 @@ export function applyGlossary(db: Db, projectId: number, ids?: readonly number[]
                ifnull(min(t.rank), 2147483647) ASC,
                e.id ASC`,
   );
-  // `ids` narrows it to the rows the owner picked; without it the whole
-  // project's untranslated units are filled, which is what an import does.
   const scope = ids ? ` AND id IN (${ids.map(() => '?').join(', ')})` : '';
   const units = db.prepare(
     `SELECT id, source_hash AS hash FROM translation_units
       WHERE project_id = ? AND state = 'untranslated'${scope}`,
   );
-  // `blocked` is reset rather than computed: a glossary entry is a translation
-  // a human already approved of this exact source, so there is nothing for the
-  // checks to find that was not already there.
+  // A glossary entry is a translation a human approved of this exact source, so
+  // there is nothing for the checks to find.
   const fill = db.prepare(
     `UPDATE translation_units
         SET msgstr = @translation, msgstr_plural = @translationPlural,
@@ -104,12 +84,7 @@ export function applyGlossary(db: Db, projectId: number, ids?: readonly number[]
   })();
 }
 
-/**
- * One entry per wording, best first.
- *
- * Two tags can hold the same translation of a string — most do — and that is
- * not a choice to put in front of the owner. Only a different wording is.
- */
+/** One entry per wording: the same translation under two tags is not a choice. */
 function distinct(candidates: readonly Candidate[]): Candidate[] {
   const seen = new Set<string>();
   return candidates.filter((candidate) => {

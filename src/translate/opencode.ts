@@ -9,11 +9,8 @@ export interface OpencodeOptions {
   /**
    * `provider/model`, e.g. `opencode/space-bunny-free`.
    *
-   * Optional, and left unset by default. opencode's free roster rotates —
-   * a model that answered yesterday can start refusing with "the free tier can
-   * only be used from within OpenCode" — so pinning one here turns a provider-
-   * side change into a broken tool. Unset means opencode's own default, which
-   * follows the roster.
+   * Left unset by default: opencode's free roster rotates, so pinning a model
+   * turns a provider-side change into a broken tool.
    */
   model?: string;
   /**
@@ -31,9 +28,7 @@ export interface OpencodeOptions {
 export class OpencodeProvider implements TranslationProvider {
   readonly name = 'opencode';
 
-  // Written out rather than declared as a constructor parameter property:
-  // Node's type stripping refuses those, and avoiding TypeScript syntax that
-  // emits code lets the tool run straight from source with no build step.
+  // Not a constructor parameter property: Node's type stripping refuses those.
   private readonly options: OpencodeOptions;
 
   constructor(options: OpencodeOptions) {
@@ -67,10 +62,8 @@ export class OpencodeProvider implements TranslationProvider {
 
     return new Promise<string>((resolve, reject) => {
       const child = spawn(this.options.binary ?? 'opencode', args, {
-        // `opencode run --format json` never returns unless stdin is closed
-        // (R21). It is undocumented, and the symptom is a hang with zero output
-        // rather than an error, so `'ignore'` here is the whole reason this uses
-        // spawn rather than execFile, which cannot set stdio.
+        // `opencode run --format json` never returns unless stdin is closed,
+        // which is why this uses spawn: execFile cannot set stdio.
         stdio: ['ignore', 'pipe', 'pipe'],
         ...(signal ? { signal } : {}),
       });
@@ -119,9 +112,8 @@ export function collectText(ndjson: string): string {
     if (event.type === 'text' && typeof event.part?.text === 'string') texts.push(event.part.text);
   }
 
-  // The model may stream a part per chunk or emit one whole text part; taking
-  // the longest is wrong when it streams, so join and let the extractor find
-  // the array.
+  // The model may stream a part per chunk or emit one whole text part, so join
+  // them all and let the extractor find the array.
   return texts.join('');
 }
 
@@ -152,11 +144,9 @@ function tryParse(candidate: string): ResponseItem[] | undefined {
 }
 
 /**
- * Check the reply covers exactly what was sent.
- *
- * A missing or invented id fails the chunk rather than being guessed at, which
- * is also how a truncated reply is caught — and a truncated reply is worse than
- * a refused one, because it reads as a result.
+ * Check the reply covers exactly what was sent. A missing or invented id fails
+ * the chunk rather than being guessed at, which is also how a truncated reply
+ * is caught.
  */
 export function reconcile(
   request: TranslationRequest,

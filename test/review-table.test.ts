@@ -7,11 +7,8 @@ const read = (name: string): string =>
 
 describe('the review table', () => {
   it('is a table, not a stack of positioned boxes', () => {
-    // It was a list of absolutely positioned divs at a fixed height — what
-    // virtualisation needed while the screen loaded all 3 116 strings at once.
-    // Paging removed the reason and left the costs: a long string overlapped
-    // the row beneath it, and the height lived in two files that could
-    // disagree.
+    // Positioned boxes at a fixed height overlap when a string is longer than
+    // one line, and the height has to be repeated in the stylesheet.
     const template = read('ReviewTable.vue').split('<template>')[1] ?? '';
 
     expect(template).toContain('<table class="grid">');
@@ -38,8 +35,7 @@ describe('the review table', () => {
   });
 
   it('reloads when the page number moves', () => {
-    // The pager only sets the number; without a watcher on it the arrows go
-    // dead and the list never changes, which is exactly what happened.
+    // The pager only sets the number; without a watcher the list never changes.
     const app = read('App.vue');
     expect(app).toMatch(/watch\(\[[^\]]*\bpage\b[^\]]*\], load\)/);
   });

@@ -47,7 +47,7 @@ describe('PO round trip', () => {
   );
 
   it('keeps the two entries whose msgid is the string "0"', () => {
-    // The PHP library measured for ADR-0001 drops these: "0" is falsy, so a
+    // A truthiness check drops these, because "0" is falsy — which is how a
     // truthiness check discards the entry. This asserts we never regress into it.
     const { reparsed } = roundTrip('edge-cases.po');
     const zeros = reparsed.units.filter((u) => u.msgid === '0');

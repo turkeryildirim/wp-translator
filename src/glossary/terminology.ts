@@ -22,16 +22,12 @@ const MAX_LENGTH = 30;
 const WORD = /[A-Za-z][A-Za-z'-]*/g;
 
 /**
- * Collect the glossary terms that appear inside a batch of source strings.
+ * Collect the glossary terms appearing inside a batch of source strings.
  *
- * This is where consistency comes from. Exact full-string matching reaches about
- * a tenth of a project, but 70–100 % of strings contain at least one term the
- * glossary knows, three to six on average, and most of those strings carry a
- * term the glossary translates more than one way (R19). Handing those to the
- * model is what makes `item` come out as `ürün` in one project and `öge` in
- * another.
- *
- * Measured on Astra: a 500-string batch matches 344 terms in about 6 ms.
+ * Full-string matching reaches only a small part of a project; most strings
+ * carry a term the glossary knows, often with more than one known translation.
+ * Handing those to the model is what keeps `item` as `ürün` in one project and
+ * `öge` in another.
  */
 export function collectTerms(db: Db, projectId: number, sources: readonly string[]): Term[] {
   const candidates = new Set<string>();

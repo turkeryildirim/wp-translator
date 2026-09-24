@@ -11,23 +11,13 @@ export type CheckRule =
 
 export interface CheckFailure {
   rule: CheckRule;
-  /**
-   * Plain language, stating what differs rather than naming a rule. The owner
-   * reads this while deciding whether to override, so "source has %1$s and %2$s,
-   * translation has only %1$s" is worth more than a rule code.
-   *
-   * English for now; the interface language is undecided (O20).
-   */
+  /** Plain language, stating what differs rather than naming a rule. */
   message: string;
 }
 
 /**
  * `%s`, `%d`, `%1$s`, `%%` from PHP and JavaScript, plus the forms the mobile
  * apps use: `%@` and `%1$@` on iOS, and length modifiers such as `%ld`.
- *
- * `%@` matters more than it looks — the iOS catalogue carries 313 of them, so a
- * pattern without it reports that catalogue as clean while ignoring its most
- * common placeholder.
  */
 const PRINTF = /%(?:\d+\$)?(?:ll|l|z|h)?[@sdifuxXgGc]|%%/g;
 /** `{count}`, `%(name)s` — common in JavaScript-side and Python-influenced strings. */
@@ -37,11 +27,8 @@ const HTML_TAG = /<\/?[a-zA-Z][^<>]*>/g;
 
 /**
  * Attributes whose *value* is text the reader sees, so translating it is correct.
- *
- * Comparing these by value reports every properly translated tooltip as damage.
- * Their presence is still compared: dropping the attribute is a real loss, and
- * `href` and the rest are compared in full because a placeholder inside one must
- * survive exactly.
+ * Their presence is still compared; every other attribute is compared in full,
+ * because a placeholder inside one must survive exactly.
  */
 const TRANSLATABLE_ATTRIBUTES = new Set(['title', 'alt', 'aria-label', 'placeholder']);
 
@@ -50,10 +37,9 @@ const ATTRIBUTE = /([a-zA-Z_:][-\w:.]*)\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+)/g;
 /**
  * Check a translation against its source.
  *
- * These are blocking (D9): a unit that fails cannot be approved without an
- * explicit, recorded override. They only reach the minority of strings that
- * carry technical structure — 51–92 % of a project has none, and for those this
- * returns nothing because there is nothing malformed to find (R20).
+ * Failures are blocking: a unit cannot be approved without a recorded override.
+ * Only strings carrying technical structure can fail; for plain prose this
+ * returns nothing, because there is nothing malformed to find.
  */
 export function checkTranslation(unit: TranslationUnit): CheckFailure[] {
   const failures: CheckFailure[] = [];
@@ -128,7 +114,7 @@ function compareEdgeWhitespace(
   failures: CheckFailure[],
 ): void {
   // A trailing space before a value is usually deliberate, and matching is
-  // byte-exact, so losing it changes the string (R13).
+  // byte-exact, so losing it changes the string.
   const leading = (text: string) => /^\s*/.exec(text)![0];
   const trailing = (text: string) => /\s*$/.exec(text)![0];
 

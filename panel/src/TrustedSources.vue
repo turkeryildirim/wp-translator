@@ -40,10 +40,8 @@ const allPicked = computed(
 const pickedIds = computed(() => [...picked.value]);
 
 /**
- * Sum of the column: one source vouching for one entry.
- *
- * Larger than the glossary, because sources overlap — `Save` is in core and in
- * most plugins, and each of them vouches for the same entry.
+ * Sum of the column: one source vouching for one entry. Larger than the
+ * glossary itself, because sources overlap.
  */
 const totalVouches = computed(() => sources.value.reduce((sum, s) => sum + s.entries, 0));
 
@@ -64,9 +62,7 @@ async function add(): Promise<void> {
   notice.value = '';
   adding.value = true;
   try {
-    // The server normalises the address and checks the project really exports
-    // before storing it: a typo otherwise sits in the list looking fine and
-    // fails on every Update.
+    // The server normalises the address and checks the project really exports.
     await addSource(url.value, []);
     url.value = '';
     await load();

@@ -17,7 +17,7 @@ export interface UnitRow {
   provenance: Provenance | null;
   /** Quality-check failures. Approval is blocked while this is non-empty. */
   failures: CheckFailure[];
-  /** Competing glossary translations when the project's tags disagree (D37). */
+  /** Other translations the glossary holds for this string, best first. */
   candidates: Candidate[];
   /** True when the string carries placeholders, HTML, plurals, or is long. */
   structured: boolean;
@@ -29,12 +29,8 @@ export interface Candidate {
 }
 
 /**
- * What the queue is showing.
- *
- * Named for what the owner is looking for rather than for the column it reads,
- * because two of them are not a state: `fuzzy` is a translation that came from
- * the service and the checks distrust, and `blocked` is any translation the
- * checks distrust whoever wrote it.
+ * What the queue is showing. Named for what the owner is looking for rather than
+ * for the column it reads: `blocked` and `upstream` are not states.
  */
 export type QueueView =
   | 'all'
@@ -97,31 +93,23 @@ const VIEW: Record<QueueView, string> = {
   waiting: `u.state = 'review'`,
   translated: `u.state = 'ok'`,
   blocked: 'u.blocked = 1',
-  // Translated by the service before the owner ever opened the project. These
-  // are the ones a GTE is reviewing rather than writing.
+  // Translated by the service before the owner opened the project.
   upstream: `u.upstream = 'current' AND u.provenance IS NULL`,
 };
 
 /**
- * The review queue, one page of it.
+ * One page of the review queue, in catalogue order.
  *
- * Filtering and paging happen in SQL, and only the page's rows are enriched.
- * They used to be loaded whole — every row, with the quality checks and a
- * glossary lookup run on each — and then sliced in JS, which is the same
- * mistake that cost the glossary browser 40 s a page (R30). A project of 3 116
- * strings paid that on every keystroke.
- *
- * Rows come in catalogue order rather than by urgency. Urgency ordering needs
- * the whole set in hand, and the views replace what it was for: a filter says
- * "show me the blocked ones" better than a sort that floats them.
+ * Filtering and paging happen in SQL and only the page's rows are enriched, so
+ * the cost does not grow with the project. The views replace sorting by
+ * urgency: a filter says "show me the blocked ones" more directly.
  */
 export function listUnits(db: Db, projectId: number, filter: UnitFilter = {}): UnitPage {
   const where: string[] = ['u.project_id = ?', VIEW[filter.view ?? 'all']];
   const params: unknown[] = [projectId];
 
   if (filter.search) {
-    // Folded in the application: SQLite's own folding stops at ASCII, so a
-    // Turkish query missed every capitalised translation (R31).
+    // Folded in the application; SQLite's own folding stops at ASCII.
     const columns = searchColumns('u.msgid', `ifnull(u.msgstr, '')`, filter.scope);
     where.push(match(columns, filter.caseSensitive));
     for (const _ of columns) params.push(filter.search);
@@ -184,12 +172,8 @@ function countViews(db: Db, projectId: number): Record<QueueView, number> {
 }
 
 /**
- * What a bulk action applies to: the rows the owner ticked, or everything a
- * filter matches.
- *
- * A filter travels as a filter rather than as the ids it stands for, because
- * "approve the three thousand untranslated ones" should not mean sending three
- * thousand numbers to the server and back.
+ * What a bulk action applies to. A filter travels as a filter rather than as the
+ * ids it stands for, so approving a whole view costs one request.
  */
 export type BulkTarget = { ids: readonly number[] } | { filter: UnitFilter };
 
@@ -203,8 +187,7 @@ function targetClause(
   if ('ids' in target) {
     const holes = target.ids.map(() => '?').join(', ');
     params.push(...target.ids);
-    // `1 = 0` rather than an empty `IN ()`: an action with nothing selected
-    // must change nothing, and SQLite would not parse the empty list anyway.
+    // `1 = 0` rather than an empty `IN ()`, which SQLite will not parse.
     return {
       clause: target.ids.length > 0 ? `u.project_id = ? AND u.id IN (${holes})` : '1 = 0',
       params: target.ids.length > 0 ? params : [],
@@ -221,12 +204,7 @@ function targetClause(
   return { clause: where.join(' AND '), params };
 }
 
-/**
- * Every unit a filter matches, as ids.
- *
- * Only for the actions that cannot be expressed as one `UPDATE` — filling from
- * the glossary decides a translation per row.
- */
+/** Every unit a filter matches, for the actions that cannot be one `UPDATE`. */
 export function unitIdsFor(db: Db, projectId: number, filter: UnitFilter): number[] {
   const { clause, params } = targetClause(projectId, { filter });
   return db
@@ -236,12 +214,9 @@ export function unitIdsFor(db: Db, projectId: number, filter: UnitFilter): numbe
 }
 
 /**
- * Approve or clear a set of units.
- *
- * Approving skips what the checks blocked — bulk approval is the only way a
- * few thousand strings are survivable, and also how one mistake becomes a few
- * thousand. Clearing empties the unit and returns it to `untranslated`, so it
- * exports nothing and the next translation run picks it up.
+ * Approve or clear a set of units. Approving skips whatever the checks blocked;
+ * clearing empties the unit and returns it to `untranslated`, so it exports
+ * nothing and the next translation run picks it up.
  */
 export function bulkSetState(
   db: Db,
@@ -319,9 +294,8 @@ export interface SaveResult {
 /**
  * Approve a unit, optionally replacing its translation first.
  *
- * Editing *is* rejecting — there is no reject state (D22). The quality checks
- * are blocking: a failing translation is stored so the work is not lost, but the
- * unit stays in `review` until it passes or the owner records an exception.
+ * A failing translation is stored so the work is not lost, but the unit stays in
+ * `review` until it passes the checks or the owner records an exception.
  */
 export function saveUnit(
   db: Db,
@@ -372,9 +346,6 @@ export function saveUnit(
     unitId,
   );
 
-  // One row, not the project: this used to call `listUnits` and search its
-  // result, which loaded and enriched every string in the catalogue to answer
-  // "what does this one look like now".
   const unit = getUnit(db, current.projectId, unitId);
   return blocking.length === 0 ? { unit } : { unit, blocked: blocking };
 }
@@ -441,9 +412,8 @@ function enrich(
   return {
     ...row,
     failures: failures.filter((failure) => !overridden.has(failure.rule)),
-    // Offered whenever the glossary filled the unit, not only when it gave up:
-    // the fill takes the best-supported translation and the others stay one
-    // keystroke away (D44).
+    // Offered whenever the glossary filled the unit, so the alternatives to
+    // what it chose stay one keystroke away.
     candidates:
       row.provenance === 'glossary' ? candidatesFor(db, projectId, row.msgid) : [],
     structured:
@@ -452,10 +422,9 @@ function enrich(
 }
 
 /**
- * Recomputed on demand rather than stored — derivable from the glossary at any
- * time. Ordered the way `applyGlossary` ranks them, so the first is the one
- * already in the box and the rest read as the alternatives to it. A single
- * result means there is nothing to choose, so none is offered.
+ * The glossary's translations of this string, ordered the way `applyGlossary`
+ * ranks them, so the first is the one already filled in. A single result means
+ * there is nothing to choose, so none is offered.
  */
 function candidatesFor(db: Db, projectId: number, msgid: string): Candidate[] {
   const rows = db
