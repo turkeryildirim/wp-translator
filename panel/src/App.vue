@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import {
+  bulkSetState,
   listProjects,
   listUnits,
   startTranslation,
   translateProgress,
   type Project,
+  type QueueView,
   type TranslateProgress,
+  type TranslateScope,
   type Unit,
 } from './api.ts';
+import Legend from './Legend.vue';
+import Pager from './Pager.vue';
 import ReviewTable from './ReviewTable.vue';
 import TrustedSources from './TrustedSources.vue';
 import GlossaryBrowser from './GlossaryBrowser.vue';
@@ -23,7 +28,19 @@ const screen = ref<Screen>('review');
 const projects = ref<Project[]>([]);
 const selected = ref<number | null>(null);
 const units = ref<Unit[]>([]);
-const filter = ref<'review' | 'blocked' | 'ambiguous' | 'all'>('review');
+const total = ref(0);
+const counts = ref<Record<QueueView, number>>({
+  all: 0,
+  untranslated: 0,
+  waiting: 0,
+  translated: 0,
+  blocked: 0,
+  upstream: 0,
+});
+const page = ref(0);
+const PAGE = 100;
+const filter = ref<QueueView>('waiting');
+const picked = ref<number[]>([]);
 const search = ref('');
 const caseSensitive = ref(false);
 const scope = ref<'' | 'source' | 'translation'>('');
@@ -35,9 +52,30 @@ let translatePoll: ReturnType<typeof setInterval> | null = null;
 // owner knows what they are starting before they start it.
 const pending = computed(() => project.value?.untranslated ?? 0);
 
+const VIEWS: { view: QueueView; label: string; hint: string }[] = [
+  { view: 'waiting', label: 'Bekleyen', hint: 'Çevirisi var, sizin onayınızı bekliyor' },
+  { view: 'untranslated', label: 'Çevrilmemiş', hint: 'Hiç çevirisi yok' },
+  { view: 'blocked', label: 'Bloklanan', hint: 'Kalite kontrolü onaylamaya izin vermiyor' },
+  { view: 'upstream', label: 'wp.org’dan', hint: 'Projeyle birlikte gelen, siz dokunmadınız' },
+  { view: 'translated', label: 'Çevrilmiş', hint: 'Onaylı; dışa aktarmaya girer' },
+  { view: 'all', label: 'Tümü', hint: 'Katalogdaki her dizge' },
+];
+
+const translateScope = ref<TranslateScope>('untranslated');
+
 async function translate(): Promise<void> {
   if (selected.value === null) return;
-  translating.value = await startTranslation(selected.value, { agent: 'wp-translator' });
+  if (
+    translateScope.value === 'all' &&
+    !confirm('Çevrilmiş olanlar dahil tüm dizgeler yeniden çevrilecek. Devam edilsin mi?')
+  )
+    return;
+
+  translating.value = await startTranslation(selected.value, {
+    agent: 'wp-translator',
+    scope: translateScope.value,
+    ...(translateScope.value === 'selected' ? { ids: picked.value } : {}),
+  });
 
   translatePoll ??= setInterval(async () => {
     if (selected.value === null) return;
@@ -60,21 +98,69 @@ async function translate(): Promise<void> {
 
 const project = computed(() => projects.value.find((p) => p.id === selected.value));
 
+/** The filter as the server reads it, shared by the queue and the bulk actions. */
+function queryParams(withPaging = true): Record<string, string> {
+  const params: Record<string, string> = { view: filter.value };
+  if (search.value) params.q = search.value;
+  if (caseSensitive.value) params.case = '1';
+  if (scope.value) params.in = scope.value;
+  if (withPaging) {
+    params.limit = String(PAGE);
+    params.offset = String(page.value * PAGE);
+  }
+  return params;
+}
+
+/** Which request is the current one; a reply that arrives late is dropped. */
+let ticket = 0;
+
 async function load(): Promise<void> {
   if (selected.value === null) return;
+  const mine = (ticket += 1);
   loading.value = true;
   try {
-    const params: Record<string, string> = {};
-    if (filter.value === 'review') params.state = 'review';
-    if (filter.value === 'blocked') params.blocked = '1';
-    if (filter.value === 'ambiguous') params.ambiguous = '1';
-    if (search.value) params.q = search.value;
-    if (caseSensitive.value) params.case = '1';
-    if (scope.value) params.in = scope.value;
-    units.value = await listUnits(selected.value, params);
+    const result = await listUnits(selected.value, queryParams());
+    if (mine !== ticket) return;
+
+    units.value = result.rows;
+    total.value = result.total;
+    counts.value = result.counts;
+    await nextTick();
   } finally {
-    loading.value = false;
+    if (mine === ticket) loading.value = false;
   }
+}
+
+function goTo(next: number): void {
+  if (loading.value) return;
+  page.value = next;
+}
+
+function show(view: QueueView): void {
+  filter.value = view;
+  page.value = 0;
+  picked.value = [];
+  void load();
+}
+
+async function bulk(action: 'approve' | 'reject'): Promise<void> {
+  if (selected.value === null || total.value === 0) return;
+  const what = action === 'approve' ? 'onaylansın' : 'reddedilsin';
+  if (!confirm(`Filtredeki ${total.value.toLocaleString('tr')} dizgenin tamamı ${what} mı?`)) return;
+
+  const result = await bulkSetState(selected.value, action, queryParams(false));
+  notify(
+    'ok',
+    result.skipped > 0
+      ? `${result.changed} dizge işlendi, ${result.skipped} tanesi kalite kontrolüne takıldı.`
+      : `${result.changed} dizge işlendi.`,
+  );
+  projects.value = await listProjects();
+  await load();
+}
+
+function exportPo(): void {
+  if (selected.value !== null) window.location.href = `/api/projects/${selected.value}/export`;
 }
 
 function onChanged(saved: Unit): void {
@@ -138,16 +224,14 @@ watch([selected, filter], load);
 
       <nav>
         <button
-          v-for="option in (['review', 'blocked', 'ambiguous', 'all'] as const)"
-          :key="option"
-          :class="{ on: filter === option }"
-          @click="filter = option"
+          v-for="option in VIEWS"
+          :key="option.view"
+          :class="{ on: filter === option.view }"
+          :title="option.hint"
+          @click="show(option.view)"
         >
-          {{
-            { review: 'İncelenecek', blocked: 'Bloklanan', ambiguous: 'Aday bekleyen', all: 'Tümü' }[
-              option
-            ]
-          }}
+          {{ option.label }}
+          <b>{{ counts[option.view].toLocaleString('tr') }}</b>
         </button>
       </nav>
 
@@ -162,21 +246,31 @@ watch([selected, filter], load);
         Harf duyarlı
       </label>
 
+      <select v-model="translateScope" aria-label="Neler çevrilsin" :disabled="translating?.running">
+        <option value="untranslated">Çevrilmemişler ({{ counts.untranslated }})</option>
+        <option value="waiting">Bekleyenler ({{ counts.waiting }})</option>
+        <option value="selected">Seçililer ({{ picked.length }})</option>
+        <option value="all">Tümü, baştan ({{ counts.all }})</option>
+      </select>
       <button
-        v-if="pending > 0"
         class="translate"
-        :disabled="translating?.running"
+        :disabled="translating?.running || (translateScope === 'selected' && picked.length === 0)"
         @click="translate"
       >
         {{
           translating?.running
             ? `Çevriliyor — ${translating.done} / ${translating.total}`
-            : `${pending.toLocaleString('tr')} string'i AI ile çevir`
+            : 'AI ile çevir'
         }}
       </button>
 
+      <button :disabled="counts.translated === 0" title="Onaylı dizgeleri PO olarak indir"
+        @click="exportPo">
+        PO indir
+      </button>
+
       <span v-if="project" class="progress">
-        {{ project.ok }} / {{ project.total }} tamam · {{ project.review }} incelenecek
+        {{ project.ok }} / {{ project.total }} tamam
       </span>
     </header>
 
@@ -190,11 +284,45 @@ watch([selected, filter], load);
         eder.
       </span>
     </p>
+    <div class="toolbar">
+      <Pager :page="page" :total="total" :page-size="PAGE" :busy="loading" @go="goTo" />
+      <button :disabled="total === 0 || loading" @click="bulk('approve')">
+        Filtredekilerin tümünü onayla
+      </button>
+      <button :disabled="total === 0 || loading" @click="bulk('reject')">
+        Tümünü reddet (boşalt)
+      </button>
+    </div>
+
+    <Legend />
+    <p class="legend">
+      <span class="muted">Satır:</span>
+      <span><i class="ghost">✓</i> onaylı</span>
+      <span><i class="ghost">!</i> kalite kontrolü engelliyor</span>
+      <span><i class="ghost">·</i> bekliyor</span>
+      <span class="muted">Kısayollar:</span>
+      <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> onayla, ilerle</span>
+      <span><kbd>Shift</kbd>+<kbd>Enter</kbd> reddet, ilerle</span>
+      <span><kbd>Ctrl</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> satır</span>
+      <span><kbd>e</kbd> düzenle</span>
+      <span><kbd>x</kbd> seç</span>
+      <span><kbd>boşluk</kbd> ayrıntı</span>
+    </p>
+
     <p v-if="loading" class="status">Yükleniyor…</p>
     <p v-else-if="!units.length" class="status">
       Bu filtrede bir şey yok. Dışa aktarmaya hazır olabilirsiniz.
     </p>
-    <ReviewTable v-else :units="units" @changed="onChanged" @bulk="load" />
+    <ReviewTable
+      v-else
+      :units="units"
+      @changed="onChanged"
+      @bulk="load"
+      @picked="picked = $event"
+      @page="goTo(page + 1)"
+    />
+
+    <Pager :page="page" :total="total" :page-size="PAGE" :busy="loading" @go="goTo" />
     </template>
 
     <footer v-if="screen === 'review'">

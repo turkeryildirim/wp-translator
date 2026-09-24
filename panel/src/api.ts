@@ -18,6 +18,10 @@ export interface Unit {
   msgstrPlural: string | null;
   state: 'untranslated' | 'review' | 'ok';
   provenance: 'glossary' | 'ai' | 'human' | null;
+  /** What the service had when the project was imported. */
+  upstream: 'current' | 'untranslated' | null;
+  /** 1 when the quality checks refuse it. Stored, so the queue can filter. */
+  blocked: number;
   failures: CheckFailure[];
   candidates: Candidate[];
   structured: boolean;
@@ -91,8 +95,41 @@ const describe = (problem: unknown): string =>
 
 export const listProjects = () => json<Project[]>('/api/projects');
 
+export type QueueView =
+  | 'all'
+  | 'untranslated'
+  | 'waiting'
+  | 'translated'
+  | 'blocked'
+  | 'upstream';
+
+export interface UnitPage {
+  rows: Unit[];
+  /** Units matching the filter, not just this page. */
+  total: number;
+  counts: Record<QueueView, number>;
+}
+
 export const listUnits = (projectId: number, params: Record<string, string> = {}) =>
-  json<Unit[]>(`/api/projects/${projectId}/units?${new URLSearchParams(params)}`);
+  json<UnitPage>(`/api/projects/${projectId}/units?${new URLSearchParams(params)}`);
+
+/**
+ * Approve or reject everything the filter matches.
+ *
+ * The filter travels as a query string rather than a list of ids: "approve the
+ * three thousand untranslated ones" should not mean sending three thousand
+ * numbers to the server and back.
+ */
+export const bulkSetState = (
+  projectId: number,
+  action: 'approve' | 'reject',
+  params: Record<string, string>,
+) =>
+  post<{ changed: number; skipped: number }>(
+    `/api/projects/${projectId}/bulk`,
+    { action, filter: new URLSearchParams(params).toString() },
+    action === 'approve' ? 'Toplu onay' : 'Toplu ret',
+  );
 
 export const unitDetail = (unitId: number) => json<UnitDetail>(`/api/units/${unitId}/detail`);
 
@@ -254,7 +291,12 @@ export interface TranslateProgress {
   finishedAt: string | null;
 }
 
-export const startTranslation = (projectId: number, options: { agent?: string; model?: string } = {}) =>
+export type TranslateScope = 'untranslated' | 'waiting' | 'selected' | 'all';
+
+export const startTranslation = (
+  projectId: number,
+  options: { agent?: string; model?: string; scope?: TranslateScope; ids?: number[] } = {},
+) =>
   post<TranslateProgress>(`/api/projects/${projectId}/translate`, options, 'Çeviri başlatıldı');
 
 export const translateProgress = (projectId: number) =>

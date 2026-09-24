@@ -29,8 +29,10 @@ export async function addProject(
 ): Promise<AddProjectResult> {
   const ref = parseProjectUrl(url);
 
-  // The whole catalogue, not a status subset: a project needs every string, and
-  // what is already translated upstream reaches it through the glossary.
+  // The whole catalogue in one request. GlotPress puts status in an export
+  // filter rather than in the PO, so `fuzzy` and `waiting` would cost a request
+  // each — and they need not, because a fuzzy entry comes through here with an
+  // empty translation and is simply redone (R32).
   const [po, metadata] = await Promise.all([
     fetchExport(exportUrl(ref.projectPath, { status: 'all' })),
     fetchMetadata(ref.family, ref.slug),

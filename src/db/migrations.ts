@@ -302,6 +302,32 @@ export const migrations: readonly Migration[] = [
     // page of the browser took 40 s (R30).
     sql: `CREATE INDEX idx_glossary_source ON glossary_entries (source_hash, tag_id);`,
   },
+  {
+    version: 10,
+    // The import used to drop whatever the export already carried, so every
+    // project arrived wholly untranslated. `upstream` records what the service
+    // had when the project came in, which is what tells an approved string the
+    // owner has never seen from one they settled themselves (D45).
+    //
+    // Only two values, because only two reach us. GlotPress states status
+    // through an export filter rather than a flag in the PO, and in the
+    // unfiltered export a fuzzy entry arrives with an empty translation — so it
+    // lands as untranslated and is redone (R32). Naming `waiting` and `fuzzy`
+    // here would be naming states nothing can produce.
+    //
+    // `blocked` is the quality-check result, stored rather than recomputed:
+    // the review queue has to filter and page in SQL, and running the checks
+    // per row to answer "which are blocked" is what made the screen load all
+    // 3 116 rows at once (R30 again, in a second place).
+    sql: `
+      ALTER TABLE translation_units ADD COLUMN upstream TEXT
+        CHECK (upstream IN ('current','untranslated'));
+      ALTER TABLE translation_units ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0;
+      UPDATE translation_units SET upstream = 'untranslated' WHERE upstream IS NULL;
+      CREATE INDEX idx_unit_queue ON translation_units (project_id, state, blocked);
+      CREATE INDEX idx_unit_upstream ON translation_units (project_id, upstream);
+    `,
+  },
 ];
 
 export const latestVersion = migrations[migrations.length - 1]!.version;

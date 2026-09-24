@@ -12,15 +12,17 @@ import {
   type GlossaryQuery,
 } from './glossary.ts';
 import {
+  bulkSetState,
   listProjects,
   listUnits,
   overrideCheck,
   saveUnit,
   unitDetail,
+  type QueueView,
   type UnitFilter,
 } from './review.ts';
 import { addProject, bulkApprove, removeProject } from './projects.ts';
-import { startTranslation, translateProgress } from './translate.ts';
+import { startTranslation, translateProgress, type TranslateScope } from './translate.ts';
 import {
   createTag,
   listStyleRules,
@@ -262,10 +264,19 @@ async function api(
         chunkSize?: number;
         model?: string;
         agent?: string;
+        scope?: TranslateScope;
+        ids?: number[];
       };
       return send(response, 200, startTranslation(db, Number(translate[1]), body));
     }
     if (method === 'GET') return send(response, 200, translateProgress());
+  }
+
+  const bulkState = /^\/api\/projects\/(\d+)\/bulk$/.exec(route);
+  if (method === 'POST' && bulkState) {
+    const body = (await readJson(request)) as { action: 'approve' | 'reject'; filter?: string };
+    const filter = readFilter(new URL(`http://x/?${body.filter ?? ''}`));
+    return send(response, 200, bulkSetState(db, Number(bulkState[1]), filter, body.action));
   }
 
   if (method === 'POST' && route === '/api/units/bulk-approve') {
@@ -276,12 +287,22 @@ async function api(
   send(response, 404, { error: `No route for ${method} ${route}` });
 }
 
+const VIEWS = new Set<QueueView>([
+  'all',
+  'untranslated',
+  'waiting',
+  'translated',
+  'blocked',
+  'upstream',
+]);
+
 function readFilter(url: URL): UnitFilter {
   const filter: UnitFilter = {};
-  const state = url.searchParams.get('state');
-  if (state === 'untranslated' || state === 'review' || state === 'ok') filter.state = state;
-  if (url.searchParams.get('blocked') === '1') filter.blocked = true;
-  if (url.searchParams.get('ambiguous') === '1') filter.ambiguous = true;
+  const view = url.searchParams.get('view') as QueueView | null;
+  if (view && VIEWS.has(view)) filter.view = view;
+
+  const offset = Number(url.searchParams.get('offset'));
+  if (Number.isFinite(offset) && offset > 0) filter.offset = offset;
 
   const search = url.searchParams.get('q');
   if (search) filter.search = search;

@@ -5,7 +5,7 @@ import { notify } from './notify.ts';
 import UnitDetailPanel from './UnitDetailPanel.vue';
 
 const props = defineProps<{ units: Unit[] }>();
-const emit = defineEmits<{ changed: [Unit]; bulk: [] }>();
+const emit = defineEmits<{ changed: [Unit]; bulk: []; picked: [number[]]; page: [] }>();
 
 const ROW_HEIGHT = 34;
 const OVERSCAN = 8;
@@ -59,7 +59,14 @@ function clearDraft(unit: Unit): void {
 }
 
 function move(delta: number): void {
-  cursor.value = Math.min(Math.max(cursor.value + delta, 0), props.units.length - 1);
+  const next = cursor.value + delta;
+  // Past the end of a page, ask for the next one rather than stopping on the
+  // last row: the queue is paged now, and a project runs to thousands.
+  if (next >= props.units.length) {
+    emit('page');
+    return;
+  }
+  cursor.value = Math.max(next, 0);
   scrollIntoView(cursor.value);
 }
 
@@ -68,8 +75,12 @@ function move(delta: number): void {
 // strings, which is the one mistake that is both easy and expensive.
 function advance(): void {
   const next = props.units.findIndex((unit, index) => index > cursor.value && unit.state !== 'ok');
-  cursor.value = next >= 0 ? next : Math.min(cursor.value + 1, props.units.length - 1);
-  scrollIntoView(cursor.value);
+  if (next >= 0) {
+    cursor.value = next;
+    scrollIntoView(cursor.value);
+    return;
+  }
+  move(1);
 }
 
 function scrollIntoView(index: number): void {
@@ -94,6 +105,25 @@ async function startEdit(): Promise<void> {
 function cancelEdit(): void {
   if (current.value) clearDraft(current.value);
   editing.value = false;
+}
+
+/**
+ * Empty a unit and move on.
+ *
+ * Rejecting is not a state of its own: the translation goes, the unit returns
+ * to untranslated, and the next AI run picks it up. Saving an empty string is
+ * what the server reads as that.
+ */
+async function reject(): Promise<void> {
+  const unit = current.value;
+  if (!unit) return;
+
+  const { unit: saved } = await saveUnit(unit.id, { msgstr: '' });
+  notify('ok', 'Reddedildi');
+  clearDraft(unit);
+  editing.value = false;
+  emit('changed', saved);
+  advance();
 }
 
 async function approve(withEdit: boolean): Promise<void> {
@@ -130,6 +160,7 @@ function togglePick(): void {
   if (next.has(unit.id)) next.delete(unit.id);
   else next.add(unit.id);
   picked.value = next;
+  emit('picked', [...next]);
 }
 
 async function approvePicked(): Promise<void> {
@@ -167,11 +198,22 @@ function onKey(event: KeyboardEvent): void {
     } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       void approve(true);
+    } else if (event.key === 'Enter' && event.shiftKey) {
+      event.preventDefault();
+      void reject();
     }
     return;
   }
 
   if ((event.target as HTMLElement | null)?.tagName === 'INPUT') return;
+
+  // Ctrl+arrow moves the cursor even while a modifier is held, so a run of
+  // approvals never needs the hand to leave Ctrl.
+  if ((event.ctrlKey || event.metaKey) && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+    event.preventDefault();
+    move(event.key === 'ArrowDown' ? 1 : -1);
+    return;
+  }
 
   switch (event.key) {
     case 'j':
@@ -186,7 +228,8 @@ function onKey(event: KeyboardEvent): void {
       break;
     case 'Enter':
       event.preventDefault();
-      void approve(drafts.value.has(current.value?.id ?? -1));
+      if (event.shiftKey) void reject();
+      else void approve(event.ctrlKey || event.metaKey || drafts.value.has(current.value?.id ?? -1));
       break;
     case 'e':
       event.preventDefault();

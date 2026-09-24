@@ -21,13 +21,18 @@ personal glossary, and it cannot run AI translation.
 2. **A project to translate.** Added by its translate.wordpress.org URL. Its
    catalogue is fetched, and for plugins and themes its wordpress.org metadata
    comes too.
-3. **Glossary match.** Strings translated before are filled in automatically and
+3. **What the service already has.** The export arrives with its translations,
+   so a project shows what is done, what is not, and what fails a quality check
+   — `meta/wordcamp` is 2 413 translated against 703 untranslated, not 3 116
+   untranslated.
+4. **Glossary match.** Strings translated before are filled in automatically and
    count as done.
-4. **AI for the rest.** Everything left goes to the model in JSON batches, each
+5. **AI for the rest.** Everything left goes to the model in JSON batches, each
    carrying the glossary terms that appear in it and the Turkish style guide.
-5. **Review.** Every AI translation waits for you. Approve, or edit and approve —
-   editing *is* rejecting.
-6. **Export.** Only approved strings, as a PO GlotPress will import cleanly.
+6. **Review.** Every AI translation waits for you, in a paged queue filtered by
+   what you are looking for. Approve, or edit and approve — editing *is*
+   rejecting.
+7. **Export.** Only approved strings, as a PO GlotPress will import cleanly.
 
 ### What the glossary is actually for
 
@@ -74,7 +79,7 @@ opencode needs one-time setup — a provider and a tool-free agent. See
 
 ## Design
 
-`docs/00-process.md` is the register: 44 numbered decisions and 29 constraints,
+`docs/00-process.md` is the register: 45 numbered decisions and 32 constraints,
 most of them measured rather than reasoned. A few that shaped the code:
 
 - **Matching is byte-exact.** Lowercasing would gain 253 matches across
@@ -96,7 +101,7 @@ most of them measured rather than reasoned. A few that shaped the code:
 ## Tests
 
 ```bash
-npm test            # 199 tests
+npm test            # 210 tests
 npm run typecheck   # tsc
 npx vue-tsc --noEmit -p tsconfig.json
 ```

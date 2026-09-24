@@ -44,15 +44,30 @@ let progress: TranslateProgress = idle();
 
 export const translateProgress = (): TranslateProgress => progress;
 
+/**
+ * Which units to send.
+ *
+ * `untranslated` is the ordinary run. `waiting` re-translates what the model
+ * already produced but nobody approved — the way to try again after changing
+ * the style guide. `selected` takes the rows the owner picked in the queue.
+ * `all` overwrites everything, including translations that came from the
+ * service, which is why the panel confirms it first.
+ */
+export type TranslateScope = 'untranslated' | 'waiting' | 'selected' | 'all';
+
 export interface TranslateOptions {
   chunkSize?: number;
   model?: string;
   agent?: string;
   provider?: TranslationProvider;
+  scope?: TranslateScope;
+  /** Required by `selected`, ignored otherwise. */
+  ids?: readonly number[];
 }
 
 /**
- * Translate everything the glossary could not fill.
+ * Translate what the owner asked for — by default, everything the glossary
+ * could not fill.
  *
  * Runs in the background and the panel polls it: a project of a few thousand
  * strings is tens of requests, each taking the better part of a minute.
@@ -68,20 +83,25 @@ export function startTranslation(
 ): TranslateProgress {
   if (progress.running) return progress;
 
-  const pending = db
-    .prepare(
-      `SELECT id, msgid, msgid_plural AS msgidPlural, msgctxt, usage_surface AS usageSurface
-         FROM translation_units
-        WHERE project_id = ? AND state = 'untranslated'
-        ORDER BY ordinal`,
-    )
-    .all(projectId) as {
-    id: number;
-    msgid: string;
-    msgidPlural: string | null;
-    msgctxt: string | null;
-    usageSurface: string | null;
-  }[];
+  const scope = options.scope ?? 'untranslated';
+  const ids = options.ids ?? [];
+  const pending =
+    scope === 'selected' && ids.length === 0
+      ? []
+      : (db
+          .prepare(
+            `SELECT id, msgid, msgid_plural AS msgidPlural, msgctxt, usage_surface AS usageSurface
+               FROM translation_units
+              WHERE project_id = ? AND ${scopeClause(scope, ids.length)}
+              ORDER BY ordinal`,
+          )
+          .all(projectId, ...(scope === 'selected' ? ids : [])) as {
+            id: number;
+            msgid: string;
+            msgidPlural: string | null;
+            msgctxt: string | null;
+            usageSurface: string | null;
+          }[]);
 
   progress = { ...idle(), running: true, projectId, total: pending.length };
   if (pending.length === 0) {
@@ -106,7 +126,7 @@ export function startTranslation(
 
   const store = db.prepare(
     `UPDATE translation_units
-        SET msgstr = ?, msgstr_plural = ?, state = 'review', provenance = 'ai',
+        SET msgstr = ?, msgstr_plural = ?, state = 'review', provenance = 'ai', blocked = ?,
             provider = ?, updated_at = datetime('now')
       WHERE id = ?`,
   );
@@ -140,7 +160,6 @@ export function startTranslation(
         db.transaction(() => {
           for (const [index, answer] of answers.entries()) {
             const unit = slice[index]!;
-            store.run(answer.t, answer.tp ?? null, provider.name, unit.id);
 
             const failures = checkTranslation({
               ordinal: 0,
@@ -149,6 +168,11 @@ export function startTranslation(
               msgstr: answer.t,
               ...(answer.tp ? { msgstrPlural: answer.tp } : {}),
             });
+
+            // Stored, not recomputed later: the review queue filters and pages
+            // on this column rather than running the checks over every row.
+            store.run(answer.t, answer.tp ?? null, failures.length > 0 ? 1 : 0, provider.name, unit.id);
+
             if (failures.length > 0) progress.flagged += 1;
             else progress.translated += 1;
           }
@@ -169,4 +193,18 @@ export function startTranslation(
   })();
 
   return progress;
+}
+
+/** The `WHERE` a scope stands for. `all` needs none. */
+function scopeClause(scope: TranslateScope, idCount: number): string {
+  switch (scope) {
+    case 'untranslated':
+      return `state = 'untranslated'`;
+    case 'waiting':
+      return `state = 'review'`;
+    case 'selected':
+      return `id IN (${Array.from({ length: idCount }, () => '?').join(', ')})`;
+    case 'all':
+      return '1 = 1';
+  }
 }

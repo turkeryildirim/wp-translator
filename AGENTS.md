@@ -102,6 +102,15 @@ why, and include the measurement if one drove it.
 - **Nothing rewrites `translation` on a synced entry.** It is part of the key,
   so an edit makes the row the owner's (`origin = 'owner'`) — otherwise it
   matches no source's wording, loses its vouches and the sweep deletes it (R14).
+- **A translation's status is not in the PO.** GlotPress states it through an
+  export filter, so one request cannot separate `fuzzy` or `waiting` from
+  `current`. It does not need to: a fuzzy entry comes through the unfiltered
+  export with an empty `msgstr` and is redone (R32). Do not add a request per
+  status without measuring that it buys something.
+- **`blocked` on a unit is stored, not derived.** The queue filters and pages on
+  it in SQL; recomputing the checks per row is what made the review screen load
+  all 3 116 rows. Anything that writes `msgstr` writes `blocked` too —
+  `saveUnit`, `applyGlossary`, `importProject`, and the AI writer.
 - **Counts in a select list are paid per sorted row, not per returned row.**
   The glossary page query sorts before it limits, so three counts in its select
   list ran 49 500 times for a hundred rows — 40 s a page (R30). Choose the

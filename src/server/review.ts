@@ -28,12 +28,24 @@ export interface Candidate {
   tag: string;
 }
 
+/**
+ * What the queue is showing.
+ *
+ * Named for what the owner is looking for rather than for the column it reads,
+ * because two of them are not a state: `fuzzy` is a translation that came from
+ * the service and the checks distrust, and `blocked` is any translation the
+ * checks distrust whoever wrote it.
+ */
+export type QueueView =
+  | 'all'
+  | 'untranslated'
+  | 'waiting'
+  | 'translated'
+  | 'blocked'
+  | 'upstream';
+
 export interface UnitFilter {
-  state?: UnitState;
-  /** Only units whose approval is blocked. */
-  blocked?: boolean;
-  /** Only units waiting on a candidate choice. */
-  ambiguous?: boolean;
+  view?: QueueView;
   search?: string;
   /** Match the query's casing exactly. Off by default. */
   caseSensitive?: boolean;
@@ -41,6 +53,14 @@ export interface UnitFilter {
   scope?: 'source' | 'translation';
   limit?: number;
   offset?: number;
+}
+
+export interface UnitPage {
+  rows: UnitRow[];
+  /** Units matching the filter, not just the ones on this page. */
+  total: number;
+  /** How many the filter would show for each view, for the buttons. */
+  counts: Record<QueueView, number>;
 }
 
 export interface ProjectSummary {
@@ -70,21 +90,35 @@ export function listProjects(db: Db): ProjectSummary[] {
     .all() as ProjectSummary[];
 }
 
+/** The `WHERE` each view stands for, over `translation_units u`. */
+const VIEW: Record<QueueView, string> = {
+  all: '1 = 1',
+  untranslated: `u.state = 'untranslated'`,
+  waiting: `u.state = 'review'`,
+  translated: `u.state = 'ok'`,
+  blocked: 'u.blocked = 1',
+  // Translated by the service before the owner ever opened the project. These
+  // are the ones a GTE is reviewing rather than writing.
+  upstream: `u.upstream = 'current' AND u.provenance IS NULL`,
+};
+
 /**
- * The review queue.
+ * The review queue, one page of it.
  *
- * Default order is what the design asks for: blocked strings first, then rows
- * waiting on a candidate choice, then the rest. Reviewing 3 818 strings in
- * source order spends the owner's attention on the easy ones.
+ * Filtering and paging happen in SQL, and only the page's rows are enriched.
+ * They used to be loaded whole — every row, with the quality checks and a
+ * glossary lookup run on each — and then sliced in JS, which is the same
+ * mistake that cost the glossary browser 40 s a page (R30). A project of 3 116
+ * strings paid that on every keystroke.
+ *
+ * Rows come in catalogue order rather than by urgency. Urgency ordering needs
+ * the whole set in hand, and the views replace what it was for: a filter says
+ * "show me the blocked ones" better than a sort that floats them.
  */
-export function listUnits(db: Db, projectId: number, filter: UnitFilter = {}): UnitRow[] {
-  const where: string[] = ['u.project_id = ?'];
+export function listUnits(db: Db, projectId: number, filter: UnitFilter = {}): UnitPage {
+  const where: string[] = ['u.project_id = ?', VIEW[filter.view ?? 'all']];
   const params: unknown[] = [projectId];
 
-  if (filter.state) {
-    where.push('u.state = ?');
-    params.push(filter.state);
-  }
   if (filter.search) {
     // Folded in the application: SQLite's own folding stops at ASCII, so a
     // Turkish query missed every capitalised translation (R31).
@@ -93,29 +127,118 @@ export function listUnits(db: Db, projectId: number, filter: UnitFilter = {}): U
     for (const _ of columns) params.push(filter.search);
   }
 
+  const clause = where.join(' AND ');
+  const total = (
+    db
+      .prepare(`SELECT count(*) AS n FROM translation_units u WHERE ${clause}`)
+      .get(...params) as { n: number }
+  ).n;
+
   const rows = db
     .prepare(
-      `SELECT u.id, u.msgid, u.msgid_plural AS msgidPlural, u.msgctxt,
-              u.msgstr, u.msgstr_plural AS msgstrPlural, u.state, u.provenance
-         FROM translation_units u
-        WHERE ${where.join(' AND ')}
+      `WITH page AS (
+         SELECT u.id FROM translation_units u
+          WHERE ${clause}
+          ORDER BY u.ordinal
+          LIMIT ? OFFSET ?)
+       SELECT u.id, u.msgid, u.msgid_plural AS msgidPlural, u.msgctxt,
+              u.msgstr, u.msgstr_plural AS msgstrPlural, u.state, u.provenance,
+              u.upstream, u.blocked
+         FROM page JOIN translation_units u ON u.id = page.id
         ORDER BY u.ordinal`,
     )
-    .all(...params) as Omit<UnitRow, 'failures' | 'candidates' | 'structured'>[];
+    .all(...params, filter.limit ?? 100, filter.offset ?? 0) as UnitSource[];
 
   const overrides = overridesByUnit(db, projectId);
-  const enriched = rows.map((row) => enrich(db, projectId, row, overrides.get(row.id)));
+  return {
+    rows: rows.map((row) => enrich(db, projectId, row, overrides.get(row.id))),
+    total,
+    counts: countViews(db, projectId),
+  };
+}
 
-  const filtered = enriched.filter((row) => {
-    if (filter.blocked && row.failures.length === 0) return false;
-    if (filter.ambiguous && row.candidates.length === 0) return false;
-    return true;
-  });
+type UnitSource = Omit<UnitRow, 'failures' | 'candidates' | 'structured'> & { blocked: number };
 
-  filtered.sort(byUrgency);
+/** One pass over the project, so the buttons can carry their own numbers. */
+function countViews(db: Db, projectId: number): Record<QueueView, number> {
+  const row = db
+    .prepare(
+      `SELECT count(*) AS all_,
+              sum(u.state = 'untranslated') AS untranslated,
+              sum(u.state = 'review') AS waiting,
+              sum(u.state = 'ok') AS translated,
+              sum(u.blocked = 1) AS blocked,
+              sum(u.upstream = 'current' AND u.provenance IS NULL) AS upstream
+         FROM translation_units u WHERE u.project_id = ?`,
+    )
+    .get(projectId) as Record<string, number | null>;
 
-  const offset = filter.offset ?? 0;
-  return filtered.slice(offset, offset + (filter.limit ?? filtered.length));
+  return {
+    all: row.all_ ?? 0,
+    untranslated: row.untranslated ?? 0,
+    waiting: row.waiting ?? 0,
+    translated: row.translated ?? 0,
+    blocked: row.blocked ?? 0,
+    upstream: row.upstream ?? 0,
+  };
+}
+
+/**
+ * Approve or reject every unit a filter matches.
+ *
+ * Done in SQL rather than by sending thousands of ids to the browser and back:
+ * "show me the untranslated ones and approve them all" is one statement, and a
+ * project runs to thousands of strings.
+ *
+ * Approving skips what the checks blocked — bulk approval is the only way a
+ * few thousand strings are survivable, and also how one mistake becomes a few
+ * thousand. Rejecting empties the unit and returns it to `untranslated`, so it
+ * exports nothing and the next translation run picks it up.
+ */
+export function bulkSetState(
+  db: Db,
+  projectId: number,
+  filter: UnitFilter,
+  action: 'approve' | 'reject',
+): { changed: number; skipped: number } {
+  const where = ['u.project_id = ?', VIEW[filter.view ?? 'all']];
+  const params: unknown[] = [projectId];
+
+  if (filter.search) {
+    const columns = searchColumns('u.msgid', `ifnull(u.msgstr, '')`, filter.scope);
+    where.push(match(columns, filter.caseSensitive));
+    for (const _ of columns) params.push(filter.search);
+  }
+  const clause = where.join(' AND ');
+
+  return db.transaction(() => {
+    const matched = (
+      db
+        .prepare(`SELECT count(*) AS n FROM translation_units u WHERE ${clause}`)
+        .get(...params) as { n: number }
+    ).n;
+
+    const changed =
+      action === 'approve'
+        ? db
+            .prepare(
+              `UPDATE translation_units AS u
+                  SET state = 'ok', updated_at = datetime('now')
+                WHERE ${clause} AND u.blocked = 0 AND u.msgstr IS NOT NULL AND u.msgstr <> ''`,
+            )
+            .run(...params).changes
+        : db
+            .prepare(
+              `UPDATE translation_units AS u
+                  SET msgstr = NULL, msgstr_plural = NULL, state = 'untranslated',
+                      provenance = NULL, glossary_entry_id = NULL, blocked = 0,
+                      updated_at = datetime('now')
+                WHERE ${clause}`,
+            )
+            .run(...params).changes;
+
+    return { changed, skipped: matched - changed };
+  })();
 }
 
 /** What the detail panel shows for one unit. */
@@ -196,7 +319,7 @@ export function saveUnit(
 
   db.prepare(
     `UPDATE translation_units
-        SET msgstr = ?, msgstr_plural = ?, state = ?,
+        SET msgstr = ?, msgstr_plural = ?, state = ?, blocked = ?,
             provenance = CASE WHEN ? THEN 'human' ELSE provenance END,
             updated_at = datetime('now')
       WHERE id = ?`,
@@ -204,12 +327,31 @@ export function saveUnit(
     msgstr,
     msgstrPlural ?? null,
     blocking.length === 0 ? 'ok' : 'review',
+    blocking.length === 0 ? 0 : 1,
     edit.msgstr !== undefined ? 1 : 0,
     unitId,
   );
 
-  const unit = listUnits(db, current.projectId).find((row) => row.id === unitId)!;
+  // One row, not the project: this used to call `listUnits` and search its
+  // result, which loaded and enriched every string in the catalogue to answer
+  // "what does this one look like now".
+  const unit = getUnit(db, current.projectId, unitId);
   return blocking.length === 0 ? { unit } : { unit, blocked: blocking };
+}
+
+/** One unit, enriched the same way the queue enriches its page. */
+export function getUnit(db: Db, projectId: number, unitId: number): UnitRow {
+  const row = db
+    .prepare(
+      `SELECT u.id, u.msgid, u.msgid_plural AS msgidPlural, u.msgctxt,
+              u.msgstr, u.msgstr_plural AS msgstrPlural, u.state, u.provenance,
+              u.upstream, u.blocked
+         FROM translation_units u WHERE u.id = ?`,
+    )
+    .get(unitId) as UnitSource | undefined;
+  if (!row) throw new Error(`No translation unit with id ${unitId}.`);
+
+  return enrich(db, projectId, row, overridesByUnit(db, projectId).get(unitId));
 }
 
 /** Record a deliberate exception so a blocked string can be approved. */
@@ -242,7 +384,7 @@ function overridesByUnit(db: Db, projectId: number): Map<number, Set<string>> {
 function enrich(
   db: Db,
   projectId: number,
-  row: Omit<UnitRow, 'failures' | 'candidates' | 'structured'>,
+  row: UnitSource,
   overridden: Set<string> = new Set(),
 ): UnitRow {
   const failures =
@@ -300,8 +442,3 @@ function candidatesFor(db: Db, projectId: number, msgid: string): Candidate[] {
   return distinct.length > 1 ? distinct : [];
 }
 
-function byUrgency(a: UnitRow, b: UnitRow): number {
-  const rank = (row: UnitRow) =>
-    row.failures.length > 0 ? 0 : row.candidates.length > 0 ? 1 : row.state === 'review' ? 2 : 3;
-  return rank(a) - rank(b);
-}

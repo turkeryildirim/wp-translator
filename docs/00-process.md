@@ -83,6 +83,7 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D42 | Frontend | **Vue 3 + Vite**, TypeScript, JSON API to the Node process. Chosen on the review table's needs: virtualisation, stable keyboard focus, in-place row updates. |
 | D43 | Official glossary | The WordPress Turkish team's own term list (`…/locale/tr/default/glossary/-export/`, CSV, 513 terms) is imported as **terminology**: keyed by source + part of speech + translation, stored under a dedicated tag, and **replaced** on each import. It feeds the AI prompt and is deliberately **not** used for full-string matching — it is curated to say how a word is rendered, not to approve a whole string in an unknown context. |
 | D44 | Glossary identity | An entry is **a source and a translation**. `msgctxt` is not part of it — it is recorded alongside as a note of where a wording has been seen, and matching never reads it. Two sources that render a string the same way meet on one row; two that differ sit side by side as the alternatives they are. Matching fills the best-supported reading — the owner's own entry first, then most vouching sources, then highest-ranked source — and offers the rest as candidates in review. Supersedes D5 and D11. |
+| D45 | Upstream translations | A project's export is imported **with its translations**, not stripped to sources. A unit the service already translated lands `ok` with `upstream = 'current'`, which is what separates work the owner has never seen from work they settled. Only two upstream statuses are recorded, because only two reach us in one request (R32). Export still carries everything approved, upstream translations included. |
 | D35 | Glossary key | `(source, msgctxt, tag)`. Matching prefers the unit's own `msgctxt` and falls back to the context-less row; a unit without context matches only context-less entries. Resolves R9. |
 | D34 | Style guide form | A large free-text field in the panel, written by the owner, passed to the AI as part of the prompt. No structured rule editor. Per D12 the same form applies per tag. Seed content lives in `style-guide/tr-genel.md`. |
 
@@ -283,11 +284,24 @@ Measured over 20 000 rows, both faults are needed for the disaster:
 
 Fixed as both: the page's ids are chosen in a CTE and only those rows are decorated, and `idx_glossary_source (source_hash, tag_id)` gives the sibling count a seek. Against the real glossary, offset 5 000 went from 40 588 ms to 10 ms.
 
+The review queue had the same shape and the same fault: `listUnits` had no `LIMIT`, loading every row, running the quality checks and a glossary lookup on each, then slicing in JS. At `meta/wordcamp`'s 3 116 strings that was the whole screen on every keystroke. Now the page's ids come from a CTE, only those rows are enriched, and the check result is a stored column (`blocked`) rather than something recomputed to answer "which are blocked". A page at offset 3 000 measured **8 ms**.
+
 **R31 — SQLite's folding fails on exactly the half that matters.** `LIKE` and `NOCASE` fold ASCII only, so the search box found `save` from `SAVE` and found nothing at all for `İÇERİK` from `içerik`. The glossary is English sources and Turkish translations searched from one box, so the failing half was the Turkish one — measured against the seeded glossary, `içerik` and `İÇERİK` now both return 496 rows where the second returned a fraction.
 
 Folding is done in the application and registered as a SQLite function. The four i-forms collapse together — `I`, `ı`, `İ` and `i` all become `i` — rather than following Turkish casing, which would send `I` to `ı` and stop `item` finding `ITEM` in the English column. The distinction that costs is one nobody types a query to make. `İ` is replaced before lowercasing, because `'İ'.toLowerCase()` is `i` plus a combining dot and matches nothing.
 
 Substring search already scans, so the callback costs the same order: 140 ms folded against 25 ms for the byte comparison, over 49 500 rows and two columns. Exact-case search is plain `instr`, which is the only way to find `Save` without also finding `save`.
+
+**R32 — GlotPress hides `fuzzy`, but not its consequence.** Status is an export filter, never a flag in the PO, so one request cannot say which translations the service calls fuzzy or waiting:
+
+| | `current` | `untranslated` | `waiting` | `fuzzy` | unfiltered |
+|---|---:|---:|---:|---:|---:|
+| `meta/wordcamp` | 2 413 | 703 | 0 | 0 | 3 116 |
+| `wp-plugins/bbpress/dev` | 1 346 | 111 | 0 | 11 | 1 468 |
+
+The unfiltered export is all three, which looked like a reason to spend a request per status. It is not. Measured against bbPress, **all 11 of its fuzzy entries appear in the unfiltered export with an empty `msgstr`**, though the `fuzzy`-filtered export gives them translations. A doubtful translation therefore arrives as untranslated and is redone, which is the outcome worth having, and the extra requests buy nothing.
+
+What the import does buy is the 2 413 of `meta/wordcamp` that were already done and used to be discarded (D45). Of those, 8 fail a quality check on the way in; bbPress contributes one more, an approved translation rendering `,` as a single space. Upstream approval is not a reason to skip the checks — those strings are what a GTE is looking for.
 
 ## 6. Open questions
 

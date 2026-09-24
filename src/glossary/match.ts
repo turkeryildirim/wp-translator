@@ -71,11 +71,14 @@ export function applyGlossary(db: Db, projectId: number): MatchResult {
     `SELECT id, source_hash AS hash FROM translation_units
       WHERE project_id = ? AND state = 'untranslated'`,
   );
+  // `blocked` is reset rather than computed: a glossary entry is a translation
+  // a human already approved of this exact source, so there is nothing for the
+  // checks to find that was not already there.
   const fill = db.prepare(
     `UPDATE translation_units
         SET msgstr = @translation, msgstr_plural = @translationPlural,
             state = 'ok', provenance = 'glossary', glossary_entry_id = @entryId,
-            updated_at = datetime('now')
+            blocked = 0, updated_at = datetime('now')
       WHERE id = @id`,
   );
 
