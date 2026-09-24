@@ -104,7 +104,9 @@ export const saveUnit = (unitId: number, edit: { msgstr?: string; msgstrPlural?:
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(edit),
     },
-    'Kaydedildi',
+    // Deliberately unlabelled. A save the quality checks refuse still answers
+    // 200, carrying `blocked`, so a label here would report success for exactly
+    // the write the owner needs warned about. ReviewTable reads the body.
   );
 
 export interface Tag {
@@ -224,7 +226,8 @@ export const removeProject = (id: number) =>
   json<{ ok: true }>(`/api/projects/${id}`, { method: 'DELETE' }, 'Proje silindi');
 
 export const bulkApprove = (ids: number[]) =>
-  post<{ approved: number; refused: number }>('/api/units/bulk-approve', { ids }, 'Onaylandı');
+  // Unlabelled for the same reason as saveUnit: `refused` rides on a 200.
+  post<{ approved: number; refused: number }>('/api/units/bulk-approve', { ids });
 
 export interface TranslateProgress {
   running: boolean;

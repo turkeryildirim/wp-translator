@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { bulkApprove, saveUnit, type Unit } from './api.ts';
+import { notify } from './notify.ts';
 import UnitDetailPanel from './UnitDetailPanel.vue';
 
 const props = defineProps<{ units: Unit[] }>();
@@ -99,7 +100,16 @@ async function approve(withEdit: boolean): Promise<void> {
   const unit = current.value;
   if (!unit || unit.failures.length > 0) return;
 
-  const { unit: saved } = await saveUnit(unit.id, withEdit ? { msgstr: draftOf(unit) } : {});
+  const { unit: saved, blocked } = await saveUnit(
+    unit.id,
+    withEdit ? { msgstr: draftOf(unit) } : {},
+  );
+
+  // A refused save answers 200 with the failures, so the outcome is in the
+  // body, not the status.
+  if (blocked?.length)
+    notify('error', `Kaydedilmedi, kalite kontrolü engelledi: ${blocked[0]!.rule}`);
+  else notify('ok', 'Onaylandı');
 
   clearDraft(unit);
   editing.value = false;
@@ -127,10 +137,14 @@ async function approvePicked(): Promise<void> {
   if (ids.length === 0) return;
 
   const result = await bulkApprove(ids);
-  const refusedHere = picked.value.size - ids.length;
+  const skipped = picked.value.size - ids.length + result.refused;
   bulkNotice.value =
     `${result.approved} string onaylandı.` +
-    (refusedHere > 0 ? ` ${refusedHere} tanesi kalite kontrolünden kaldığı için atlandı.` : '');
+    (skipped > 0 ? ` ${skipped} tanesi kalite kontrolünden kaldığı için atlandı.` : '');
+
+  if (skipped > 0)
+    notify('error', `${result.approved} onaylandı, ${skipped} tanesi kalite kontrolüne takıldı.`);
+  else notify('ok', `${result.approved} string onaylandı.`);
 
   picked.value = new Set();
   emit('bulk');
