@@ -25,12 +25,15 @@ import {
 } from './tags.ts';
 import {
   addSource,
+  bulkTagSources,
   listSources,
-  removeSource,
+  normaliseProjectUrl,
+  removeSources,
   reorderSources,
   setSourceTags,
   startSync,
   syncProgress,
+  verifyProjectUrl,
 } from './sources.ts';
 
 export interface ServerOptions {
@@ -135,15 +138,29 @@ async function api(
     if (method === 'GET') return send(response, 200, listSources(db));
     if (method === 'POST') {
       const body = (await readJson(request)) as { url: string; tagIds?: number[]; label?: string };
-      const id = addSource(db, body.url, body.tagIds ?? [], body.label);
-      return send(response, 200, { id });
+      const url = normaliseProjectUrl(body.url);
+      await verifyProjectUrl(url);
+      return send(response, 200, { id: addSource(db, url, body.tagIds ?? [], body.label) });
     }
   }
 
   const source = /^\/api\/sources\/(\d+)$/.exec(route);
   if (method === 'DELETE' && source) {
-    removeSource(db, Number(source[1]));
+    removeSources(db, [Number(source[1])]);
     return send(response, 200, { ok: true });
+  }
+
+  if (method === 'POST' && route === '/api/sources/bulk-delete') {
+    const body = (await readJson(request)) as { ids: number[] };
+    return send(response, 200, { removed: removeSources(db, body.ids) });
+  }
+
+  if (method === 'POST' && route === '/api/sources/bulk-tags') {
+    const body = (await readJson(request)) as { ids: number[]; add?: number[]; remove?: number[] };
+    const change: { add?: number[]; remove?: number[] } = {};
+    if (body.add) change.add = body.add;
+    if (body.remove) change.remove = body.remove;
+    return send(response, 200, { changed: bulkTagSources(db, body.ids, change) });
   }
 
   const sourceTags = /^\/api\/sources\/(\d+)\/tags$/.exec(route);

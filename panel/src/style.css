@@ -148,3 +148,19 @@ code { font: 12px ui-monospace, monospace; background: var(--line);
 tr.dragging { opacity: .4; }
 tr.dropinto td { box-shadow: inset 0 2px 0 currentColor; }
 .rank { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.tagcell { position: relative; white-space: nowrap; }
+.chip { font: 11px/1.6 inherit; padding: 0 6px; margin-inline-end: 3px;
+  border: 1px solid var(--line); border-radius: 10px; background: transparent;
+  color: var(--muted); cursor: pointer; }
+.chip:hover { color: inherit; border-color: currentColor; }
+.chip.add { font-weight: 700; }
+.tagmenu { position: absolute; inset-inline-start: 0; top: 100%; z-index: 10;
+  display: flex; flex-direction: column; gap: 2px; padding: 4px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--bg);
+  box-shadow: 0 4px 12px rgb(0 0 0 / .2); min-width: 120px; }
+.tagmenu button { font: inherit; text-align: start; padding: 3px 8px; border: none;
+  border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
+.tagmenu button:hover { background: var(--active); }
+.tagmenu em { color: var(--muted); padding: 3px 8px; font-style: normal; }
+.grid tfoot td { border-top: 2px solid var(--line); padding: 6px 8px; }

@@ -126,8 +126,6 @@ export const listTags = () => json<Tag[]>('/api/tags');
 export const listSources = () => json<TrustedSource[]>('/api/sources');
 export const addSource = (url: string, tagIds: number[], label?: string) =>
   post<{ id: number }>('/api/sources', { url, tagIds, label });
-export const removeSource = (id: number) =>
-  json<{ ok: true }>(`/api/sources/${id}`, { method: 'DELETE' });
 export const reorderSources = (ids: number[]) => post<{ ok: true }>('/api/sources/reorder', { ids });
 export const startSync = () => post<SyncProgress>('/api/sources/sync', {});
 export const syncProgress = () => json<SyncProgress>('/api/sources/sync');
@@ -199,3 +197,9 @@ export const translateProgress = (projectId: number) =>
 
 export const setSourceTags = (id: number, tagIds: number[]) =>
   post<{ ok: true }>(`/api/sources/${id}/tags`, { tagIds });
+
+export const bulkDeleteSources = (ids: number[]) =>
+  post<{ removed: number }>('/api/sources/bulk-delete', { ids });
+
+export const bulkTagSources = (ids: number[], change: { add?: number[]; remove?: number[] }) =>
+  post<{ changed: number }>('/api/sources/bulk-tags', { ids, ...change });

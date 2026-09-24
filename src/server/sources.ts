@@ -65,6 +65,48 @@ export function setSourceTags(db: Db, id: number, tagIds: readonly number[]): vo
   })();
 }
 
+/** Accepts a pasted URL with or without the scheme, and with or without a trailing slash. */
+const PROJECT_URL = /^(?:https:\/\/)?translate\.wordpress\.org\/projects\/(.+)$/;
+
+export function normaliseProjectUrl(input: string): string {
+  const trimmed = input.trim();
+  const match = PROJECT_URL.exec(trimmed);
+  if (!match) {
+    throw new Error(
+      'Bu bir translate.wordpress.org proje adresi değil. Beklenen biçim: ' +
+        'https://translate.wordpress.org/projects/<proje>/tr/default/',
+    );
+  }
+
+  const path = match[1]!.replace(/\/+$/, '');
+  return `https://translate.wordpress.org/projects/${path}/`;
+}
+
+/**
+ * Check the project actually exports before storing it.
+ *
+ * A typo in the path returns 404 as a ~116 KB HTML page (R5b), so a source added
+ * without this check sits in the list looking fine and fails on every Update.
+ * Content type is the reliable signal: a real export is `application/octet-stream`.
+ */
+export async function verifyProjectUrl(url: string): Promise<void> {
+  const ref = parseProjectUrl(url);
+  const response = await fetch(exportUrl(ref.projectPath), { method: 'GET' });
+
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new Error(
+      `${ref.projectPath} bir dışa aktarma döndürmüyor (HTTP ${response.status}). Adresi kontrol edin.`,
+    );
+  }
+
+  const type = response.headers.get('content-type') ?? '';
+  await response.body?.cancel();
+  if (!type.includes('octet-stream')) {
+    throw new Error(`${ref.projectPath} PO yerine "${type}" döndürdü. Adresi kontrol edin.`);
+  }
+}
+
 export function addSource(db: Db, url: string, tagIds: readonly number[], label?: string): number {
   const ref = parseProjectUrl(url);
 
@@ -91,15 +133,50 @@ export function addSource(db: Db, url: string, tagIds: readonly number[], label?
   })();
 }
 
-export function removeSource(db: Db, id: number): void {
-  // Cascades to the links; entries no source vouches for are then unreferenced,
-  // so the same sweep the sync uses cleans them up.
-  db.transaction(() => {
-    db.prepare(`DELETE FROM trusted_sources WHERE id = ?`).run(id);
+export interface BulkTagChange {
+  add?: readonly number[];
+  remove?: readonly number[];
+}
+
+/**
+ * Add or remove tags across many sources at once.
+ *
+ * The seeded list puts all 41 under one tag, and splitting it is the point —
+ * giving WooCommerce its own tag is what makes `item` come out as `ürün` there.
+ * Doing that one row at a time is the sort of chore people skip.
+ */
+export function bulkTagSources(db: Db, ids: readonly number[], change: BulkTagChange): number {
+  const add = db.prepare(
+    `INSERT OR IGNORE INTO trusted_source_tags (trusted_source_id, tag_id) VALUES (?, ?)`,
+  );
+  const remove = db.prepare(
+    `DELETE FROM trusted_source_tags WHERE trusted_source_id = ? AND tag_id = ?`,
+  );
+
+  return db.transaction((): number => {
+    let touched = 0;
+    for (const id of ids) {
+      for (const tagId of change.add ?? []) touched += add.run(id, tagId).changes;
+      for (const tagId of change.remove ?? []) touched += remove.run(id, tagId).changes;
+    }
+    return touched;
+  })();
+}
+
+/** Remove several sources, sweeping entries no remaining source vouches for. */
+export function removeSources(db: Db, ids: readonly number[]): number {
+  const drop = db.prepare(`DELETE FROM trusted_sources WHERE id = ?`);
+
+  return db.transaction((): number => {
+    let removed = 0;
+    for (const id of ids) removed += drop.run(id).changes;
+
     db.prepare(
       `DELETE FROM glossary_entries
         WHERE origin = 'trusted' AND id NOT IN (SELECT entry_id FROM glossary_entry_sources)`,
     ).run();
+
+    return removed;
   })();
 }
 
