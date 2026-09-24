@@ -55,6 +55,10 @@
 .bulkbar { --muted: color-mix(in oklab, var(--color-text) 70%, var(--color-primary)); }
 
 * { box-sizing: border-box; }
+/* A text box that shows its whole value beats one you scroll inside, and every
+   textarea here holds something worth seeing whole: a translation, a style
+   rule. Where it is not supported the `rows` attribute still applies. */
+textarea { field-sizing: content; }
 body { margin: 0; background: var(--bg); color: var(--fg); accent-color: var(--color-primary);
   font: 13px/1.4 ui-sans-serif, system-ui, sans-serif; }
 kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line);
@@ -89,7 +93,10 @@ footer { padding: 6px 12px; border-top: 1px solid var(--line);
 .row.blocked .state { color: var(--blocked-fg); font-weight: 700; }
 .source, .target { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source { color: var(--muted); }
-.editor { font: inherit; width: 100%; resize: none; padding: 2px 4px;
+/* The one exception. Review rows are absolutely positioned at a fixed height in
+   a virtualised list, so a box that grew would sit on top of the row below it
+   and the list's geometry would be a row out. */
+.editor { field-sizing: fixed; font: inherit; width: 100%; resize: none; padding: 2px 4px;
   border: 1px solid currentColor; border-radius: 3px; background: var(--bg); color: inherit; }
 .candidates span { margin-inline-end: 12px; }
 .candidates em { color: var(--muted); font-style: normal; font-size: 11px; }
@@ -161,7 +168,10 @@ h4 { margin: 12px 0 4px; font-size: 12px; color: var(--muted); }
 h3 { margin: 14px 0 2px; font-size: 14px; }
 h3:first-child { margin-top: 0; }
 .grid.narrow { max-width: 560px; }
-.rule-editor { width: 100%; max-width: 900px; font: 13px/1.5 ui-monospace, monospace;
+/* Capped: the seeded guide is about 10 000 characters, and growing to all of it
+   would bury the Kaydet button under a page of scrolling. */
+.rule-editor { width: 100%; max-width: 900px; max-height: 70vh;
+  font: 13px/1.5 ui-monospace, monospace;
   padding: 8px; border: 1px solid var(--control-line); border-radius: 6px;
   background: var(--bg); color: inherit; resize: vertical; }
 code { font: 12px ui-monospace, monospace; background: var(--line);
