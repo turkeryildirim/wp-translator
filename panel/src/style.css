@@ -140,3 +140,11 @@ code { font: 12px ui-monospace, monospace; background: var(--line);
 
 .tagpick { font: inherit; padding: 2px 4px; border: 1px solid var(--line);
   border-radius: 4px; background: var(--bg); color: inherit; max-width: 150px; }
+
+.draghandle { cursor: grab; user-select: none; color: var(--muted);
+  padding: 0 4px; border-radius: 3px; letter-spacing: -1px; }
+.draghandle:active { cursor: grabbing; }
+.draghandle:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; color: inherit; }
+tr.dragging { opacity: .4; }
+tr.dropinto td { box-shadow: inset 0 2px 0 currentColor; }
+.rank { white-space: nowrap; font-variant-numeric: tabular-nums; }

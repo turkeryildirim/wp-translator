@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { openDb } from '../src/db/open.ts';
-import { listSources } from '../src/server/sources.ts';
+import { listSources, reorderSources } from '../src/server/sources.ts';
 import { listStyleRules, styleGuideFor } from '../src/server/tags.ts';
 
 /**
@@ -64,5 +64,34 @@ describe('a fresh database', () => {
     expect(
       (db.prepare(`SELECT count(*) AS n FROM glossary_entries`).get() as { n: number }).n,
     ).toBe(0);
+  });
+});
+
+describe('reordering sources', () => {
+  it('moves a row to a new position without losing or duplicating any', () => {
+    // Drag semantics: remove and insert, not swap with a neighbour.
+    const db = openDb(':memory:');
+    const before = listSources(db);
+
+    const next = [...before];
+    const [moved] = next.splice(next.length - 1, 1);
+    next.splice(0, 0, moved!);
+    reorderSources(db, next.map((source) => source.id));
+
+    const after = listSources(db);
+    expect(after[0]!.projectPath).toBe(before.at(-1)!.projectPath);
+    expect(after[1]!.projectPath).toBe(before[0]!.projectPath);
+    expect(after).toHaveLength(before.length);
+    expect(new Set(after.map((source) => source.id)).size).toBe(before.length);
+  });
+
+  it('leaves rank a dense 1..n so the order is unambiguous', () => {
+    const db = openDb(':memory:');
+    const ids = listSources(db).map((source) => source.id).reverse();
+    reorderSources(db, ids);
+
+    expect(listSources(db).map((source) => source.rank)).toEqual(
+      ids.map((_, index) => index + 1),
+    );
   });
 });
