@@ -171,7 +171,10 @@ watch(page, load);
 
         <label>
           Çeviri
-          <input v-model="draft" @keyup.enter="save" />
+          <!-- Enter inserts a newline here rather than saving: a translation can
+               legitimately contain one, and losing it to a shortcut is worse
+               than one extra click on Kaydet. -->
+          <textarea v-model="draft" rows="3" @keydown.ctrl.enter.prevent="save" />
         </label>
         <button class="primary" @click="save">Kaydet</button>
         <p v-if="notice" class="notice">{{ notice }}</p>
