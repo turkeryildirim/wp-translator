@@ -42,13 +42,6 @@ export function importProject(db: Db, project: ProjectInput, catalogue: Catalogu
      VALUES (@family, @projectPath, @subProject, @translateUrl, @slug, @name, @version, @headers,
              datetime('now'))`,
   );
-  const insertUnit = db.prepare(
-    `INSERT INTO translation_units
-       (project_id, ordinal, source_hash, msgid, msgid_plural, msgctxt, refs, extracted_comments,
-        msgstr, msgstr_plural, state, upstream, blocked)
-     VALUES (@projectId, @ordinal, @hash, @msgid, @msgidPlural, @msgctxt, @refs, @extractedComments,
-             @msgstr, @msgstrPlural, @state, @upstream, @blocked)`,
-  );
 
   return db.transaction((): number => {
     const projectId = Number(
@@ -64,30 +57,47 @@ export function importProject(db: Db, project: ProjectInput, catalogue: Catalogu
       }).lastInsertRowid,
     );
 
-    for (const unit of catalogue.units) {
-      const translated = Boolean(unit.msgstr);
-      insertUnit.run({
-        projectId,
-        ordinal: unit.ordinal,
-        hash: sourceHash(unit.msgid, unit.msgidPlural),
-        msgid: unit.msgid,
-        msgidPlural: unit.msgidPlural ?? null,
-        msgctxt: unit.msgctxt ?? null,
-        refs: unit.refs ?? null,
-        extractedComments: unit.extractedComments ?? null,
-        msgstr: unit.msgstr ?? null,
-        msgstrPlural: unit.msgstrPlural ?? null,
-        state: translated ? 'ok' : 'untranslated',
-        upstream: translated ? 'current' : 'untranslated',
-        // Checked on the way in, so the queue can filter on it in SQL. An
-        // upstream translation is not above suspicion — these are exactly the
-        // strings a GTE is looking for.
-        blocked: translated && checkTranslation(unit).length > 0 ? 1 : 0,
-      });
-    }
-
+    replaceUnits(db, projectId, catalogue);
     return projectId;
   })();
+}
+
+/**
+ * Write a catalogue's units under a project, in place of whatever is there.
+ *
+ * Shared by the first import and by a reload, so the two cannot disagree about
+ * what a status means.
+ */
+export function replaceUnits(db: Db, projectId: number, catalogue: Catalogue): void {
+  const insertUnit = db.prepare(
+    `INSERT INTO translation_units
+       (project_id, ordinal, source_hash, msgid, msgid_plural, msgctxt, refs, extracted_comments,
+        msgstr, msgstr_plural, state, upstream, blocked)
+     VALUES (@projectId, @ordinal, @hash, @msgid, @msgidPlural, @msgctxt, @refs, @extractedComments,
+             @msgstr, @msgstrPlural, @state, @upstream, @blocked)`,
+  );
+
+  for (const unit of catalogue.units) {
+    const translated = Boolean(unit.msgstr);
+    insertUnit.run({
+      projectId,
+      ordinal: unit.ordinal,
+      hash: sourceHash(unit.msgid, unit.msgidPlural),
+      msgid: unit.msgid,
+      msgidPlural: unit.msgidPlural ?? null,
+      msgctxt: unit.msgctxt ?? null,
+      refs: unit.refs ?? null,
+      extractedComments: unit.extractedComments ?? null,
+      msgstr: unit.msgstr ?? null,
+      msgstrPlural: unit.msgstrPlural ?? null,
+      state: translated ? 'ok' : 'untranslated',
+      upstream: translated ? 'current' : 'untranslated',
+      // Checked on the way in, so the queue can filter on it in SQL. An
+      // upstream translation is not above suspicion — these are exactly the
+      // strings a GTE is looking for.
+      blocked: translated && checkTranslation(unit).length > 0 ? 1 : 0,
+    });
+  }
 }
 
 /** Attach domain tags to a project. Order is not significant — see `applyGlossary`. */

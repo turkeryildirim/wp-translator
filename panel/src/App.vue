@@ -4,6 +4,8 @@ import {
   bulkSetState,
   listProjects,
   listUnits,
+  reloadCost,
+  reloadProject,
   removeProject,
   startTranslation,
   translateProgress,
@@ -206,6 +208,45 @@ function clearSelection(): void {
   wholeFilter.value = false;
 }
 
+const reloading = ref(false);
+
+/**
+ * Fetch the project again and take what the service has.
+ *
+ * The warning names the number rather than the risk. "Changes will be lost" is
+ * something people click past; "412 strings you translated will be discarded"
+ * is not, and the number comes from the server so it is the real one.
+ */
+async function reload(): Promise<void> {
+  const current = project.value;
+  if (!current || reloading.value) return;
+
+  const { discards } = await reloadCost(current.id);
+  const warning =
+    discards > 0
+      ? `wp.org'dan yeniden alınacak.\n\nBu projede sizin ya da AI'ın ürettiği ` +
+        `${discards.toLocaleString('tr')} dizge var ve hepsi silinecek. Dışa aktarmadıysanız ` +
+        `geri getirilemez.\n\nDevam edilsin mi?`
+      : `wp.org'dan yeniden alınacak.\n\nSilinecek kendi çalışmanız yok.\n\nDevam edilsin mi?`;
+  if (!confirm(warning)) return;
+
+  reloading.value = true;
+  try {
+    const result = await reloadProject(current.id);
+    notify(
+      'ok',
+      `${result.strings.toLocaleString('tr')} dizge alındı, ` +
+        `${result.match.filled.toLocaleString('tr')} tanesi sözlükten dolduruldu.`,
+    );
+    clearSelection();
+    projects.value = await listProjects();
+    page.value = 0;
+    await load();
+  } finally {
+    reloading.value = false;
+  }
+}
+
 async function dropProject(): Promise<void> {
   const current = project.value;
   if (!current) return;
@@ -296,6 +337,13 @@ watch([selected, filter], load);
           {{ p.name ?? p.projectPath }}
         </option>
       </select>
+      <button
+        :disabled="!project || reloading"
+        title="Kataloğu wp.org'dan yeniden al"
+        @click="reload"
+      >
+        {{ reloading ? 'Yenileniyor…' : 'Yenile' }}
+      </button>
       <button :disabled="!project" title="Projeyi ve çevirilerini sil" @click="dropProject">
         Projeyi sil
       </button>

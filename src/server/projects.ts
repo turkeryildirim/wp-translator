@@ -1,7 +1,7 @@
 import type { Db } from '../db/open.ts';
 import { applyGlossary, type MatchResult } from '../glossary/match.ts';
 import { parsePo } from '../po/parse.ts';
-import { importProject, setProjectTags } from '../project/import.ts';
+import { importProject, replaceUnits, setProjectTags } from '../project/import.ts';
 import { fetchExport } from '../wporg/fetch.ts';
 import { fetchMetadata } from '../wporg/metadata.ts';
 import { exportUrl, parseProjectUrl } from '../wporg/project.ts';
@@ -77,6 +77,69 @@ export async function addProject(
 
 export function removeProject(db: Db, projectId: number): void {
   db.prepare(`DELETE FROM projects WHERE id = ?`).run(projectId);
+}
+
+export interface ReloadResult {
+  strings: number;
+  /** Units carrying work that was not the service's, which this discarded. */
+  discarded: number;
+  match: MatchResult;
+}
+
+/**
+ * Fetch the project again and replace its catalogue.
+ *
+ * Upstream moves: strings are added, changed and withdrawn, and a translation
+ * the owner is reviewing may already be approved on the service. The only way
+ * to see that is to fetch it again.
+ *
+ * This **discards** the units and everything on them — the AI's output, the
+ * owner's edits and approvals, the quality-check exceptions — and takes what
+ * the service has instead. Merging is not attempted: a source string can change
+ * under a `msgctxt` that did not, and guessing which side of that is current
+ * would quietly keep a translation of something nobody wrote any more. The
+ * caller is told the count beforehand so the choice is an informed one.
+ *
+ * The project row survives, so its tags, its id and the owner's place in the
+ * panel all stay put.
+ */
+export async function reloadProject(db: Db, projectId: number): Promise<ReloadResult> {
+  const project = db
+    .prepare(`SELECT project_path AS projectPath FROM projects WHERE id = ?`)
+    .get(projectId) as { projectPath: string } | undefined;
+  if (!project) throw new Error(`No project with id ${projectId}.`);
+
+  const catalogue = parsePo(await fetchExport(exportUrl(project.projectPath, { status: 'all' })));
+  if (catalogue.units.length === 0) {
+    // Refused rather than applied: an empty catalogue is what a moved or
+    // renamed project looks like, and obeying it would empty the project.
+    throw new Error(`${project.projectPath} returned an empty catalogue; nothing was changed.`);
+  }
+
+  const discarded = ownWork(db, projectId);
+
+  db.transaction(() => {
+    db.prepare(`DELETE FROM translation_units WHERE project_id = ?`).run(projectId);
+    replaceUnits(db, projectId, catalogue);
+    db.prepare(`UPDATE projects SET po_headers = ?, imported_at = datetime('now') WHERE id = ?`).run(
+      JSON.stringify(catalogue.headers),
+      projectId,
+    );
+  })();
+
+  return { strings: catalogue.units.length, discarded, match: applyGlossary(db, projectId) };
+}
+
+/** Units the owner or the model touched, as opposed to what arrived translated. */
+export function ownWork(db: Db, projectId: number): number {
+  return (
+    db
+      .prepare(
+        `SELECT count(*) AS n FROM translation_units
+          WHERE project_id = ? AND (provenance IS NOT NULL OR state = 'review')`,
+      )
+      .get(projectId) as { n: number }
+  ).n;
 }
 
 export interface BulkResult {

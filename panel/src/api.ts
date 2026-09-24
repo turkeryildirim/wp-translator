@@ -280,6 +280,16 @@ export const saveStyleRule = (tagId: number | null, body: string) =>
 
 export const addProject = (url: string, tagIds: number[]) =>
   post<AddProjectResult>('/api/projects', { url, tagIds }, 'Proje eklendi');
+/** What a reload would throw away, for the confirmation. */
+export const reloadCost = (id: number) => json<{ discards: number }>(`/api/projects/${id}/reload`);
+
+export const reloadProject = (id: number) =>
+  post<{ strings: number; discarded: number; match: AddProjectResult['match'] }>(
+    `/api/projects/${id}/reload`,
+    {},
+    'Proje yenilendi',
+  );
+
 export const removeProject = (id: number) =>
   json<{ ok: true }>(`/api/projects/${id}`, { method: 'DELETE' }, 'Proje silindi');
 

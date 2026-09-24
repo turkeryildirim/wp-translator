@@ -23,7 +23,7 @@ import {
   type QueueView,
   type UnitFilter,
 } from './review.ts';
-import { addProject, bulkApprove, removeProject } from './projects.ts';
+import { addProject, bulkApprove, ownWork, reloadProject, removeProject } from './projects.ts';
 import { startTranslation, translateProgress, type TranslateScope } from './translate.ts';
 import {
   createTag,
@@ -272,6 +272,15 @@ async function api(
       return send(response, 200, startTranslation(db, Number(translate[1]), body));
     }
     if (method === 'GET') return send(response, 200, translateProgress());
+  }
+
+  const reload = /^\/api\/projects\/(\d+)\/reload$/.exec(route);
+  if (reload) {
+    const projectId = Number(reload[1]);
+    // GET says what a reload would cost, so the panel can name the number in
+    // its confirmation rather than warning in the abstract.
+    if (method === 'GET') return send(response, 200, { discards: ownWork(db, projectId) });
+    if (method === 'POST') return send(response, 200, await reloadProject(db, projectId));
   }
 
   const bulkState = /^\/api\/projects\/(\d+)\/bulk$/.exec(route);
