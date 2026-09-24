@@ -39,9 +39,15 @@ export interface GlossaryPage {
  * Search the glossary.
  *
  * Substring search over tens of thousands of rows is a `LIKE '%…%'`, which the
- * index on `source_text` cannot serve. At the measured size — 53 722 rows for
- * the owner's 41 sources — a scan is still a few milliseconds, so FTS5 is not
- * pulled in until it is actually needed.
+ * index on `source_text` cannot serve. At the measured size — around 49 500
+ * rows for the owner's 41 sources — a scan is still a few milliseconds, so FTS5
+ * is not pulled in until it is actually needed.
+ *
+ * The page is chosen first and decorated second. Ordering needs a temp B-tree,
+ * so a single statement with the counts in its select list evaluates them for
+ * every row it sorts rather than for the hundred it returns — one page measured
+ * 40 s that way, and better-sqlite3 is synchronous, so that is 40 s during
+ * which the server answers nothing (R30).
  */
 export function searchGlossary(db: Db, query: GlossaryQuery = {}): GlossaryPage {
   const where: string[] = [];
@@ -76,7 +82,14 @@ export function searchGlossary(db: Db, query: GlossaryQuery = {}): GlossaryPage 
 
   const rows = db
     .prepare(
-      `SELECT g.id, g.source_text AS sourceText, g.source_plural AS sourcePlural, g.msgctxt,
+      `WITH page AS (
+         SELECT g.id
+           FROM glossary_entries g
+           JOIN tags t ON t.id = g.tag_id
+           ${clause}
+          ORDER BY g.source_text, t.name, g.pos
+          LIMIT ? OFFSET ?)
+       SELECT g.id, g.source_text AS sourceText, g.source_plural AS sourcePlural, g.msgctxt,
               g.pos, g.note, g.translation, g.translation_plural AS translationPlural,
               g.origin, t.name AS tag,
               (SELECT count(*) FROM glossary_entry_sources l WHERE l.entry_id = g.id) AS sources,
@@ -84,11 +97,10 @@ export function searchGlossary(db: Db, query: GlossaryQuery = {}): GlossaryPage 
               (SELECT count(*) FROM glossary_entries o
                 WHERE o.source_hash = g.source_hash AND o.tag_id = g.tag_id
                   AND (o.pos IS NULL) = (g.pos IS NULL)) AS readings
-         FROM glossary_entries g
+         FROM page
+         JOIN glossary_entries g ON g.id = page.id
          JOIN tags t ON t.id = g.tag_id
-         ${clause}
-        ORDER BY g.source_text, t.name, g.pos
-        LIMIT ? OFFSET ?`,
+        ORDER BY g.source_text, t.name, g.pos`,
     )
     .all(...params, query.limit ?? 100, query.offset ?? 0) as GlossaryRow[];
 

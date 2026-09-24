@@ -272,6 +272,17 @@ So the glossary was quietly picking one translation and hiding the rest. Keyed o
 
 The 25 that differ are mostly better supported — `Mail` becomes `E-posta` (2 sources) rather than `Posta` (1), `Allow Comments` becomes `Yorum yapılabilsin` (2) rather than `Yorumlara izin ver` (1). Applied to the seeded glossary: 50 102 memory rows to 48 986, 8 927 contexts kept as notes, no vouch lost.
 
+**R30 — decorate the page, not the sort.** The glossary browser's page query carried three counts per row — vouching sources, contexts, and how many other translations the string has. Ordering needs a temp B-tree, so those counts were evaluated for every row it sorted rather than for the hundred it returned, and the sibling count had no index to reach its rows by: it fell to `idx_glossary_tag`, which is every row in the glossary because almost all of them carry one tag. One page measured **40.6 s**, and `better-sqlite3` is synchronous, so that is 40 s during which the server answers nothing — a dozen quick clicks on the pager queued minutes of work.
+
+Measured over 20 000 rows, both faults are needed for the disaster:
+
+| | with `idx_glossary_source` | without |
+|---|---:|---:|
+| page chosen first, decorated second | 10 ms | 251 ms |
+| one statement | 44 ms | 45.9 s |
+
+Fixed as both: the page's ids are chosen in a CTE and only those rows are decorated, and `idx_glossary_source (source_hash, tag_id)` gives the sibling count a seek. Against the real glossary, offset 5 000 went from 40 588 ms to 10 ms.
+
 ## 6. Open questions
 
 | # | Question | Phase |

@@ -294,6 +294,14 @@ export const migrations: readonly Migration[] = [
       DROP TABLE temp.keeper;
     `,
   },
+  {
+    version: 9,
+    // `readings` counts the other translations of a string, and its subquery
+    // had no index to reach them by: it fell to idx_glossary_tag, which is
+    // every row in the glossary because almost all of them carry one tag. One
+    // page of the browser took 40 s (R30).
+    sql: `CREATE INDEX idx_glossary_source ON glossary_entries (source_hash, tag_id);`,
+  },
 ];
 
 export const latestVersion = migrations[migrations.length - 1]!.version;

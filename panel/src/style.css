@@ -225,3 +225,10 @@ tr.dropinto td { box-shadow: inset 0 2px 0 currentColor; }
 .toast button { font: inherit; line-height: 1; padding: 0 4px; border: none;
   border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
 .toast button:hover { color: inherit; }
+
+/* The pager repeats above and below the table, so it keeps its own spacing
+   rather than inheriting whatever sits next to it. */
+.pager { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 0; }
+.pager button { font: inherit; padding: 2px 10px; border: 1px solid var(--control-line);
+  border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
+.pager button:disabled { cursor: default; opacity: .45; }

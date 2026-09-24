@@ -102,6 +102,10 @@ why, and include the measurement if one drove it.
 - **Nothing rewrites `translation` on a synced entry.** It is part of the key,
   so an edit makes the row the owner's (`origin = 'owner'`) — otherwise it
   matches no source's wording, loses its vouches and the sweep deletes it (R14).
+- **Counts in a select list are paid per sorted row, not per returned row.**
+  The glossary page query sorts before it limits, so three counts in its select
+  list ran 49 500 times for a hundred rows — 40 s a page (R30). Choose the
+  page's ids in a CTE and decorate only those.
 - **A scan in `sync.ts` hangs the whole server, it does not merely slow it.**
   `better-sqlite3` is synchronous, so a statement that loses its index blocks
   the HTTP loop — the panel cannot even poll its own progress. An `OR` across

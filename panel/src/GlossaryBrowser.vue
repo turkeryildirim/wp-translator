@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   entryDetail,
   listTags,
@@ -9,6 +9,7 @@ import {
   type GlossaryEntry,
   type Tag,
 } from './api.ts';
+import Pager from './Pager.vue';
 
 const PAGE = 100;
 
@@ -28,7 +29,18 @@ const contexts = ref<string[]>([]);
 const draft = ref('');
 const notice = ref('');
 
+/**
+ * Which request is the current one.
+ *
+ * Holding the arrows down fires a page per click, and every one of them is a
+ * scan of the glossary on a synchronous database. The arrows going dead while a
+ * page is in flight is the real guard; this is the second one, so that a reply
+ * that arrives after a newer request cannot paint an older page over it.
+ */
+let ticket = 0;
+
 async function load(): Promise<void> {
+  const mine = (ticket += 1);
   loading.value = true;
   try {
     const params: Record<string, string> = {
@@ -41,11 +53,21 @@ async function load(): Promise<void> {
     if (contested.value) params.contested = '1';
 
     const result = await searchGlossary(params);
+    if (mine !== ticket) return;
+
     rows.value = result.rows;
     total.value = result.total;
+    // Cleared only once the rows are on screen, so the arrows do not come back
+    // to life a frame before the page they loaded.
+    await nextTick();
   } finally {
-    loading.value = false;
+    if (mine === ticket) loading.value = false;
   }
+}
+
+function goTo(next: number): void {
+  if (loading.value) return;
+  page.value = next;
 }
 
 async function select(entry: GlossaryEntry): Promise<void> {
@@ -134,14 +156,7 @@ watch(page, load);
       <button @click="applyFilters">Ara</button>
     </div>
 
-    <p class="status">
-      {{ total.toLocaleString('tr') }} girdi
-      <template v-if="total > PAGE">
-        · sayfa {{ page + 1 }} / {{ Math.ceil(total / PAGE) }}
-        <button :disabled="page === 0" @click="page -= 1">◀</button>
-        <button :disabled="(page + 1) * PAGE >= total" @click="page += 1">▶</button>
-      </template>
-    </p>
+    <Pager :page="page" :total="total" :page-size="PAGE" :busy="loading" @go="goTo" />
 
     <div class="split">
       <table class="grid">
@@ -217,6 +232,8 @@ watch(page, load);
       </aside>
     </div>
 
-    <p v-if="loading" class="status">Yükleniyor…</p>
+    <!-- Repeated at the foot: a hundred rows is further than a screen, and
+         paging from the bottom should not mean scrolling back up first. -->
+    <Pager :page="page" :total="total" :page-size="PAGE" :busy="loading" @go="goTo" />
   </section>
 </template>
