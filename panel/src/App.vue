@@ -12,6 +12,8 @@ import {
 import ReviewTable from './ReviewTable.vue';
 import TrustedSources from './TrustedSources.vue';
 import GlossaryBrowser from './GlossaryBrowser.vue';
+import Toasts from './Toasts.vue';
+import { notify } from './notify.ts';
 import TagsAndStyle from './TagsAndStyle.vue';
 import AddProject from './AddProject.vue';
 
@@ -43,6 +45,13 @@ async function translate(): Promise<void> {
       translatePoll = null;
       projects.value = await listProjects();
       await load();
+      // Translation runs in chunks for minutes; its outcome belongs in the
+      // corner rather than only in a line the owner has scrolled past.
+      const done = translating.value;
+      if (done.errors.length)
+        notify('error', `Çeviri bitti, ${done.errors.length} küme başarısız oldu.`);
+      else
+        notify('ok', `Çeviri bitti: ${done.translated} dizge, ${done.flagged} tanesi işaretli.`);
     }
   }, 1500);
 }
@@ -180,5 +189,6 @@ watch([selected, filter], load);
       <kbd>Ctrl+Enter</kbd> kaydet ve onayla · <kbd>boşluk</kbd> ayrıntı ·
       <kbd>1</kbd>–<kbd>9</kbd> aday seç · <kbd>x</kbd> toplu seçim
     </footer>
+    <Toasts />
   </div>
 </template>

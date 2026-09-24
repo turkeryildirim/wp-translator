@@ -16,6 +16,7 @@ import {
   type Tag,
   type TrustedSource,
 } from './api.ts';
+import { notify } from './notify.ts';
 
 const sources = ref<TrustedSource[]>([]);
 const tags = ref<Tag[]>([]);
@@ -186,8 +187,20 @@ async function sync(): Promise<void> {
       clearInterval(poll!);
       poll = null;
       await load();
+      // The update runs for over a minute in the background, so the corner is
+      // where its result is reported — the owner has usually looked away.
+      report(progress.value);
     }
   }, 700);
+}
+
+function report(done: SyncProgress): void {
+  if (done.errors.length) {
+    notify('error', `Güncelleme bitti, ${done.errors.length} kaynak hata verdi.`);
+    return;
+  }
+  const merged = done.collapsed ? `, ${done.collapsed} yinelenen girdi birleştirildi` : '';
+  notify('ok', `Güncelleme bitti: ${done.done - 1} kaynak${merged}.`);
 }
 
 onMounted(load);
@@ -241,6 +254,8 @@ onUnmounted(() => {
     <p v-else-if="progress?.finishedAt" class="status">
       Güncelleme bitti: {{ progress.done - 1 }} kaynak<span v-if="progress.glossaryTerms">
         + resmî sözlükten {{ progress.glossaryTerms }} terim</span
+      ><span v-if="progress.collapsed">
+        · {{ progress.collapsed }} yinelenen girdi birleştirildi</span
       >.
       <span v-if="progress.errors.length" class="failure-inline">
         {{ progress.errors.length }} hata

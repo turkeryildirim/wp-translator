@@ -1,3 +1,4 @@
+import { notify } from './notify.ts';
 export interface CheckFailure {
   rule: string;
   message: string;
@@ -45,11 +46,48 @@ export interface UnitDetail {
   terms: { source: string; readings: TermReading[] }[];
 }
 
-const json = async <T>(input: string, init?: RequestInit): Promise<T> => {
-  const response = await fetch(input, init);
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+/**
+ * Every call to the server goes through here, which is why the reporting lives
+ * here too. Components were throwing into an unhandled rejection: a write that
+ * failed left the screen looking exactly like a write that worked.
+ *
+ * `label` names the write for the corner message. A read passes none and stays
+ * silent — nothing happened that the owner needs told.
+ */
+const json = async <T>(input: string, init?: RequestInit, label?: string): Promise<T> => {
+  let response: Response;
+  try {
+    response = await fetch(input, init);
+  } catch (problem) {
+    // The server is a local process the owner starts by hand, so "it stopped"
+    // is a likely failure and worth saying plainly.
+    notify('error', `Sunucuya ulaşılamadı. Çalışıyor mu? (${describe(problem)})`);
+    throw problem;
+  }
+
+  if (!response.ok) {
+    notify('error', `${label ?? 'İstek'} başarısız: ${await reason(response)}`);
+    throw new Error(`${response.status} ${response.statusText}`);
+  }
+
+  if (label) notify('ok', label);
   return response.json() as Promise<T>;
 };
+
+/** The server sends `{ error }`; fall back to the status when it cannot. */
+const reason = async (response: Response): Promise<string> => {
+  const body = await response.text().catch(() => '');
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown };
+    if (typeof parsed.error === 'string' && parsed.error) return parsed.error;
+  } catch {
+    /* not JSON */
+  }
+  return `${response.status} ${response.statusText}`;
+};
+
+const describe = (problem: unknown): string =>
+  problem instanceof Error ? problem.message : String(problem);
 
 export const listProjects = () => json<Project[]>('/api/projects');
 
@@ -59,11 +97,15 @@ export const listUnits = (projectId: number, params: Record<string, string> = {}
 export const unitDetail = (unitId: number) => json<UnitDetail>(`/api/units/${unitId}/detail`);
 
 export const saveUnit = (unitId: number, edit: { msgstr?: string; msgstrPlural?: string }) =>
-  json<{ unit: Unit; blocked?: CheckFailure[] }>(`/api/units/${unitId}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(edit),
-  });
+  json<{ unit: Unit; blocked?: CheckFailure[] }>(
+    `/api/units/${unitId}`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(edit),
+    },
+    'Kaydedildi',
+  );
 
 export interface Tag {
   id: number;
@@ -114,29 +156,35 @@ export interface EntrySource {
   translation: string;
 }
 
-const post = <T>(url: string, body: unknown) =>
-  json<T>(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+const post = <T>(url: string, body: unknown, label?: string) =>
+  json<T>(
+    url,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    label,
+  );
 
 export const listTags = () => json<Tag[]>('/api/tags');
 
 export const listSources = () => json<TrustedSource[]>('/api/sources');
 export const addSource = (url: string, tagIds: number[], label?: string) =>
-  post<{ id: number }>('/api/sources', { url, tagIds, label });
-export const reorderSources = (ids: number[]) => post<{ ok: true }>('/api/sources/reorder', { ids });
-export const startSync = () => post<SyncProgress>('/api/sources/sync', {});
+  post<{ id: number }>('/api/sources', { url, tagIds, label }, 'Kaynak eklendi');
+export const reorderSources = (ids: number[]) => post<{ ok: true }>('/api/sources/reorder', { ids }, 'Sıra kaydedildi');
+export const startSync = () => post<SyncProgress>('/api/sources/sync', {}, 'Güncelleme başlatıldı');
 export const syncProgress = () => json<SyncProgress>('/api/sources/sync');
 
 export const searchGlossary = (params: Record<string, string>) =>
   json<{ rows: GlossaryEntry[]; total: number }>(`/api/glossary?${new URLSearchParams(params)}`);
 export const entrySources = (id: number) => json<EntrySource[]>(`/api/glossary/${id}`);
 export const updateEntry = (id: number, translation: string) =>
-  post<{ entry: GlossaryEntry; overwrittenOnNextSync: boolean }>(`/api/glossary/${id}`, {
-    translation,
-  });
+  post<{ entry: GlossaryEntry; overwrittenOnNextSync: boolean }>(
+    `/api/glossary/${id}`,
+    { translation },
+    'Sözlük girdisi kaydedildi',
+  );
 
 export interface StyleRule {
   tagId: number | null;
@@ -159,24 +207,24 @@ export interface AddProjectResult {
   suggestedTags: string[];
 }
 
-export const createTag = (name: string) => post<{ id: number }>('/api/tags', { name });
-export const renameTag = (id: number, name: string) => post<{ ok: true }>(`/api/tags/${id}`, { name });
+export const createTag = (name: string) => post<{ id: number }>('/api/tags', { name }, 'Etiket oluşturuldu');
+export const renameTag = (id: number, name: string) => post<{ ok: true }>(`/api/tags/${id}`, { name }, 'Etiket adı değiştirildi');
 export const previewMerge = (from: number, to: number) =>
   post<MergePreview>('/api/tags/merge', { from, to, preview: true });
 export const mergeTags = (from: number, to: number, policy: 'keep-target' | 'take-source') =>
-  post<MergePreview & { policy: string }>('/api/tags/merge', { from, to, policy });
+  post<MergePreview & { policy: string }>('/api/tags/merge', { from, to, policy }, 'Etiketler birleştirildi');
 
 export const listStyleRules = () => json<StyleRule[]>('/api/style-rules');
 export const saveStyleRule = (tagId: number | null, body: string) =>
-  post<{ ok: true }>('/api/style-rules', { tagId, body });
+  post<{ ok: true }>('/api/style-rules', { tagId, body }, 'Üslup rehberi kaydedildi');
 
 export const addProject = (url: string, tagIds: number[]) =>
-  post<AddProjectResult>('/api/projects', { url, tagIds });
+  post<AddProjectResult>('/api/projects', { url, tagIds }, 'Proje eklendi');
 export const removeProject = (id: number) =>
-  json<{ ok: true }>(`/api/projects/${id}`, { method: 'DELETE' });
+  json<{ ok: true }>(`/api/projects/${id}`, { method: 'DELETE' }, 'Proje silindi');
 
 export const bulkApprove = (ids: number[]) =>
-  post<{ approved: number; refused: number }>('/api/units/bulk-approve', { ids });
+  post<{ approved: number; refused: number }>('/api/units/bulk-approve', { ids }, 'Onaylandı');
 
 export interface TranslateProgress {
   running: boolean;
@@ -190,16 +238,16 @@ export interface TranslateProgress {
 }
 
 export const startTranslation = (projectId: number, options: { agent?: string; model?: string } = {}) =>
-  post<TranslateProgress>(`/api/projects/${projectId}/translate`, options);
+  post<TranslateProgress>(`/api/projects/${projectId}/translate`, options, 'Çeviri başlatıldı');
 
 export const translateProgress = (projectId: number) =>
   json<TranslateProgress>(`/api/projects/${projectId}/translate`);
 
 export const setSourceTags = (id: number, tagIds: number[]) =>
-  post<{ ok: true }>(`/api/sources/${id}/tags`, { tagIds });
+  post<{ ok: true }>(`/api/sources/${id}/tags`, { tagIds }, 'Etiketler kaydedildi');
 
 export const bulkDeleteSources = (ids: number[]) =>
-  post<{ removed: number }>('/api/sources/bulk-delete', { ids });
+  post<{ removed: number }>('/api/sources/bulk-delete', { ids }, 'Kaynaklar kaldırıldı');
 
 export const bulkTagSources = (ids: number[], change: { add?: number[]; remove?: number[] }) =>
   post<{ changed: number }>('/api/sources/bulk-tags', { ids, ...change });
