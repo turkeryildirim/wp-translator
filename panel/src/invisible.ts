@@ -6,12 +6,35 @@ export interface Segment {
   title?: string;
 }
 
-const GLYPH: Record<string, { text: string; title: string }> = {
-  '\n': { text: '¶', title: 'satır sonu (\\n)' },
-  '\r': { text: '␍', title: 'satır başı (\\r)' },
-  '\t': { text: '→', title: 'sekme (\\t)' },
-  ' ': { text: '␣', title: 'bölünmez boşluk (U+00A0)' },
+export interface Marker {
+  /** The stand-in that is drawn. */
+  text: string;
+  /** What it stands for, in words. */
+  label: string;
+  /** How the character is written, for the legend and the tooltip. */
+  note: string;
+}
+
+const GLYPH: Record<string, Marker> = {
+  '\t': { text: '→', label: 'sekme', note: '\\t' },
+  '\n': { text: '¶', label: 'satır sonu', note: '\\n' },
+  '\r': { text: '␍', label: 'satır başı', note: '\\r' },
+  ' ': { text: '␣', label: 'bölünmez boşluk', note: 'U+00A0' },
 };
+
+const SPACE: Marker = { text: '·', label: 'boşluk', note: 'baş, son ya da ardışık' };
+const NAMED: Marker = { text: '‹U+…›', label: 'görünmez karakter', note: 'kod noktasıyla' };
+
+/**
+ * Every marker `reveal` can produce, in the order a reader meets them.
+ *
+ * Built from the same table the rendering uses, so a marker cannot reach the
+ * screen without reaching the legend — a stand-in nobody can look up is worse
+ * than the character it replaces.
+ */
+export const LEGEND: readonly Marker[] = [SPACE, ...Object.values(GLYPH), NAMED];
+
+const titleOf = (marker: Marker): string => `${marker.label} (${marker.note})`;
 
 /**
  * Anything else with no appearance: format characters, the other space
@@ -53,7 +76,11 @@ export function reveal(value: string): Segment[] {
 
       if (run > 1 || at === 0 || end === value.length) {
         flush();
-        segments.push({ text: '·'.repeat(run), mark: true, title: `${run} boşluk` });
+        segments.push({
+          text: SPACE.text.repeat(run),
+          mark: true,
+          title: `${run} ${SPACE.label}`,
+        });
       } else {
         plain += ' ';
       }
@@ -64,14 +91,14 @@ export function reveal(value: string): Segment[] {
     const glyph = GLYPH[character];
     if (glyph) {
       flush();
-      segments.push({ text: glyph.text, mark: true, title: glyph.title });
+      segments.push({ text: glyph.text, mark: true, title: titleOf(glyph) });
       continue;
     }
 
     if (NAMELESS.test(character)) {
       flush();
       const code = character.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0');
-      segments.push({ text: `‹U+${code}›`, mark: true, title: `görünmez karakter U+${code}` });
+      segments.push({ text: `‹U+${code}›`, mark: true, title: `${NAMED.label} U+${code}` });
       continue;
     }
 

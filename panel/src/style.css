@@ -245,3 +245,11 @@ tr.dropinto td { box-shadow: inset 0 2px 0 currentColor; }
   background: color-mix(in oklab, currentColor 18%, transparent);
   border-radius: 2px; padding: 0 1px; }
 .stored { font: 12px/1.5 ui-monospace, monospace; }
+
+/* Sits between the pager and the table, so the markers below it are read with
+   it in view rather than looked up somewhere else. */
+.legend { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap;
+  margin: 0; font-size: 12px; }
+.legend span { white-space: nowrap; }
+.legend em { color: var(--muted); font-style: normal;
+  font-family: ui-monospace, monospace; font-size: 11px; }

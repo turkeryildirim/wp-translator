@@ -10,6 +10,7 @@ import {
   type Tag,
 } from './api.ts';
 import Pager from './Pager.vue';
+import Legend from './Legend.vue';
 import Reveal from './Reveal.vue';
 
 const PAGE = 100;
@@ -158,6 +159,7 @@ watch(page, load);
     </div>
 
     <Pager :page="page" :total="total" :page-size="PAGE" :busy="loading" @go="goTo" />
+    <Legend />
 
     <div class="split">
       <table class="grid">
