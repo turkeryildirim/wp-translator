@@ -7,7 +7,32 @@ import UnitDetailPanel from './UnitDetailPanel.vue';
 const props = defineProps<{ units: Unit[] }>();
 const emit = defineEmits<{ changed: [Unit]; bulk: []; picked: [number[]]; page: [] }>();
 
-const ROW_HEIGHT = 34;
+/** Selection is driven from here but acted on by the screen above. */
+watch(picked, (next) => emit('picked', [...next]), { deep: true });
+
+const allOnPage = computed(
+  () => props.units.length > 0 && props.units.every((unit) => picked.value.has(unit.id)),
+);
+
+function togglePage(): void {
+  picked.value = allOnPage.value
+    ? new Set()
+    : new Set(props.units.map((unit) => unit.id));
+}
+
+function setPicked(id: number, on: boolean): void {
+  const next = new Set(picked.value);
+  if (on) next.add(id);
+  else next.delete(id);
+  picked.value = next;
+}
+
+/**
+ * Must match `.row`'s height in the stylesheet: rows are absolutely positioned
+ * from this number, so a disagreement leaves the list a row out. The template
+ * used to repeat the literal, which is two more places to get it wrong.
+ */
+const ROW_HEIGHT = 40;
 const OVERSCAN = 8;
 
 const cursor = ref(0);
@@ -155,12 +180,7 @@ function chooseCandidate(position: number): void {
 
 function togglePick(): void {
   const unit = current.value;
-  if (!unit) return;
-  const next = new Set(picked.value);
-  if (next.has(unit.id)) next.delete(unit.id);
-  else next.add(unit.id);
-  picked.value = next;
-  emit('picked', [...next]);
+  if (unit) setPicked(unit.id, !picked.value.has(unit.id));
 }
 
 async function approvePicked(): Promise<void> {
@@ -276,16 +296,13 @@ watch(
 
 <template>
   <div class="review">
-    <div v-if="picked.size || bulkNotice" class="bulkbar">
-      <template v-if="picked.size">
-        <button class="primary" :disabled="!approvable.length" @click="approvePicked">
-          {{ approvable.length }} string onayla
-        </button>
-        <span v-if="picked.size > approvable.length" class="failure-inline">
-          {{ picked.size - approvable.length }} tanesi bloklandığı için hariç
-        </span>
-        <button @click="picked = new Set()">Seçimi temizle</button>
-      </template>
+    <div class="pickbar">
+      <label class="check">
+        <input type="checkbox" :checked="allOnPage" @change="togglePage" />
+        Sayfadakileri seç
+      </label>
+      <span v-if="picked.size" class="muted">{{ picked.size }} satır seçili</span>
+      <button v-if="picked.size" @click="picked = new Set()">Seçimi temizle</button>
       <span v-if="bulkNotice" class="notice">{{ bulkNotice }}</span>
     </div>
     <div
@@ -293,7 +310,7 @@ watch(
       class="viewport"
       @scroll="scrollTop = ($event.target as HTMLElement).scrollTop"
     >
-      <div class="spacer" :style="{ height: units.length * 34 + 'px' }">
+      <div class="spacer" :style="{ height: units.length * ROW_HEIGHT + 'px' }">
         <div
           v-for="row in slice"
           :key="row.unit.id"
@@ -305,10 +322,17 @@ watch(
             settled: row.unit.state === 'ok',
             picked: picked.has(row.unit.id),
           }"
-          :style="{ top: row.index * 34 + 'px' }"
+          :style="{ top: row.index * ROW_HEIGHT + 'px' }"
           @click="cursor = row.index"
         >
-          <span class="pick">{{ picked.has(row.unit.id) ? '☑' : '' }}</span>
+          <input
+            class="pick"
+            type="checkbox"
+            :checked="picked.has(row.unit.id)"
+            :aria-label="`Seç: ${row.unit.msgid.slice(0, 40)}`"
+            @click.stop
+            @change="setPicked(row.unit.id, ($event.target as HTMLInputElement).checked)"
+          />
           <span class="state">{{
             row.unit.state === 'ok' ? '✓' : row.unit.failures.length ? '!' : '·'
           }}</span>

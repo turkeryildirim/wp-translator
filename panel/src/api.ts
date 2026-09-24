@@ -120,15 +120,22 @@ export const listUnits = (projectId: number, params: Record<string, string> = {}
  * three thousand untranslated ones" should not mean sending three thousand
  * numbers to the server and back.
  */
+export type BulkAction = 'approve' | 'clear' | 'glossary';
+
 export const bulkSetState = (
   projectId: number,
-  action: 'approve' | 'reject',
-  params: Record<string, string>,
+  action: BulkAction,
+  target: { ids: number[] } | { params: Record<string, string> },
 ) =>
   post<{ changed: number; skipped: number }>(
     `/api/projects/${projectId}/bulk`,
-    { action, filter: new URLSearchParams(params).toString() },
-    action === 'approve' ? 'Toplu onay' : 'Toplu ret',
+    {
+      action,
+      ...('ids' in target
+        ? { ids: target.ids }
+        : { filter: new URLSearchParams(target.params).toString() }),
+    },
+    'Toplu işlem',
   );
 
 export const unitDetail = (unitId: number) => json<UnitDetail>(`/api/units/${unitId}/detail`);

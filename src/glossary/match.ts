@@ -42,7 +42,7 @@ interface Candidate {
  * rendered — not approved translations of a whole string in an unknown context.
  * They reach the model through `collectTerms` instead.
  */
-export function applyGlossary(db: Db, projectId: number): MatchResult {
+export function applyGlossary(db: Db, projectId: number, ids?: readonly number[]): MatchResult {
   const tagIds = db
     .prepare(`SELECT tag_id FROM project_tags WHERE project_id = ?`)
     .all(projectId)
@@ -53,6 +53,7 @@ export function applyGlossary(db: Db, projectId: number): MatchResult {
     result.unmatched = countUntranslated(db, projectId);
     return result;
   }
+  if (ids?.length === 0) return result;
 
   const placeholders = tagIds.map(() => '?').join(', ');
   const candidatesFor = db.prepare(
@@ -67,9 +68,12 @@ export function applyGlossary(db: Db, projectId: number): MatchResult {
                ifnull(min(t.rank), 2147483647) ASC,
                e.id ASC`,
   );
+  // `ids` narrows it to the rows the owner picked; without it the whole
+  // project's untranslated units are filled, which is what an import does.
+  const scope = ids ? ` AND id IN (${ids.map(() => '?').join(', ')})` : '';
   const units = db.prepare(
     `SELECT id, source_hash AS hash FROM translation_units
-      WHERE project_id = ? AND state = 'untranslated'`,
+      WHERE project_id = ? AND state = 'untranslated'${scope}`,
   );
   // `blocked` is reset rather than computed: a glossary entry is a translation
   // a human already approved of this exact source, so there is nothing for the
@@ -83,7 +87,7 @@ export function applyGlossary(db: Db, projectId: number): MatchResult {
   );
 
   return db.transaction((): MatchResult => {
-    for (const row of units.all(projectId) as { id: number; hash: string }[]) {
+    for (const row of units.all(projectId, ...(ids ?? [])) as { id: number; hash: string }[]) {
       const candidates = distinct(candidatesFor.all(row.hash, ...tagIds) as Candidate[]);
 
       if (candidates.length === 0) {

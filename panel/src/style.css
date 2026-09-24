@@ -23,7 +23,7 @@
   --raised: color-mix(in oklab, var(--color-text) 6%, var(--color-background));
   /* A control's edge is the only thing saying where it starts, so it has to
      clear 3:1 against the background (WCAG 1.4.11); --line measures 1.5:1 and
-     stays that quiet on purpose, because 34px rows with a strong rule are a
+     stays that quiet on purpose, because dense rows with a strong rule are a
      cage. Inputs, buttons and popups use this one instead. */
   --control-line: color-mix(in oklab, var(--color-text) 40%, var(--color-background));
 
@@ -60,7 +60,7 @@
    rule. Where it is not supported the `rows` attribute still applies. */
 textarea { field-sizing: content; }
 body { margin: 0; background: var(--bg); color: var(--fg); accent-color: var(--color-primary);
-  font: 13px/1.4 ui-sans-serif, system-ui, sans-serif; }
+  font: 16px/1.45 ui-sans-serif, system-ui, sans-serif; }
 kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line);
   border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; }
 
@@ -82,7 +82,8 @@ footer { padding: 6px 12px; border-top: 1px solid var(--line);
 .viewport { overflow: auto; position: relative; }
 .spacer { position: relative; }
 
-.row { position: absolute; left: 0; right: 0; height: 34px; display: grid;
+/* Matched by ROW_HEIGHT in ReviewTable.vue, which positions the rows. */
+.row { position: absolute; left: 0; right: 0; height: 40px; display: grid;
   grid-template-columns: 22px 1fr 1fr auto; gap: 8px; align-items: center;
   padding: 0 10px; border-bottom: 1px solid var(--line); cursor: default; }
 .row.settled { background: var(--settled); }
@@ -271,8 +272,16 @@ tr.dropinto td { box-shadow: inset 0 2px 0 currentColor; }
 
 /* Sits between the pager and the table, so the markers below it are read with
    it in view rather than looked up somewhere else. */
-.legend { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap;
-  margin: 0; font-size: 12px; }
+/* Reference material, read once and then glanced at: it needs room around it or
+   it reads as part of the toolbar below. */
+.legend { display: flex; gap: 8px 18px; align-items: baseline; flex-wrap: wrap;
+  margin: 0; padding: 10px 0; font-size: 13px; line-height: 1.6; }
 .legend span { white-space: nowrap; }
 .legend em { color: var(--muted); font-style: normal;
-  font-family: ui-monospace, monospace; font-size: 11px; }
+  font-family: ui-monospace, monospace; font-size: 12px; }
+.legend b { font-family: ui-monospace, monospace; }
+
+/* Row selection sits with the rows, not with the actions that consume it. */
+.pickbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  padding: 6px 12px; border-bottom: 1px solid var(--line); }
+.pick { margin: 0; }

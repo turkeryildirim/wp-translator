@@ -104,7 +104,7 @@ describe('approving and rejecting a whole filter', () => {
   });
 
   it('approves what the checks pass and skips what they block', () => {
-    const result = bulkSetState(db, projectId, { view: 'waiting' }, 'approve');
+    const result = bulkSetState(db, projectId, { filter: { view: 'waiting' } }, 'approve');
 
     expect(result).toEqual({ changed: 2, skipped: 1 });
     expect(listUnits(db, projectId, { view: 'blocked' }).total).toBe(1);
@@ -112,7 +112,7 @@ describe('approving and rejecting a whole filter', () => {
 
   it('empties a rejected unit and sends it back to untranslated', () => {
     // So it exports nothing and the next translation run picks it up.
-    bulkSetState(db, projectId, { view: 'waiting' }, 'reject');
+    bulkSetState(db, projectId, { filter: { view: 'waiting' } }, 'clear');
 
     const page = listUnits(db, projectId, { view: 'untranslated' });
     expect(page.total).toBe(4);
@@ -120,7 +120,7 @@ describe('approving and rejecting a whole filter', () => {
   });
 
   it('touches only what the filter matches', () => {
-    bulkSetState(db, projectId, { view: 'waiting', search: 'One' }, 'approve');
+    bulkSetState(db, projectId, { filter: { view: 'waiting', search: 'One' } }, 'approve');
 
     expect(listUnits(db, projectId, { view: 'translated' }).total).toBe(1);
     expect(listUnits(db, projectId, { view: 'waiting' }).total).toBe(2);

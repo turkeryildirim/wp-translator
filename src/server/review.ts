@@ -184,32 +184,72 @@ function countViews(db: Db, projectId: number): Record<QueueView, number> {
 }
 
 /**
- * Approve or reject every unit a filter matches.
+ * What a bulk action applies to: the rows the owner ticked, or everything a
+ * filter matches.
  *
- * Done in SQL rather than by sending thousands of ids to the browser and back:
- * "show me the untranslated ones and approve them all" is one statement, and a
- * project runs to thousands of strings.
- *
- * Approving skips what the checks blocked — bulk approval is the only way a
- * few thousand strings are survivable, and also how one mistake becomes a few
- * thousand. Rejecting empties the unit and returns it to `untranslated`, so it
- * exports nothing and the next translation run picks it up.
+ * A filter travels as a filter rather than as the ids it stands for, because
+ * "approve the three thousand untranslated ones" should not mean sending three
+ * thousand numbers to the server and back.
  */
-export function bulkSetState(
-  db: Db,
+export type BulkTarget = { ids: readonly number[] } | { filter: UnitFilter };
+
+/** The `WHERE` a target stands for, over `translation_units u`. */
+function targetClause(
   projectId: number,
-  filter: UnitFilter,
-  action: 'approve' | 'reject',
-): { changed: number; skipped: number } {
-  const where = ['u.project_id = ?', VIEW[filter.view ?? 'all']];
+  target: BulkTarget,
+): { clause: string; params: unknown[] } {
   const params: unknown[] = [projectId];
 
+  if ('ids' in target) {
+    const holes = target.ids.map(() => '?').join(', ');
+    params.push(...target.ids);
+    // `1 = 0` rather than an empty `IN ()`: an action with nothing selected
+    // must change nothing, and SQLite would not parse the empty list anyway.
+    return {
+      clause: target.ids.length > 0 ? `u.project_id = ? AND u.id IN (${holes})` : '1 = 0',
+      params: target.ids.length > 0 ? params : [],
+    };
+  }
+
+  const { filter } = target;
+  const where = ['u.project_id = ?', VIEW[filter.view ?? 'all']];
   if (filter.search) {
     const columns = searchColumns('u.msgid', `ifnull(u.msgstr, '')`, filter.scope);
     where.push(match(columns, filter.caseSensitive));
     for (const _ of columns) params.push(filter.search);
   }
-  const clause = where.join(' AND ');
+  return { clause: where.join(' AND '), params };
+}
+
+/**
+ * Every unit a filter matches, as ids.
+ *
+ * Only for the actions that cannot be expressed as one `UPDATE` — filling from
+ * the glossary decides a translation per row.
+ */
+export function unitIdsFor(db: Db, projectId: number, filter: UnitFilter): number[] {
+  const { clause, params } = targetClause(projectId, { filter });
+  return db
+    .prepare(`SELECT u.id FROM translation_units u WHERE ${clause}`)
+    .all(...params)
+    .map((row) => (row as { id: number }).id);
+}
+
+/**
+ * Approve or clear a set of units.
+ *
+ * Approving skips what the checks blocked — bulk approval is the only way a
+ * few thousand strings are survivable, and also how one mistake becomes a few
+ * thousand. Clearing empties the unit and returns it to `untranslated`, so it
+ * exports nothing and the next translation run picks it up.
+ */
+export function bulkSetState(
+  db: Db,
+  projectId: number,
+  target: BulkTarget,
+  action: 'approve' | 'clear',
+): { changed: number; skipped: number } {
+  const { clause, params } = targetClause(projectId, target);
 
   return db.transaction(() => {
     const matched = (

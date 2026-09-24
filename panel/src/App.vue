@@ -4,8 +4,10 @@ import {
   bulkSetState,
   listProjects,
   listUnits,
+  removeProject,
   startTranslation,
   translateProgress,
+  type BulkAction,
   type Project,
   type QueueView,
   type TranslateProgress,
@@ -76,7 +78,10 @@ async function translate(): Promise<void> {
     scope: translateScope.value,
     ...(translateScope.value === 'selected' ? { ids: picked.value } : {}),
   });
+  pollTranslation();
+}
 
+function pollTranslation(): void {
   translatePoll ??= setInterval(async () => {
     if (selected.value === null) return;
     translating.value = await translateProgress(selected.value);
@@ -143,19 +148,72 @@ function show(view: QueueView): void {
   void load();
 }
 
-async function bulk(action: 'approve' | 'reject'): Promise<void> {
-  if (selected.value === null || total.value === 0) return;
-  const what = action === 'approve' ? 'onaylansın' : 'reddedilsin';
-  if (!confirm(`Filtredeki ${total.value.toLocaleString('tr')} dizgenin tamamı ${what} mı?`)) return;
+type BulkChoice = BulkAction | 'translate';
 
-  const result = await bulkSetState(selected.value, action, queryParams(false));
+const bulkAction = ref<BulkChoice | ''>('');
+/** True while the owner means "the whole filter", not the rows on this page. */
+const wholeFilter = ref(false);
+
+const bulkCount = computed(() => (wholeFilter.value ? total.value : picked.value.length));
+
+const BULK_LABEL: Record<BulkChoice, string> = {
+  approve: 'Onayla',
+  clear: 'Çeviriyi sil',
+  glossary: 'Sözlükten doldur',
+  translate: 'AI ile çevir',
+};
+
+/**
+ * One menu instead of a button per combination.
+ *
+ * Nothing runs without a selection, and the count is in the confirmation: the
+ * cost of a mis-click here is measured in thousands of strings.
+ */
+async function runBulk(): Promise<void> {
+  const action = bulkAction.value;
+  if (selected.value === null || !action || bulkCount.value === 0) return;
+
+  const what = bulkCount.value.toLocaleString('tr');
+  if (!confirm(`${what} dizgeye "${BULK_LABEL[action]}" uygulansın mı?`)) return;
+
+  const target = wholeFilter.value ? { params: queryParams(false) } : { ids: picked.value };
+
+  if (action === 'translate') {
+    const ids = wholeFilter.value ? undefined : picked.value;
+    translating.value = await startTranslation(selected.value, {
+      agent: 'wp-translator',
+      scope: ids ? 'selected' : filter.value === 'waiting' ? 'waiting' : 'untranslated',
+      ...(ids ? { ids } : {}),
+    });
+    pollTranslation();
+    return;
+  }
+
+  const result = await bulkSetState(selected.value, action, target);
   notify(
     'ok',
     result.skipped > 0
-      ? `${result.changed} dizge işlendi, ${result.skipped} tanesi kalite kontrolüne takıldı.`
+      ? `${result.changed} dizge işlendi, ${result.skipped} tanesi dışarıda kaldı.`
       : `${result.changed} dizge işlendi.`,
   );
+  clearSelection();
   projects.value = await listProjects();
+  await load();
+}
+
+function clearSelection(): void {
+  picked.value = [];
+  wholeFilter.value = false;
+}
+
+async function dropProject(): Promise<void> {
+  const current = project.value;
+  if (!current) return;
+  if (!confirm(`"${current.name ?? current.projectPath}" ve tüm çevirileri silinsin mi?`)) return;
+
+  await removeProject(current.id);
+  projects.value = await listProjects();
+  selected.value = projects.value[0]?.id ?? null;
   await load();
 }
 
@@ -215,36 +273,32 @@ watch([selected, filter], load);
     <AddProject v-else-if="screen === 'add'" @added="onProjectAdded" />
 
     <template v-else>
+    <!-- Top to bottom: what the markers mean, then what to run, then what to
+         look at. Reading order matches the order the work happens in. -->
+    <Legend />
+    <p class="legend">
+      <span class="muted">Satır:</span>
+      <span><b>✓</b> onaylı</span>
+      <span><b>!</b> kalite kontrolü engelliyor</span>
+      <span><b>·</b> bekliyor</span>
+      <span class="muted">Kısayol:</span>
+      <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> onayla, ilerle</span>
+      <span><kbd>Shift</kbd>+<kbd>Enter</kbd> reddet, ilerle</span>
+      <span><kbd>Ctrl</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> satır</span>
+      <span><kbd>e</kbd> düzenle</span>
+      <span><kbd>x</kbd> seç</span>
+      <span><kbd>boşluk</kbd> ayrıntı</span>
+    </p>
+
     <header>
-      <select v-model="selected">
+      <select v-model="selected" aria-label="Proje">
         <option v-for="p in projects" :key="p.id" :value="p.id">
           {{ p.name ?? p.projectPath }}
         </option>
       </select>
-
-      <nav>
-        <button
-          v-for="option in VIEWS"
-          :key="option.view"
-          :class="{ on: filter === option.view }"
-          :title="option.hint"
-          @click="show(option.view)"
-        >
-          {{ option.label }}
-          <b>{{ counts[option.view].toLocaleString('tr') }}</b>
-        </button>
-      </nav>
-
-      <input v-model="search" placeholder="Ara…" @keyup.enter="load" />
-      <select v-model="scope" aria-label="Nerede aransın" @change="load">
-        <option value="">Kaynak + çeviri</option>
-        <option value="source">Yalnızca kaynak</option>
-        <option value="translation">Yalnızca çeviri</option>
-      </select>
-      <label class="check" title="Kapalıyken İ/ı/I/i aynı sayılır ve büyük-küçük harf gözetilmez">
-        <input v-model="caseSensitive" type="checkbox" @change="load" />
-        Harf duyarlı
-      </label>
+      <button :disabled="!project" title="Projeyi ve çevirilerini sil" @click="dropProject">
+        Projeyi sil
+      </button>
 
       <select v-model="translateScope" aria-label="Neler çevrilsin" :disabled="translating?.running">
         <option value="untranslated">Çevrilmemişler ({{ counts.untranslated }})</option>
@@ -269,45 +323,60 @@ watch([selected, filter], load);
         PO indir
       </button>
 
-      <span v-if="project" class="progress">
-        {{ project.ok }} / {{ project.total }} tamam
-      </span>
+      <span v-if="project" class="progress">{{ project.ok }} / {{ project.total }} tamam</span>
     </header>
 
     <p v-if="translating && !translating.running && translating.finishedAt" class="status">
       Çeviri bitti: {{ translating.translated }} string incelemeye hazır<span
         v-if="translating.flagged"
-        >, {{ translating.flagged }} tanesi kalite kontrolünden kaldı</span
+      >
+        , {{ translating.flagged }} tanesi kalite kontrolünde işaretli</span
       >.
-      <span v-if="translating.errors.length" class="failure-inline">
-        {{ translating.errors.length }} parça başarısız — yeniden çalıştırmak kaldığı yerden devam
-        eder.
-      </span>
     </p>
+
     <div class="toolbar">
       <Pager :page="page" :total="total" :page-size="PAGE" :busy="loading" @go="goTo" />
-      <button :disabled="total === 0 || loading" @click="bulk('approve')">
-        Filtredekilerin tümünü onayla
-      </button>
-      <button :disabled="total === 0 || loading" @click="bulk('reject')">
-        Tümünü reddet (boşalt)
-      </button>
+
+      <nav>
+        <button
+          v-for="option in VIEWS"
+          :key="option.view"
+          :class="{ on: filter === option.view }"
+          :title="option.hint"
+          @click="show(option.view)"
+        >
+          {{ option.label }} <b>{{ counts[option.view].toLocaleString('tr') }}</b>
+        </button>
+      </nav>
+
+      <input v-model="search" placeholder="Ara…" @keyup.enter="show(filter)" />
+      <select v-model="scope" aria-label="Nerede aransın" @change="show(filter)">
+        <option value="">Kaynak + çeviri</option>
+        <option value="source">Yalnızca kaynak</option>
+        <option value="translation">Yalnızca çeviri</option>
+      </select>
+      <label class="check" title="Kapalıyken İ/ı/I/i aynı sayılır ve büyük-küçük harf gözetilmez">
+        <input v-model="caseSensitive" type="checkbox" @change="show(filter)" />
+        Harf duyarlı
+      </label>
     </div>
 
-    <Legend />
-    <p class="legend">
-      <span class="muted">Satır:</span>
-      <span><i class="ghost">✓</i> onaylı</span>
-      <span><i class="ghost">!</i> kalite kontrolü engelliyor</span>
-      <span><i class="ghost">·</i> bekliyor</span>
-      <span class="muted">Kısayollar:</span>
-      <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> onayla, ilerle</span>
-      <span><kbd>Shift</kbd>+<kbd>Enter</kbd> reddet, ilerle</span>
-      <span><kbd>Ctrl</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> satır</span>
-      <span><kbd>e</kbd> düzenle</span>
-      <span><kbd>x</kbd> seç</span>
-      <span><kbd>boşluk</kbd> ayrıntı</span>
-    </p>
+    <div class="toolbar">
+      <select v-model="bulkAction" aria-label="Toplu işlem">
+        <option value="">Toplu işlem…</option>
+        <option v-for="(label, key) in BULK_LABEL" :key="key" :value="key">{{ label }}</option>
+      </select>
+      <!-- Disabled until both a target and an action exist: the cost of a
+           mis-click here is measured in thousands of strings. -->
+      <button class="primary" :disabled="!bulkAction || bulkCount === 0" @click="runBulk">
+        Uygula{{ bulkCount ? ` (${bulkCount.toLocaleString('tr')})` : '' }}
+      </button>
+      <label class="check">
+        <input v-model="wholeFilter" type="checkbox" />
+        Sayfa yerine filtredeki {{ total.toLocaleString('tr') }} kaydın tümü
+      </label>
+      <button v-if="picked.length || wholeFilter" @click="clearSelection">Seçimi bırak</button>
+    </div>
 
     <p v-if="loading" class="status">Yükleniyor…</p>
     <p v-else-if="!units.length" class="status">

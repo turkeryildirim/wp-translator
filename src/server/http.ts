@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import type { Db } from '../db/open.ts';
+import { applyGlossary } from '../glossary/match.ts';
 import { exportProject } from '../project/export.ts';
 import {
   entryContexts,
@@ -15,6 +16,7 @@ import {
   bulkSetState,
   listProjects,
   listUnits,
+  unitIdsFor,
   overrideCheck,
   saveUnit,
   unitDetail,
@@ -274,9 +276,23 @@ async function api(
 
   const bulkState = /^\/api\/projects\/(\d+)\/bulk$/.exec(route);
   if (method === 'POST' && bulkState) {
-    const body = (await readJson(request)) as { action: 'approve' | 'reject'; filter?: string };
-    const filter = readFilter(new URL(`http://x/?${body.filter ?? ''}`));
-    return send(response, 200, bulkSetState(db, Number(bulkState[1]), filter, body.action));
+    const body = (await readJson(request)) as {
+      action: 'approve' | 'clear' | 'glossary';
+      ids?: number[];
+      filter?: string;
+    };
+    const projectId = Number(bulkState[1]);
+    const target = body.ids
+      ? { ids: body.ids }
+      : { filter: readFilter(new URL(`http://x/?${body.filter ?? ''}`)) };
+
+    if (body.action === 'glossary') {
+      const ids =
+        'ids' in target ? target.ids : unitIdsFor(db, projectId, target.filter);
+      const result = applyGlossary(db, projectId, ids);
+      return send(response, 200, { changed: result.filled, skipped: result.unmatched });
+    }
+    return send(response, 200, bulkSetState(db, projectId, target, body.action));
   }
 
   if (method === 'POST' && route === '/api/units/bulk-approve') {
