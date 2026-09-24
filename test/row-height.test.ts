@@ -22,6 +22,16 @@ describe('the virtualised row height', () => {
   it('is not repeated as a literal in the template', () => {
     // It was, twice, which is two more places to forget.
     const template = read('ReviewTable.vue').split('<template>')[1] ?? '';
-    expect(template).not.toMatch(/\*\s*34\b|\b34\s*\+/);
+    expect(template).not.toMatch(/\*\s*\d{2}\s*\+\s*'px'/);
+  });
+
+  it('has no text box inside a row', () => {
+    // A row is one fixed height and the rows are absolutely positioned from it,
+    // so anything that grows in one lands on its neighbour. Editing belongs in
+    // the detail panel, which is also the only place a sentence fits.
+    const template = read('ReviewTable.vue').split('<template>')[1] ?? '';
+    const row = template.slice(template.indexOf('class="row"'), template.indexOf('</aside>'));
+    const rowMarkup = row.slice(0, row.indexOf('</div>\n      </div>'));
+    expect(rowMarkup).not.toContain('<textarea');
   });
 });

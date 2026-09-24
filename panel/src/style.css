@@ -94,11 +94,14 @@ footer { padding: 6px 12px; border-top: 1px solid var(--line);
 .row.blocked .state { color: var(--blocked-fg); font-weight: 700; }
 .source, .target { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source { color: var(--muted); }
-/* The one exception. Review rows are absolutely positioned at a fixed height in
-   a virtualised list, so a box that grew would sit on top of the row below it
-   and the list's geometry would be a row out. */
-.editor { field-sizing: fixed; font: inherit; width: 100%; resize: none; padding: 2px 4px;
-  border: 1px solid currentColor; border-radius: 3px; background: var(--bg); color: inherit; }
+/* Editing happens in the detail panel, never in a row: a 40px row cannot show a
+   sentence, and a box that grew inside one would sit on top of its neighbour,
+   because the rows are absolutely positioned from a fixed height. */
+.target-editor { width: 100%; font: inherit; padding: 6px 8px; resize: vertical;
+  border: 1px solid var(--control-line); border-radius: 4px;
+  background: var(--bg); color: inherit; }
+.detail label { display: block; margin: 10px 0 4px; color: var(--muted); }
+.editor-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 .candidates span { margin-inline-end: 12px; }
 .candidates em { color: var(--muted); font-style: normal; font-size: 11px; }
 .badge { font-size: 11px; color: var(--muted); }

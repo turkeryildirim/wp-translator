@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { overrideCheck, saveUnit, type Unit } from './api.ts';
+import Reveal from './Reveal.vue';
 import { notify } from './notify.ts';
 import UnitDetailPanel from './UnitDetailPanel.vue';
 
@@ -104,9 +105,9 @@ function scrollIntoView(index: number): void {
   }
 }
 
+/** `e` puts the caret in the panel's box; there is nowhere else to type. */
 async function startEdit(): Promise<void> {
   if (!current.value) return;
-  editing.value = true;
   await nextTick();
   editor.value?.focus();
   editor.value?.select();
@@ -114,7 +115,7 @@ async function startEdit(): Promise<void> {
 
 function cancelEdit(): void {
   if (current.value) clearDraft(current.value);
-  editing.value = false;
+  editor.value?.blur();
 }
 
 /**
@@ -196,6 +197,18 @@ async function skipCheck(unit: Unit, rule: string): Promise<void> {
   emit('changed', saved);
 }
 
+/** Keep the edit without settling the row — the string stays where it is. */
+async function saveOnly(): Promise<void> {
+  const unit = current.value;
+  if (!unit) return;
+
+  const { unit: saved, blocked } = await saveUnit(unit.id, { msgstr: draftOf(unit) });
+  if (blocked?.length) notify('error', `Kaydedildi ama onaylanmadı: ${blocked[0]!.rule}`);
+  else notify('ok', 'Kaydedildi');
+  clearDraft(unit);
+  emit('changed', saved);
+}
+
 function toggleDetail(): void {
   const unit = current.value;
   if (!unit) return;
@@ -206,6 +219,8 @@ function toggleDetail(): void {
 }
 
 function onKey(event: KeyboardEvent): void {
+  // While the caret is in the box, only the combinations survive: everything
+  // else is someone typing a translation.
   if (editing.value) {
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -216,6 +231,12 @@ function onKey(event: KeyboardEvent): void {
     } else if (event.key === 'Enter' && event.shiftKey) {
       event.preventDefault();
       void reject();
+    } else if (
+      (event.ctrlKey || event.metaKey) &&
+      (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+    ) {
+      event.preventDefault();
+      move(event.key === 'ArrowDown' ? 1 : -1);
     }
     return;
   }
@@ -322,23 +343,15 @@ watch(
           <span class="state">{{
             row.unit.state === 'ok' ? '✓' : row.unit.failures.length ? '!' : '·'
           }}</span>
-          <span class="source">{{ row.unit.msgid }}</span>
+          <span class="source"><Reveal :value="row.unit.msgid" /></span>
 
-          <textarea
-            v-if="editing && row.index === cursor"
-            ref="editor"
-            class="target editor"
-            :value="draftOf(row.unit)"
-            rows="1"
-            @input="setDraft(row.unit, ($event.target as HTMLTextAreaElement).value)"
-          />
-          <span v-else-if="row.unit.candidates.length" class="target candidates">
+          <span v-if="row.unit.candidates.length" class="target candidates">
             <span v-for="(candidate, i) in row.unit.candidates" :key="candidate.tag">
               <kbd>{{ i + 1 }}</kbd> {{ candidate.translation }}
               <em>{{ candidate.tag }}</em>
             </span>
           </span>
-          <span v-else class="target">{{ draftOf(row.unit) }}</span>
+          <span v-else class="target"><Reveal :value="draftOf(row.unit)" /></span>
 
           <span v-if="row.unit.provenance" class="badge">{{ row.unit.provenance }}</span>
         </div>
@@ -346,6 +359,35 @@ watch(
     </div>
 
     <aside v-if="current" class="detail">
+      <h4>Kaynak</h4>
+      <p class="stored"><Reveal :value="current.msgid" /></p>
+      <p v-if="current.msgidPlural" class="stored">
+        çoğul: <Reveal :value="current.msgidPlural" />
+      </p>
+
+      <label>
+        Çeviri
+        <!-- The one place a translation is edited. It used to be a single-line
+             box inside a 40px row, which could not show what it held. -->
+        <textarea
+          ref="editor"
+          class="target-editor"
+          :value="draftOf(current)"
+          rows="3"
+          @focus="editing = true"
+          @blur="editing = false"
+          @input="setDraft(current!, ($event.target as HTMLTextAreaElement).value)"
+        />
+      </label>
+      <div class="editor-actions">
+        <button class="primary" :disabled="current.failures.length > 0" @click="approve(true)">
+          Kaydet ve onayla
+        </button>
+        <button @click="saveOnly">Kaydet</button>
+        <button @click="reject">Reddet</button>
+        <span class="muted"><kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
+      </div>
+
       <div v-for="failure in current.failures" :key="failure.rule" class="failure">
         <p>{{ failure.message }}</p>
         <button @click="skipCheck(current!, failure.rule)">Bu kuralı bu dizgede atla</button>
