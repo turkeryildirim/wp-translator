@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import {
-  entrySources,
+  entryDetail,
   listTags,
   searchGlossary,
   updateEntry,
@@ -24,6 +24,7 @@ const loading = ref(false);
 
 const selected = ref<GlossaryEntry | null>(null);
 const vouchers = ref<EntrySource[]>([]);
+const contexts = ref<string[]>([]);
 const draft = ref('');
 const notice = ref('');
 
@@ -51,19 +52,25 @@ async function select(entry: GlossaryEntry): Promise<void> {
   selected.value = entry;
   draft.value = entry.translation;
   notice.value = '';
-  vouchers.value = entry.sources > 0 ? await entrySources(entry.id) : [];
+  vouchers.value = [];
+  contexts.value = [];
+  if (entry.sources > 0 || entry.contexts > 0) {
+    const detail = await entryDetail(entry.id);
+    vouchers.value = detail.sources;
+    contexts.value = detail.contexts;
+  }
 }
 
 async function save(): Promise<void> {
   if (!selected.value) return;
-  const { entry, overwrittenOnNextSync } = await updateEntry(selected.value.id, draft.value);
+  const { entry, sourceWordingReturns } = await updateEntry(selected.value.id, draft.value);
 
   const index = rows.value.findIndex((row) => row.id === entry.id);
   if (index >= 0) rows.value[index] = entry;
   selected.value = entry;
 
-  notice.value = overwrittenOnNextSync
-    ? 'Kaydedildi — ancak bu girdi güvenilir bir kaynaktan geliyor, sonraki güncellemede üzerine yazılacak.'
+  notice.value = sourceWordingReturns
+    ? 'Kaydedildi. Bu sizin girdiniz oldu; kaynağın kendi çevirisi sonraki güncellemede ikinci bir seçenek olarak geri gelecek, ama doldurmada sizinki önde.'
     : 'Kaydedildi.';
 }
 
@@ -190,6 +197,20 @@ watch(page, load);
             </li>
           </ul>
         </template>
+        <template v-if="contexts.length">
+          <h4>Geçtiği bağlamlar</h4>
+          <!-- Informational: matching ignores these. They answer why the same
+               string has more than one translation in the glossary. -->
+          <ul class="vouchers">
+            <li v-for="ctx in contexts" :key="ctx"><code>{{ ctx }}</code></li>
+          </ul>
+        </template>
+
+        <p v-if="selected.readings > 1" class="note">
+          Bu kaynağın bu etiket altında <b>{{ selected.readings }}</b> çevirisi var. İncelemede
+          hepsi aday olarak çıkar; en çok kaynak tarafından desteklenen doldurulur.
+        </p>
+
         <p v-else-if="selected.origin === 'owner'" class="hint">
           Sizin girdiniz. Güvenilir kaynaklardan gelmiyor, güncellemeler silmez.
         </p>

@@ -60,7 +60,7 @@ onMounted(async () => {
       <p class="status">
         {{ result.strings.toLocaleString('tr') }} string alındı.
         <b>{{ result.match.filled.toLocaleString('tr') }}</b> tanesi sözlükten dolduruldu,
-        <b>{{ result.match.ambiguous }}</b> tanesi aday bekliyor,
+        <b>{{ result.match.alternatives }}</b> tanesinde başka seçenek de var,
         {{ result.match.unmatched.toLocaleString('tr') }} tanesi AI'ya kalacak.
       </p>
       <p v-if="result.suggestedTags.length" class="hint">

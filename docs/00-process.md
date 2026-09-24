@@ -82,6 +82,7 @@ Each phase produces one document. **The owner signs it off before the next phase
 | D41 | Terminology in the prompt | Glossary entries whose source appears as a 1–3 word n-gram inside a batch's strings are injected into the request as a terminology block. No new table — short glossary entries *are* the terms. |
 | D42 | Frontend | **Vue 3 + Vite**, TypeScript, JSON API to the Node process. Chosen on the review table's needs: virtualisation, stable keyboard focus, in-place row updates. |
 | D43 | Official glossary | The WordPress Turkish team's own term list (`…/locale/tr/default/glossary/-export/`, CSV, 513 terms) is imported as **terminology**: keyed by source + part of speech + translation, stored under a dedicated tag, and **replaced** on each import. It feeds the AI prompt and is deliberately **not** used for full-string matching — it is curated to say how a word is rendered, not to approve a whole string in an unknown context. |
+| D44 | Glossary identity | An entry is **a source and a translation**. `msgctxt` is not part of it — it is recorded alongside as a note of where a wording has been seen, and matching never reads it. Two sources that render a string the same way meet on one row; two that differ sit side by side as the alternatives they are. Matching fills the best-supported reading — the owner's own entry first, then most vouching sources, then highest-ranked source — and offers the rest as candidates in review. Supersedes D5 and D11. |
 | D35 | Glossary key | `(source, msgctxt, tag)`. Matching prefers the unit's own `msgctxt` and falls back to the context-less row; a unit without context matches only context-less entries. Resolves R9. |
 | D34 | Style guide form | A large free-text field in the panel, written by the owner, passed to the AI as part of the prompt. No structured rule editor. Per D12 the same form applies per tag. Seed content lives in `style-guide/tr-genel.md`. |
 
@@ -258,6 +259,18 @@ So the merge rule is **agreement, not similarity**: a group collapses to one con
 | two seeks joined by `coalesce` | 0.007 ms | 0.1 s |
 
 `better-sqlite3` is synchronous, so this does not show up as a slow sync: the HTTP server stops answering for the duration, and the panel cannot even fetch its own progress. The index is on `ifnull(msgctxt, '')`, so `msgctxt IS NULL` has to be spelled that way in the predicate or the seek is lost as well. `test/sync-plan.test.ts` asserts the plan, because nothing about the behaviour reveals it.
+
+**R29 — a stored context decides nothing, and hides the alternatives.** `msgctxt` was part of the glossary key, so one string arrived many times over: `About` held twelve rows, eleven of them `Hakkında`. Across the whole glossary, 1 116 rows were an exact repeat of another row's source and translation.
+
+The precision that bought was imaginary. Matching preferred an entry under the unit's own context and fell back to the context-less one. Measured over three plugins that are *not* trusted sources — Elementor, WPForms, Wordfence — of the 281 matches where context could have decided, it decided **none**: every answer came from the fallback. A glossary's contexts are the source project's own keys (`navigation.about`, `jetpackStats.button.cancel`, `Theme starter content`) and do not recur in someone else's plugin.
+
+So the glossary was quietly picking one translation and hiding the rest. Keyed on source and translation instead (D44), the alternatives become visible and ranking replaces the fallback:
+
+| | agrees with the old answer | differs |
+|---|---:|---:|
+| best-supported reading vs. the old context-less row | 256 (91 %) | 25 |
+
+The 25 that differ are mostly better supported — `Mail` becomes `E-posta` (2 sources) rather than `Posta` (1), `Allow Comments` becomes `Yorum yapılabilsin` (2) rather than `Yorumlara izin ver` (1). Applied to the seeded glossary: 50 102 memory rows to 48 986, 8 927 contexts kept as notes, no vouch lost.
 
 ## 6. Open questions
 

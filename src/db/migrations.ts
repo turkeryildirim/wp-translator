@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { collapseSql } from '../glossary/collapse.ts';
 import { fileURLToPath } from 'node:url';
 
 export interface Migration {
@@ -177,14 +176,123 @@ export const migrations: readonly Migration[] = [
   },
   {
     version: 7,
-    // Existing databases carry rows that differ only by msgctxt and agree on
-    // the translation — `&larr;` under eight contexts, all `&larr;`. They cost
-    // matches, not just space: a context-less unit matches context-less rows
-    // only (R27). The same statements run after every sync, so this cleans what
-    // is already there rather than being a one-off.
-    get sql() {
-      return collapseSql();
-    },
+    // Frozen history. Merged the rows that differed only by context and agreed
+    // on the translation; migration 8 subsumes it by dropping context from the
+    // key altogether. Kept verbatim so a database created before 8 and one
+    // created after end up identical rather than merely similar.
+    sql: `
+  CREATE TEMP TABLE mem AS
+    SELECT id, source_hash, tag_id, msgctxt, translation,
+           ifnull(translation_plural, '') AS tp
+      FROM glossary_entries WHERE pos IS NULL;
+  CREATE INDEX temp.idx_mem ON mem (source_hash, tag_id);
+
+  CREATE TEMP TABLE merge_map AS
+  WITH grp AS (
+    SELECT source_hash, tag_id,
+           count(DISTINCT translation || char(31) || tp) AS variants,
+           -- An existing context-less row is the natural survivor: keeping it
+           -- means no surviving row has to change its key.
+           min(CASE WHEN msgctxt IS NULL THEN id END) AS ctxless_id,
+           min(id) AS any_id
+      FROM mem
+     GROUP BY source_hash, tag_id
+    HAVING count(*) > 1 AND variants = 1)
+  SELECT m.id AS drop_id, coalesce(g.ctxless_id, g.any_id) AS keep_id
+    FROM grp g
+    JOIN mem m ON m.source_hash = g.source_hash AND m.tag_id = g.tag_id
+   WHERE m.id <> coalesce(g.ctxless_id, g.any_id);
+
+  CREATE INDEX temp.idx_map ON merge_map (drop_id);
+
+  -- Vouches first: a vouch is what keeps an entry alive (R14), and the
+  -- CASCADE on the delete below would otherwise take them with the row. Two
+  -- merged rows can carry the same source, so the survivor keeps the later
+  -- sighting; an older one would look stale to the next sweep.
+  INSERT INTO glossary_entry_sources (entry_id, trusted_source_id, translation, last_seen_sync_id)
+  SELECT p.keep_id, s.trusted_source_id, s.translation, s.last_seen_sync_id
+    FROM glossary_entry_sources s
+    JOIN merge_map p ON p.drop_id = s.entry_id
+   WHERE true
+  ON CONFLICT (entry_id, trusted_source_id) DO UPDATE SET
+    last_seen_sync_id = max(excluded.last_seen_sync_id,
+                            glossary_entry_sources.last_seen_sync_id);
+
+  -- A unit filled from a row that is about to go keeps its provenance.
+  UPDATE translation_units
+     SET glossary_entry_id = (SELECT keep_id FROM merge_map WHERE drop_id = glossary_entry_id)
+   WHERE glossary_entry_id IN (SELECT drop_id FROM merge_map);
+
+  DELETE FROM glossary_entries WHERE id IN (SELECT drop_id FROM merge_map);
+
+  UPDATE glossary_entries SET msgctxt = NULL, updated_at = datetime('now')
+   WHERE msgctxt IS NOT NULL AND id IN (SELECT keep_id FROM merge_map);
+
+  DROP TABLE temp.merge_map;
+  DROP TABLE temp.mem;`,
+  },
+  {
+    version: 8,
+    // The glossary is keyed on what it is for: a source and a translation.
+    //
+    // Context was part of the key, which made one string arrive many times over
+    // — `About` held twelve rows, eleven of them `Hakkında`. Worse, the
+    // precision it bought was imaginary: measured over three real plugins, the
+    // context of a stored entry decided *none* of the 281 matches it could have
+    // (R29). Those contexts are the source project's own keys — `navigation.
+    // about`, `jetpackStats.button.cancel` — and they do not recur elsewhere.
+    //
+    // So context stops being a key and becomes what it always was in practice:
+    // a note about where a translation has been seen. Several translations of
+    // one string now sit side by side as the alternatives they are, and
+    // matching ranks them (D44).
+    sql: `
+      DROP INDEX idx_glossary_memory_key;
+
+      CREATE TABLE glossary_entry_contexts (
+        entry_id INTEGER NOT NULL REFERENCES glossary_entries(id) ON DELETE CASCADE,
+        msgctxt  TEXT NOT NULL,
+        PRIMARY KEY (entry_id, msgctxt)
+      ) STRICT, WITHOUT ROWID;
+
+      CREATE TEMP TABLE keeper AS
+      SELECT id, msgctxt,
+             min(id) OVER (PARTITION BY source_hash, tag_id, translation,
+                                        ifnull(translation_plural, '')) AS keep_id
+        FROM glossary_entries WHERE pos IS NULL;
+      CREATE INDEX temp.idx_keeper ON keeper (id);
+
+      INSERT OR IGNORE INTO glossary_entry_contexts (entry_id, msgctxt)
+      SELECT keep_id, msgctxt FROM keeper WHERE msgctxt IS NOT NULL;
+
+      CREATE TEMP TABLE merge_map AS
+        SELECT id AS drop_id, keep_id FROM keeper WHERE id <> keep_id;
+      CREATE INDEX temp.idx_map ON merge_map (drop_id);
+
+      -- Vouches move before the rows go, or ON DELETE CASCADE takes them (R14).
+      INSERT INTO glossary_entry_sources (entry_id, trusted_source_id, translation, last_seen_sync_id)
+      SELECT p.keep_id, s.trusted_source_id, s.translation, s.last_seen_sync_id
+        FROM glossary_entry_sources s
+        JOIN merge_map p ON p.drop_id = s.entry_id
+       WHERE true
+      ON CONFLICT (entry_id, trusted_source_id) DO UPDATE SET
+        last_seen_sync_id = max(excluded.last_seen_sync_id,
+                                glossary_entry_sources.last_seen_sync_id);
+
+      UPDATE translation_units
+         SET glossary_entry_id = (SELECT keep_id FROM merge_map WHERE drop_id = glossary_entry_id)
+       WHERE glossary_entry_id IN (SELECT drop_id FROM merge_map);
+
+      DELETE FROM glossary_entries WHERE id IN (SELECT drop_id FROM merge_map);
+      UPDATE glossary_entries SET msgctxt = NULL WHERE pos IS NULL AND msgctxt IS NOT NULL;
+
+      CREATE UNIQUE INDEX idx_glossary_memory_key
+        ON glossary_entries (source_hash, translation, ifnull(translation_plural, ''), tag_id)
+        WHERE pos IS NULL;
+
+      DROP TABLE temp.merge_map;
+      DROP TABLE temp.keeper;
+    `,
   },
 ];
 

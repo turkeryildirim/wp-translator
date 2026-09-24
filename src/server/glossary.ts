@@ -13,6 +13,10 @@ export interface GlossaryRow {
   tag: string;
   /** How many trusted sources carry this entry. */
   sources: number;
+  /** How many contexts this translation has been seen under (D44). */
+  contexts: number;
+  /** How many translations this string has under this tag, including this one. */
+  readings: number;
 }
 
 export interface GlossaryQuery {
@@ -20,7 +24,7 @@ export interface GlossaryQuery {
   tagId?: number;
   /** `memory` for translation memory, `term` for the terminology rows. */
   kind?: 'memory' | 'term';
-  /** Only entries several sources disagree about, or that have several readings. */
+  /** Only strings that have more than one translation under the same tag. */
   contested?: boolean;
   limit?: number;
   offset?: number;
@@ -54,9 +58,11 @@ export function searchGlossary(db: Db, query: GlossaryQuery = {}): GlossaryPage 
   if (query.kind === 'memory') where.push('g.pos IS NULL');
   if (query.kind === 'term') where.push('g.pos IS NOT NULL');
   if (query.contested) {
+    // Disagreement is now visible in the rows themselves rather than hidden in
+    // the links: two translations of one string are two entries (D44).
     where.push(
-      `(SELECT count(DISTINCT translation) FROM glossary_entry_sources l
-         WHERE l.entry_id = g.id) > 1`,
+      `g.pos IS NULL AND (SELECT count(*) FROM glossary_entries o
+         WHERE o.source_hash = g.source_hash AND o.tag_id = g.tag_id AND o.pos IS NULL) > 1`,
     );
   }
 
@@ -73,7 +79,11 @@ export function searchGlossary(db: Db, query: GlossaryQuery = {}): GlossaryPage 
       `SELECT g.id, g.source_text AS sourceText, g.source_plural AS sourcePlural, g.msgctxt,
               g.pos, g.note, g.translation, g.translation_plural AS translationPlural,
               g.origin, t.name AS tag,
-              (SELECT count(*) FROM glossary_entry_sources l WHERE l.entry_id = g.id) AS sources
+              (SELECT count(*) FROM glossary_entry_sources l WHERE l.entry_id = g.id) AS sources,
+              (SELECT count(*) FROM glossary_entry_contexts c WHERE c.entry_id = g.id) AS contexts,
+              (SELECT count(*) FROM glossary_entries o
+                WHERE o.source_hash = g.source_hash AND o.tag_id = g.tag_id
+                  AND (o.pos IS NULL) = (g.pos IS NULL)) AS readings
          FROM glossary_entries g
          JOIN tags t ON t.id = g.tag_id
          ${clause}
@@ -92,7 +102,15 @@ export interface EntrySource {
   translation: string;
 }
 
-/** Which sources vouch for an entry, and with what — the disagreements live here. */
+/** Where this translation has been seen. Informational: matching never reads it. */
+export function entryContexts(db: Db, entryId: number): string[] {
+  return db
+    .prepare(`SELECT msgctxt FROM glossary_entry_contexts WHERE entry_id = ? ORDER BY msgctxt`)
+    .all(entryId)
+    .map((row) => (row as { msgctxt: string }).msgctxt);
+}
+
+/** Which sources vouch for an entry. They all vouch for its wording (D44). */
 export function entrySources(db: Db, entryId: number): EntrySource[] {
   return db
     .prepare(
@@ -119,30 +137,57 @@ const ENTRY_SELECT = `
   SELECT g.id, g.source_text AS sourceText, g.source_plural AS sourcePlural, g.msgctxt,
          g.pos, g.note, g.translation, g.translation_plural AS translationPlural,
          g.origin, t.name AS tag,
-         (SELECT count(*) FROM glossary_entry_sources l WHERE l.entry_id = g.id) AS sources
+         (SELECT count(*) FROM glossary_entry_sources l WHERE l.entry_id = g.id) AS sources,
+         (SELECT count(*) FROM glossary_entry_contexts c WHERE c.entry_id = g.id) AS contexts,
+         (SELECT count(*) FROM glossary_entries o
+           WHERE o.source_hash = g.source_hash AND o.tag_id = g.tag_id
+             AND (o.pos IS NULL) = (g.pos IS NULL)) AS readings
     FROM glossary_entries g JOIN tags t ON t.id = g.tag_id
    WHERE g.id = ?`;
 
 export interface EntryUpdate {
   entry: GlossaryRow;
   /**
-   * True when the edit will not survive the next sync.
+   * True when the source's own wording will reappear beside this one.
    *
-   * A trusted entry can be edited, but the trusted source wins when it next runs
-   * (D11), so the panel says so rather than letting the change quietly revert.
+   * The translation is part of an entry's identity (D44), so editing one does
+   * not overwrite what a trusted source says — the source still carries its
+   * wording and puts it back on the next update, as a second reading. The
+   * owner's entry ranks above it, so the edit is what gets filled in.
    */
-  overwrittenOnNextSync: boolean;
+  sourceWordingReturns: boolean;
 }
 
+/**
+ * Change an entry's translation.
+ *
+ * The edit also makes the entry the owner's. It has to: the translation is part
+ * of the key, so an edited entry no longer matches what any source vouches for,
+ * and the sweep deletes a trusted entry nothing vouches for (R14) — the edit
+ * would disappear on the next update.
+ */
 export function updateEntry(db: Db, entryId: number, translation: string): EntryUpdate {
-  const changed = db
-    .prepare(`UPDATE glossary_entries SET translation = ?, updated_at = datetime('now') WHERE id = ?`)
-    .run(translation, entryId).changes;
+  const before = db
+    .prepare(`SELECT origin, sources FROM (${ENTRY_SELECT.trim()})`)
+    .get(entryId) as { origin: string; sources: number } | undefined;
+  if (!before) throw new Error(`No glossary entry with id ${entryId}.`);
 
-  if (changed === 0 && !db.prepare(`SELECT 1 FROM glossary_entries WHERE id = ?`).get(entryId)) {
-    throw new Error(`No glossary entry with id ${entryId}.`);
+  try {
+    db.prepare(
+      `UPDATE glossary_entries
+          SET translation = ?, origin = 'owner', updated_at = datetime('now')
+        WHERE id = ?`,
+    ).run(translation, entryId);
+  } catch (problem) {
+    // The key is source plus translation, so this wording is already an entry.
+    // Merging the two is not this function's job and silently discarding the
+    // edit is worse, so the owner is told which one to use.
+    if (problem instanceof Error && problem.message.includes('UNIQUE')) {
+      throw new Error(`Bu kaynak için "${translation}" çevirisi sözlükte zaten var.`);
+    }
+    throw problem;
   }
 
   const entry = db.prepare(ENTRY_SELECT).get(entryId) as GlossaryRow;
-  return { entry, overwrittenOnNextSync: entry.origin === 'trusted' && entry.sources > 0 };
+  return { entry, sourceWordingReturns: before.origin === 'trusted' && before.sources > 0 };
 }

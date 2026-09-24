@@ -3,7 +3,14 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import type { Db } from '../db/open.ts';
 import { exportProject } from '../project/export.ts';
-import { entrySources, listTags, searchGlossary, updateEntry, type GlossaryQuery } from './glossary.ts';
+import {
+  entryContexts,
+  entrySources,
+  listTags,
+  searchGlossary,
+  updateEntry,
+  type GlossaryQuery,
+} from './glossary.ts';
 import {
   listProjects,
   listUnits,
@@ -190,7 +197,10 @@ async function api(
 
   const entry = /^\/api\/glossary\/(\d+)$/.exec(route);
   if (entry) {
-    if (method === 'GET') return send(response, 200, entrySources(db, Number(entry[1])));
+    if (method === 'GET') {
+      const id = Number(entry[1]);
+      return send(response, 200, { sources: entrySources(db, id), contexts: entryContexts(db, id) });
+    }
     if (method === 'POST') {
       const body = (await readJson(request)) as { translation: string };
       return send(response, 200, updateEntry(db, Number(entry[1]), body.translation));

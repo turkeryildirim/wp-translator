@@ -93,17 +93,15 @@ why, and include the measurement if one drove it.
   `pos IS NOT NULL` and keys on the translation too, because the official
   glossary offers alternatives under one part of speech. They have separate
   partial unique indexes. Matching uses memory rows only.
-- **Glossary rows that differ only by `msgctxt` are merged, not deduplicated.**
-  The rule is agreement: a group collapses only when every row gives the same
-  translation *and* plural, because `Cancel` really is three different words by
-  context (R27). `src/glossary/collapse.ts` holds the SQL, and both migration 7
-  and the end of every sync run it, so the two cannot drift.
-- **The merge only holds because the import knows about it.** `insertEntry` and
-  `linkSource` in `src/glossary/sync.ts` both treat an agreeing context-less row
-  as the answer for a context. Drop that and each update re-creates the
-  contextful rows, the merged row loses its vouches, the sweep deletes it, and
-  every unit filled from it loses its provenance — measured, the survivor's id
-  changed on the second update. `test/sync-cycle.test.ts` is the guard.
+- **A glossary entry is a source *and a translation*.** `msgctxt` is not part of
+  the key and matching never reads it; it lives in `glossary_entry_contexts` as
+  a note. Two wordings of one string are two rows, and matching ranks them
+  (D44). Do not reintroduce a "winning" translation on the entry — storing one
+  is what hid the alternatives, and measured, the context it was chosen by
+  decided none of the matches it could have (R29).
+- **Nothing rewrites `translation` on a synced entry.** It is part of the key,
+  so an edit makes the row the owner's (`origin = 'owner'`) — otherwise it
+  matches no source's wording, loses its vouches and the sweep deletes it (R14).
 - **A scan in `sync.ts` hangs the whole server, it does not merely slow it.**
   `better-sqlite3` is synchronous, so a statement that loses its index blocks
   the HTTP loop — the panel cannot even poll its own progress. An `OR` across

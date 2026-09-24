@@ -2,21 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { openDb } from '../src/db/open.ts';
 import { prepare } from '../src/glossary/sync.ts';
 
-/** Every named parameter the sync statements take; EXPLAIN ignores the values. */
-const PARAMS = {
-  hash: '',
-  text: '',
-  plural: null,
-  msgctxt: null,
-  tagId: 0,
-  translation: '',
-  translationPlural: null,
-  trustedSourceId: 0,
-  syncRunId: 0,
-};
+/** EXPLAIN still needs every named parameter bound; the values are ignored. */
+const paramsFor = (sql: string): Record<string, unknown> =>
+  Object.fromEntries([...sql.matchAll(/@(\w+)/g)].map((match) => [match[1]!, '']));
 
 const planOf = (db: ReturnType<typeof openDb>, sql: string): string =>
-  (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(PARAMS) as { detail: string }[])
+  (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(paramsFor(sql)) as { detail: string }[])
     .map((row) => row.detail)
     .join(' | ');
 
@@ -27,12 +18,15 @@ describe('the statements run for every string of every source', () => {
   // row in the glossary because almost all of them carry one tag. Measured at
   // 6.777 ms against 0.007 ms per lookup, and better-sqlite3 is synchronous, so
   // the server stopped answering rather than merely running slowly.
-  it.each(['insertEntry', 'linkSource'] as const)('looks %s up by index, never by scan', (name) => {
-    const db = openDb(':memory:');
-    const plan = planOf(db, prepare(db)[name].source);
+  it.each(['linkSource', 'recordContext'] as const)(
+    'looks %s up by index, never by scan',
+    (name) => {
+      const db = openDb(':memory:');
+      const plan = planOf(db, prepare(db)[name].source);
 
-    expect(plan).toContain('idx_glossary_memory_key');
-    expect(plan).not.toContain('idx_glossary_tag');
-    expect(plan).not.toMatch(/SCAN glossary_entries/);
-  });
+      expect(plan).toContain('idx_glossary_memory_key');
+      expect(plan).not.toContain('idx_glossary_tag');
+      expect(plan).not.toMatch(/SCAN glossary_entries/);
+    },
+  );
 });

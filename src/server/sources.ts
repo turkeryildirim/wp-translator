@@ -4,7 +4,6 @@ import {
   OFFICIAL_GLOSSARY_CSV,
   parseGlossaryCsv,
 } from '../glossary/officialGlossary.ts';
-import { collapseAgreedContexts } from '../glossary/collapse.ts';
 import { syncTrustedSource } from '../glossary/sync.ts';
 import { parsePo } from '../po/parse.ts';
 import { fetchExport } from '../wporg/fetch.ts';
@@ -200,8 +199,6 @@ export interface SyncProgress {
   glossaryTerms: number | null;
   /** True when only some sources were asked for, so the totals are partial. */
   partial: boolean;
-  /** Rows merged away because they differed only by context and agreed (R27). */
-  collapsed: number | null;
   finishedAt: string | null;
 }
 
@@ -212,7 +209,6 @@ const idle = (): SyncProgress => ({
   current: null,
   errors: [],
   glossaryTerms: null,
-  collapsed: null,
   partial: false,
   finishedAt: null,
 });
@@ -280,18 +276,6 @@ export function startSync(db: Db, ids?: readonly number[]): SyncProgress {
       progress.done += 1;
     }
 
-    // Once, at the end, rather than after each source: the work is a scan of
-    // the whole glossary, and running it 41 times would repeat it for rows no
-    // source touched. A source only ever adds contexts, so merging late loses
-    // nothing.
-    try {
-      progress.collapsed = collapseAgreedContexts(db);
-    } catch (error) {
-      progress.errors.push({
-        source: 'duplicate merge',
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
 
     progress.running = false;
     progress.current = null;

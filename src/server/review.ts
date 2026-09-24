@@ -251,32 +251,45 @@ function enrich(
   return {
     ...row,
     failures: failures.filter((failure) => !overridden.has(failure.rule)),
+    // Offered whenever the glossary filled the unit, not only when it gave up:
+    // the fill takes the best-supported translation and the others stay one
+    // keystroke away (D44).
     candidates:
-      row.state === 'review' && row.provenance === 'glossary'
-        ? candidatesFor(db, projectId, row.msgid, row.msgctxt)
-        : [],
+      row.provenance === 'glossary' ? candidatesFor(db, projectId, row.msgid) : [],
     structured:
       STRUCTURE.test(row.msgid) || row.msgidPlural !== null || row.msgid.length > 80,
   };
 }
 
-/** Recomputed on demand rather than stored — derivable from the glossary at any time. */
-function candidatesFor(
-  db: Db,
-  projectId: number,
-  msgid: string,
-  msgctxt: string | null,
-): Candidate[] {
-  return db
+/**
+ * Recomputed on demand rather than stored — derivable from the glossary at any
+ * time. Ordered the way `applyGlossary` ranks them, so the first is the one
+ * already in the box and the rest read as the alternatives to it. A single
+ * result means there is nothing to choose, so none is offered.
+ */
+function candidatesFor(db: Db, projectId: number, msgid: string): Candidate[] {
+  const rows = db
     .prepare(
       `SELECT g.translation, t.name AS tag
          FROM glossary_entries g
          JOIN tags t ON t.id = g.tag_id
-        WHERE g.source_text = ? AND ifnull(g.msgctxt, '') = ? AND g.pos IS NULL
+         LEFT JOIN glossary_entry_sources s ON s.entry_id = g.id
+         LEFT JOIN trusted_sources ts ON ts.id = s.trusted_source_id
+        WHERE g.source_text = ? AND g.pos IS NULL
           AND g.tag_id IN (SELECT tag_id FROM project_tags WHERE project_id = ?)
-        ORDER BY t.name`,
+        GROUP BY g.id
+        ORDER BY (g.origin = 'owner') DESC,
+                 count(DISTINCT s.trusted_source_id) DESC,
+                 ifnull(min(ts.rank), 2147483647) ASC,
+                 g.id ASC`,
     )
-    .all(msgid, msgctxt ?? '', projectId) as Candidate[];
+    .all(msgid, projectId) as Candidate[];
+
+  // Same wording under two tags is one candidate: there is nothing to pick.
+  const seen = new Set<string>();
+  const distinct = rows.filter((row) => !seen.has(row.translation) && seen.add(row.translation));
+
+  return distinct.length > 1 ? distinct : [];
 }
 
 function byUrgency(a: UnitRow, b: UnitRow): number {

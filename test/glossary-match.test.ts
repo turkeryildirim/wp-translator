@@ -60,17 +60,17 @@ const unitFor = (projectId: number, msgid: string) =>
 
 beforeEach(() => {
   db = openDb(':memory:');
-  ecommerce = addTag('ecommerce');
+  ecommerce = addTag('e-commerce');
   forms = addTag('forms');
 });
 
 describe('glossary matching', () => {
   it('fills an exact match and marks it complete', () => {
     addGlossaryEntry(ecommerce, 'Add to cart', 'Sepete ekle');
-    const project = addProject([{ msgid: 'Add to cart' }], [ecommerce]);
+    const projectId = addProject([{ msgid: 'Add to cart' }], [ecommerce]);
 
-    expect(applyGlossary(db, project)).toEqual({ filled: 1, ambiguous: 0, unmatched: 0 });
-    expect(unitFor(project, 'Add to cart')).toMatchObject({
+    expect(applyGlossary(db, projectId)).toEqual({ filled: 1, alternatives: 0, unmatched: 0 });
+    expect(unitFor(projectId, 'Add to cart')).toMatchObject({
       state: 'ok',
       provenance: 'glossary',
       msgstr: 'Sepete ekle',
@@ -78,94 +78,148 @@ describe('glossary matching', () => {
   });
 
   it('does not match on case, because matching is byte-exact', () => {
-    // Lowercasing would gain 253 matches across WooCommerce of which 197 map to a
-    // different translation, and nothing malformed exists to catch it (R13).
-    addGlossaryEntry(ecommerce, 'Saved for Later', 'Sonraya Kaydet');
-    const project = addProject([{ msgid: 'Saved for later' }], [ecommerce]);
+    // Lowercasing would gain 253 matches across WooCommerce, 197 of them to a
+    // different translation: `Saved for Later` is `Sonraya Kaydet`, `Saved for
+    // later` is `Sonraya kaydedildi` (R13).
+    addGlossaryEntry(ecommerce, 'Add to cart', 'Sepete ekle');
+    const projectId = addProject([{ msgid: 'Add To Cart' }], [ecommerce]);
 
-    expect(applyGlossary(db, project)).toMatchObject({ filled: 0, unmatched: 1 });
-    expect(unitFor(project, 'Saved for later')?.state).toBe('untranslated');
+    expect(applyGlossary(db, projectId).unmatched).toBe(1);
   });
 
   it('does not match on trimmed whitespace', () => {
-    addGlossaryEntry(ecommerce, 'SKU: ', 'Stok kodu: ');
-    const project = addProject([{ msgid: 'SKU:' }], [ecommerce]);
+    addGlossaryEntry(ecommerce, 'Save ', 'Kaydet ');
+    const projectId = addProject([{ msgid: 'Save' }], [ecommerce]);
 
-    expect(applyGlossary(db, project)).toMatchObject({ filled: 0, unmatched: 1 });
+    expect(applyGlossary(db, projectId).unmatched).toBe(1);
   });
 
-  it('prefers an entry under the unit’s own context', () => {
-    addGlossaryEntry(ecommerce, 'May', 'Mayıs');
-    addGlossaryEntry(ecommerce, 'May', 'May', { msgctxt: 'May abbreviation' });
-    const project = addProject([{ msgid: 'May', msgctxt: 'May abbreviation' }], [ecommerce]);
+  it('ignores the unit’s context entirely', () => {
+    // Context used to choose the entry. Measured over three real plugins it
+    // decided none of the 281 matches it could have, because a glossary's
+    // contexts are the source project's own keys (R29).
+    addGlossaryEntry(ecommerce, 'About', 'Hakkında');
+    const projectId = addProject([{ msgid: 'About', msgctxt: 'a context nobody has seen' }], [ecommerce]);
 
-    applyGlossary(db, project);
-    expect(unitFor(project, 'May')?.msgstr).toBe('May');
+    expect(applyGlossary(db, projectId).filled).toBe(1);
+    expect(unitFor(projectId, 'About')?.msgstr).toBe('Hakkında');
   });
 
-  it('falls back to the context-less entry when the context is unknown', () => {
-    addGlossaryEntry(ecommerce, 'May', 'Mayıs');
-    const project = addProject([{ msgid: 'May', msgctxt: 'genitive' }], [ecommerce]);
+  it('fills the best-supported reading and counts the rest as alternatives', () => {
+    vouched(ecommerce, 'Mail', 'Posta', ['core']);
+    vouched(ecommerce, 'Mail', 'E-posta', ['woocommerce', 'gutenberg']);
+    const projectId = addProject([{ msgid: 'Mail' }], [ecommerce]);
 
-    applyGlossary(db, project);
-    expect(unitFor(project, 'May')?.msgstr).toBe('Mayıs');
+    expect(applyGlossary(db, projectId)).toEqual({ filled: 1, alternatives: 1, unmatched: 0 });
+    expect(unitFor(projectId, 'Mail')?.msgstr).toBe('E-posta');
   });
 
-  it('never gives a context-free unit a context-bearing translation', () => {
-    // The reverse fallback would reintroduce exactly the collapse the key prevents.
-    addGlossaryEntry(ecommerce, 'May', 'May', { msgctxt: 'May abbreviation' });
-    const project = addProject([{ msgid: 'May' }], [ecommerce]);
+  it('falls to the highest-ranked source when support is level', () => {
+    // Measured over five sources, 88 % of disagreements are two-way ties, so
+    // the owner's ranking is what actually decides (R15, D36).
+    rank('core', 1);
+    rank('woocommerce', 2);
+    // The lower-ranked wording is stored first, so passing cannot be an
+    // accident of insertion order.
+    vouched(ecommerce, 'Save', 'Sakla', ['woocommerce']);
+    vouched(ecommerce, 'Save', 'Kaydet', ['core']);
+    const projectId = addProject([{ msgid: 'Save' }], [ecommerce]);
 
-    expect(applyGlossary(db, project)).toMatchObject({ filled: 0, unmatched: 1 });
+    applyGlossary(db, projectId);
+    expect(unitFor(projectId, 'Save')?.msgstr).toBe('Kaydet');
   });
 
-  it('sends a string its tags disagree on to review, unfilled', () => {
+  it('puts the owner’s own entry above every source', () => {
+    // The owner edited this deliberately; a source outvoting it would undo the
+    // edit on the next update.
+    vouched(ecommerce, 'Item', 'Öğe', ['core', 'woocommerce', 'gutenberg']);
+    addGlossaryEntry(ecommerce, 'Item', 'Ürün');
+    const projectId = addProject([{ msgid: 'Item' }], [ecommerce]);
+
+    applyGlossary(db, projectId);
+    expect(unitFor(projectId, 'Item')?.msgstr).toBe('Ürün');
+  });
+
+  it('offers readings from every tag the project carries', () => {
     addGlossaryEntry(ecommerce, 'Item', 'Ürün');
     addGlossaryEntry(forms, 'Item', 'Öge');
-    const project = addProject([{ msgid: 'Item' }], [ecommerce, forms]);
+    const projectId = addProject([{ msgid: 'Item' }], [ecommerce, forms]);
 
-    expect(applyGlossary(db, project)).toEqual({ filled: 0, ambiguous: 1, unmatched: 0 });
-    expect(unitFor(project, 'Item')).toMatchObject({
-      state: 'review',
-      provenance: 'glossary',
-      msgstr: null,
-    });
+    expect(applyGlossary(db, projectId)).toEqual({ filled: 1, alternatives: 1, unmatched: 0 });
   });
 
-  it('fills when several tags agree', () => {
+  it('fills once when the tags agree', () => {
     addGlossaryEntry(ecommerce, 'Save', 'Kaydet');
     addGlossaryEntry(forms, 'Save', 'Kaydet');
-    const project = addProject([{ msgid: 'Save' }], [ecommerce, forms]);
+    const projectId = addProject([{ msgid: 'Save' }], [ecommerce, forms]);
 
-    expect(applyGlossary(db, project)).toMatchObject({ filled: 1, ambiguous: 0 });
+    expect(applyGlossary(db, projectId)).toEqual({ filled: 1, alternatives: 0, unmatched: 0 });
   });
 
   it('carries the plural translation', () => {
-    addGlossaryEntry(ecommerce, '%s item', '%s öge', {
-      msgidPlural: '%s items',
-      translationPlural: '%s öge',
+    addGlossaryEntry(ecommerce, '%d item', '%d ürün', {
+      msgidPlural: '%d items',
+      translationPlural: '%d ürün',
     });
-    const project = addProject([{ msgid: '%s item', msgidPlural: '%s items' }], [ecommerce]);
+    const projectId = addProject([{ msgid: '%d item', msgidPlural: '%d items' }], [ecommerce]);
 
-    applyGlossary(db, project);
-    expect(unitFor(project, '%s item')).toMatchObject({
-      msgstr: '%s öge',
-      msgstrPlural: '%s öge',
+    applyGlossary(db, projectId);
+    expect(unitFor(projectId, '%d item')).toMatchObject({
+      msgstr: '%d ürün',
+      msgstrPlural: '%d ürün',
     });
   });
 
   it('matches nothing when the project has no tags', () => {
     addGlossaryEntry(ecommerce, 'Save', 'Kaydet');
-    const project = addProject([{ msgid: 'Save' }], []);
+    const projectId = addProject([{ msgid: 'Save' }], []);
 
-    expect(applyGlossary(db, project)).toEqual({ filled: 0, ambiguous: 0, unmatched: 1 });
+    expect(applyGlossary(db, projectId)).toEqual({ filled: 0, alternatives: 0, unmatched: 1 });
   });
 
   it('leaves already-settled units alone on a second run', () => {
     addGlossaryEntry(ecommerce, 'Save', 'Kaydet');
-    const project = addProject([{ msgid: 'Save' }], [ecommerce]);
+    const projectId = addProject([{ msgid: 'Save' }], [ecommerce]);
 
-    applyGlossary(db, project);
-    expect(applyGlossary(db, project)).toEqual({ filled: 0, ambiguous: 0, unmatched: 0 });
+    applyGlossary(db, projectId);
+    expect(applyGlossary(db, projectId)).toEqual({ filled: 0, alternatives: 0, unmatched: 0 });
   });
 });
+
+/** A trusted source at an explicit rank, so ordering tests say what they mean. */
+function rank(label: string, position: number): void {
+  db.prepare(
+    `INSERT INTO trusted_sources (translate_url, family, project_path, label, rank)
+     VALUES (?, 'plugin', ?, ?, ?)`,
+  ).run(label, label, label, position);
+}
+
+/** An entry backed by named trusted sources, created at the next free rank. */
+function vouched(tagId: number, msgid: string, translation: string, sources: string[]): void {
+  db.prepare(
+    `INSERT INTO glossary_entries
+       (source_hash, source_text, msgctxt, tag_id, translation, origin)
+     VALUES (?, ?, NULL, ?, ?, 'trusted')`,
+  ).run(sourceHash(msgid, undefined), msgid, tagId, translation);
+  const entryId = db.prepare(`SELECT max(id) AS id FROM glossary_entries`).get() as { id: number };
+
+  for (const label of sources) {
+    const existing = db.prepare(`SELECT id FROM trusted_sources WHERE label = ?`).get(label) as
+      | { id: number }
+      | undefined;
+    const sourceId =
+      existing?.id ??
+      Number(
+        db
+          .prepare(
+            `INSERT INTO trusted_sources (translate_url, family, project_path, label, rank)
+             VALUES (?, 'plugin', ?, ?, (SELECT count(*) + 1 FROM trusted_sources))`,
+          )
+          .run(label, label, label).lastInsertRowid,
+      );
+    db.prepare(
+      `INSERT INTO glossary_entry_sources (entry_id, trusted_source_id, translation, last_seen_sync_id)
+       VALUES (?, ?, ?, 1)`,
+    ).run(entryId.id, sourceId, translation);
+  }
+}

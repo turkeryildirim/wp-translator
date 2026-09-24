@@ -52,7 +52,7 @@ port. Panel development: `npm run dev:panel`, which proxies `/api` to the server
 
 A fresh database already carries 41 trusted sources and the Turkish style guide.
 Press **Güncelle** on the trusted-sources screen once to download the glossary:
-about 50 700 entries, a little over a minute.
+about 49 500 entries, half a minute.
 
 opencode needs one-time setup — a provider and a tool-free agent. See
 [`docs/setup.md`](docs/setup.md).
@@ -74,7 +74,7 @@ opencode needs one-time setup — a provider and a tool-free agent. See
 
 ## Design
 
-`docs/00-process.md` is the register: 43 numbered decisions and 29 constraints,
+`docs/00-process.md` is the register: 44 numbered decisions and 29 constraints,
 most of them measured rather than reasoned. A few that shaped the code:
 
 - **Matching is byte-exact.** Lowercasing would gain 253 matches across
@@ -82,9 +82,11 @@ most of them measured rather than reasoned. A few that shaped the code:
   translation — `Saved for Later` is `Sonraya Kaydet`, `Saved for later` is
   `Sonraya kaydedildi`. Normalising is a net loss, and nothing malformed exists
   for the checks to catch.
-- **`msgctxt` is carried but never read.** GlotPress matches an imported entry by
-  singular + plural + context, so an export that drops it loses those
-  translations. Classic Editor has 8 in 54 strings.
+- **A project's `msgctxt` is carried but never read.** GlotPress matches an
+  imported entry by singular + plural + context, so an export that drops it
+  loses those translations. Classic Editor has 8 in 54 strings. The *glossary*
+  is a different matter: context was part of its key until it was measured, and
+  over three real plugins it decided none of the 281 matches it could have.
 - **Several sources vouch for one entry.** WooCommerce and WordPress core share
   643; across all 41 sources, 5 511. A single owner column cannot express that,
   so sources link to entries and an entry goes only when the last link does.
@@ -94,7 +96,7 @@ most of them measured rather than reasoned. A few that shaped the code:
 ## Tests
 
 ```bash
-npm test            # 173 tests
+npm test            # 170 tests
 npm run typecheck   # tsc
 npx vue-tsc --noEmit -p tsconfig.json
 ```

@@ -206,8 +206,7 @@ function report(done: SyncProgress): void {
     notify('error', `Güncelleme bitti, ${done.errors.length} kaynak hata verdi.`);
     return;
   }
-  const merged = done.collapsed ? `, ${done.collapsed} yinelenen girdi birleştirildi` : '';
-  notify('ok', `Güncelleme bitti: ${syncedCount(done)} kaynak${merged}.`);
+  notify('ok', `Güncelleme bitti: ${syncedCount(done)} kaynak.`);
 }
 
 onMounted(load);
@@ -264,9 +263,7 @@ onUnmounted(() => {
     <p v-else-if="progress?.finishedAt" class="status">
       Güncelleme bitti: {{ syncedCount(progress) }} kaynak<span v-if="progress.glossaryTerms">
         + resmî sözlükten {{ progress.glossaryTerms }} terim</span
-      ><span v-if="progress.collapsed">
-        · {{ progress.collapsed }} yinelenen girdi birleştirildi</span
-      >.
+>.
       <span v-if="progress.errors.length" class="failure-inline">
         {{ progress.errors.length }} hata
       </span>

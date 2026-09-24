@@ -134,8 +134,6 @@ export interface SyncProgress {
   current: string | null;
   errors: { source: string; message: string }[];
   glossaryTerms: number | null;
-  /** Rows merged away because they differed only by context and agreed (R27). */
-  collapsed: number | null;
   /** True when only the picked sources ran, so the counts are partial. */
   partial: boolean;
   finishedAt: string | null;
@@ -153,6 +151,10 @@ export interface GlossaryEntry {
   origin: 'trusted' | 'owner';
   tag: string;
   sources: number;
+  /** Contexts this translation has been seen under; not part of its identity. */
+  contexts: number;
+  /** Translations this string has under this tag, including this one. */
+  readings: number;
 }
 
 export interface EntrySource {
@@ -186,9 +188,15 @@ export const syncProgress = () => json<SyncProgress>('/api/sources/sync');
 
 export const searchGlossary = (params: Record<string, string>) =>
   json<{ rows: GlossaryEntry[]; total: number }>(`/api/glossary?${new URLSearchParams(params)}`);
-export const entrySources = (id: number) => json<EntrySource[]>(`/api/glossary/${id}`);
+export interface EntryDetail {
+  sources: EntrySource[];
+  /** Where this translation has been seen. Informational only (D44). */
+  contexts: string[];
+}
+
+export const entryDetail = (id: number) => json<EntryDetail>(`/api/glossary/${id}`);
 export const updateEntry = (id: number, translation: string) =>
-  post<{ entry: GlossaryEntry; overwrittenOnNextSync: boolean }>(
+  post<{ entry: GlossaryEntry; sourceWordingReturns: boolean }>(
     `/api/glossary/${id}`,
     { translation },
     'Sözlük girdisi kaydedildi',
@@ -211,7 +219,7 @@ export interface MergePreview {
 export interface AddProjectResult {
   projectId: number;
   strings: number;
-  match: { filled: number; ambiguous: number; unmatched: number };
+  match: { filled: number; alternatives: number; unmatched: number };
   suggestedTags: string[];
 }
 

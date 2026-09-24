@@ -28,6 +28,12 @@ const lookup = (msgid: string) =>
     | { translation: string }
     | undefined;
 
+const translationsOf = (msgid: string): string[] =>
+  db
+    .prepare(`SELECT translation FROM glossary_entries WHERE source_text = ? ORDER BY id`)
+    .all(msgid)
+    .map((row) => (row as { translation: string }).translation);
+
 const countLinks = (msgid: string): number =>
   (
     db
@@ -63,9 +69,9 @@ describe('trusted-source sync', () => {
     expect(lookup('Untranslated')).toBeUndefined();
   });
 
-  it('keeps context-distinct entries apart', () => {
+  it('keeps distinct translations apart and records where each was seen', () => {
     // WordPress core translates "May" as the month and as its abbreviation.
-    // Keyed on the source alone these collapse and one arbitrary winner remains (R9).
+    // Two wordings are two entries; the contexts ride along as a note (D44).
     syncTrustedSource(
       db,
       coreId,
@@ -77,12 +83,18 @@ describe('trusted-source sync', () => {
     );
 
     const rows = db
-      .prepare(`SELECT msgctxt, translation FROM glossary_entries WHERE source_text = 'May'`)
-      .all() as { msgctxt: string | null; translation: string }[];
+      .prepare(
+        `SELECT g.translation,
+                (SELECT group_concat(msgctxt) FROM glossary_entry_contexts c
+                  WHERE c.entry_id = g.id) AS contexts
+           FROM glossary_entries g WHERE g.source_text = 'May' ORDER BY g.id`,
+      )
+      .all() as { translation: string; contexts: string | null }[];
 
-    expect(rows).toHaveLength(2);
-    expect(rows.find((r) => r.msgctxt === null)?.translation).toBe('Mayıs');
-    expect(rows.find((r) => r.msgctxt === 'May abbreviation')?.translation).toBe('May');
+    expect(rows).toEqual([
+      { translation: 'Mayıs', contexts: null },
+      { translation: 'May', contexts: 'May abbreviation' },
+    ]);
   });
 
   it('writes one row per project tag', () => {
@@ -126,29 +138,25 @@ describe('trusted-source sync', () => {
     expect(countLinks('Save')).toBe(1);
   });
 
-  it('resolves disagreement by rank, whatever the sync order', () => {
-    const forwards = () => {
-      syncTrustedSource(db, coreId, catalogue([{ msgid: 'Save', msgstr: 'Kaydet' }]), [tagId]);
-      syncTrustedSource(db, wooId, catalogue([{ msgid: 'Save', msgstr: 'Sakla' }]), [tagId]);
-    };
-    forwards();
-    expect(lookup('Save')?.translation).toBe('Kaydet');
-
-    db.exec('DELETE FROM glossary_entries');
-    syncTrustedSource(db, wooId, catalogue([{ msgid: 'Save', msgstr: 'Sakla' }]), [tagId]);
-    syncTrustedSource(db, coreId, catalogue([{ msgid: 'Save', msgstr: 'Kaydet' }]), [tagId]);
-
-    expect(lookup('Save')?.translation).toBe('Kaydet');
-  });
-
-  it('lets a majority outvote the highest-ranked source', () => {
-    const third = addSource('astra', 3);
+  it('stores both readings rather than choosing between them', () => {
+    // Choosing is matching's job, where the owner can see the alternatives and
+    // override them (D44). Storing a winner here hid the other reading and made
+    // the result depend on which source synced last.
     syncTrustedSource(db, coreId, catalogue([{ msgid: 'Save', msgstr: 'Kaydet' }]), [tagId]);
     syncTrustedSource(db, wooId, catalogue([{ msgid: 'Save', msgstr: 'Sakla' }]), [tagId]);
-    syncTrustedSource(db, third, catalogue([{ msgid: 'Save', msgstr: 'Sakla' }]), [tagId]);
 
-    expect(lookup('Save')?.translation).toBe('Sakla');
+    expect(translationsOf('Save')).toEqual(['Kaydet', 'Sakla']);
   });
+
+  it('records the same reading once however many sources carry it', () => {
+    syncTrustedSource(db, coreId, catalogue([{ msgid: 'Save', msgstr: 'Kaydet' }]), [tagId]);
+    syncTrustedSource(db, wooId, catalogue([{ msgid: 'Save', msgstr: 'Kaydet' }]), [tagId]);
+
+    expect(translationsOf('Save')).toEqual(['Kaydet']);
+    expect(countLinks('Save')).toBe(2);
+  });
+
+
 
   it('leaves an entry the owner approved even when no source carries it', () => {
     db.prepare(
