@@ -250,6 +250,15 @@ Export takes 534 ms for WooCommerce. The iOS row is the sharpest check on D24: e
 
 So the merge rule is **agreement, not similarity**: a group collapses to one context-less row only when every row gives the same translation and the same plural. Applied to the seeded glossary this removed **3 045 rows** while the distinct (entry, source) vouch set stayed at **58 002** — no source lost its claim on any string. Grouping runs over an indexed temp copy: the table's indexes lead with `tag_id` or `source_text`, and grouping by `(source_hash, tag_id)` directly measured **30 s against 0.23 s**.
 
+**R28 — a lookup with `OR` costs a thousand times one with two seeks.** The vouch lookup has to find either the row for this context or the agreeing context-less row it was merged into. Written as one statement with `OR`, it matched none of `idx_glossary_memory_key` and fell back to scanning `idx_glossary_tag` — which is every row in the glossary, because almost all of them carry one tag:
+
+| Form | per lookup | a WooCommerce sync |
+|---|---:|---:|
+| one statement with `OR` | 6.777 ms | 97 s |
+| two seeks joined by `coalesce` | 0.007 ms | 0.1 s |
+
+`better-sqlite3` is synchronous, so this does not show up as a slow sync: the HTTP server stops answering for the duration, and the panel cannot even fetch its own progress. The index is on `ifnull(msgctxt, '')`, so `msgctxt IS NULL` has to be spelled that way in the predicate or the seek is lost as well. `test/sync-plan.test.ts` asserts the plan, because nothing about the behaviour reveals it.
+
 ## 6. Open questions
 
 | # | Question | Phase |

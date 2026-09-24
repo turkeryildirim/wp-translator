@@ -82,7 +82,12 @@ export function syncTrustedSource(
   })();
 }
 
-function prepare(db: Db) {
+/**
+ * Exported for the query-plan test, which is the only guard against this
+ * module's statements quietly losing their index — the failure is invisible in
+ * behaviour and only shows up as the server ceasing to answer.
+ */
+export function prepare(db: Db) {
   return {
     beginRun: db.prepare(`INSERT INTO sync_runs (trusted_source_id) VALUES (?)`),
 
@@ -114,8 +119,8 @@ function prepare(db: Db) {
        SELECT @hash, @text, @plural, @msgctxt, @tagId, @translation, @translationPlural, 'trusted'
         WHERE NOT EXISTS (
               SELECT 1 FROM glossary_entries
-               WHERE source_hash = @hash AND tag_id = @tagId AND pos IS NULL
-                 AND msgctxt IS NULL
+               WHERE source_hash = @hash AND ifnull(msgctxt, '') = '' AND tag_id = @tagId
+                 AND pos IS NULL
                  AND translation = @translation
                  AND ifnull(translation_plural, '') = ifnull(@translationPlural, ''))
        ON CONFLICT (source_hash, ifnull(msgctxt, ''), tag_id) WHERE pos IS NULL DO NOTHING`,
@@ -125,17 +130,29 @@ function prepare(db: Db) {
     // one exists, otherwise the agreeing context-less row it was merged into.
     // Without the second case the vouch would find nothing, the merged row
     // would look unsupported, and the sweep would delete it.
+    //
+    // Two seeks joined by coalesce, never one lookup with `OR`. Both arms match
+    // `idx_glossary_memory_key` on all three of its columns; the `OR` form
+    // matched none of it and fell back to scanning `idx_glossary_tag`, which is
+    // every row in the glossary because almost all of them share one tag. At
+    // 50 000 rows a scan per string, a WooCommerce sync stopped answering
+    // altogether — better-sqlite3 is synchronous, so it takes the server with
+    // it. The index wants `ifnull(msgctxt, '')`, so `msgctxt IS NULL` has to be
+    // written that way here even though it reads worse.
     linkSource: db.prepare(
       `INSERT INTO glossary_entry_sources (entry_id, trusted_source_id, translation, last_seen_sync_id)
-       SELECT id, @trustedSourceId, @translation, @syncRunId
-         FROM glossary_entries
-        WHERE source_hash = @hash AND pos IS NULL AND tag_id = @tagId
-          AND (ifnull(msgctxt, '') = ifnull(@msgctxt, '')
-               OR (msgctxt IS NULL
-                   AND translation = @translation
-                   AND ifnull(translation_plural, '') = ifnull(@translationPlural, '')))
-        ORDER BY (msgctxt IS NOT NULL) DESC
-        LIMIT 1
+       SELECT entry_id, @trustedSourceId, @translation, @syncRunId
+         FROM (SELECT coalesce(
+                 (SELECT id FROM glossary_entries
+                   WHERE source_hash = @hash AND ifnull(msgctxt, '') = ifnull(@msgctxt, '')
+                     AND tag_id = @tagId AND pos IS NULL),
+                 (SELECT id FROM glossary_entries
+                   WHERE source_hash = @hash AND ifnull(msgctxt, '') = '' AND tag_id = @tagId
+                     AND pos IS NULL
+                     AND translation = @translation
+                     AND ifnull(translation_plural, '') = ifnull(@translationPlural, ''))
+               ) AS entry_id)
+        WHERE entry_id IS NOT NULL
        ON CONFLICT (entry_id, trusted_source_id) DO UPDATE SET
          translation = excluded.translation,
          last_seen_sync_id = excluded.last_seen_sync_id`,

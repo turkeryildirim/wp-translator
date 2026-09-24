@@ -104,6 +104,13 @@ why, and include the measurement if one drove it.
   contextful rows, the merged row loses its vouches, the sweep deletes it, and
   every unit filled from it loses its provenance — measured, the survivor's id
   changed on the second update. `test/sync-cycle.test.ts` is the guard.
+- **A scan in `sync.ts` hangs the whole server, it does not merely slow it.**
+  `better-sqlite3` is synchronous, so a statement that loses its index blocks
+  the HTTP loop — the panel cannot even poll its own progress. An `OR` across
+  two different index lookups is the way to lose it; write two seeks joined by
+  `coalesce` instead, and spell `msgctxt IS NULL` as `ifnull(msgctxt, '') = ''`
+  because that is what `idx_glossary_memory_key` is built on. Measured 6.777 ms
+  against 0.007 ms per lookup (R28). `test/sync-plan.test.ts` asserts the plan.
 - **SQLite `NOCASE` folds ASCII only.** `içerik` and `İÇERİK` compare unequal, so
   tag names are folded in the application with Turkish rules.
 - **The style guide is seeded once**, from `style-guide/tr-genel.md`, on a
