@@ -20,6 +20,11 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 *.db
+# WAL and shared-memory files belong to an open database, not to the repository:
+# the 14 MB -wal was tracked while the database itself was ignored.
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite.bak-*
 
 # Dependencies & build output — refined once ADR-0001 settles the stack
 /vendor/
