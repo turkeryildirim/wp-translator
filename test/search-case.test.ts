@@ -15,10 +15,16 @@ const add = (source: string, translation: string): void => {
   ).run(sourceHash(source, undefined), source, tagId, translation);
 };
 
-const found = (search: string, caseSensitive?: boolean): string[] =>
-  searchGlossary(db, { search, ...(caseSensitive ? { caseSensitive } : {}) }).rows.map(
-    (row) => row.sourceText,
-  );
+const found = (
+  search: string,
+  caseSensitive?: boolean,
+  scope?: 'source' | 'translation',
+): string[] =>
+  searchGlossary(db, {
+    search,
+    ...(caseSensitive ? { caseSensitive } : {}),
+    ...(scope ? { scope } : {}),
+  }).rows.map((row) => row.sourceText);
 
 beforeEach(() => {
   db = openDb(':memory:');
@@ -70,6 +76,39 @@ describe('folding a search', () => {
   it('searches the translation as well as the source', () => {
     add('Update', 'GÜNCELLE');
     expect(found('güncelle')).toEqual(['Update']);
+  });
+});
+
+describe('narrowing a search to one column', () => {
+  beforeEach(() => {
+    // `Save` is also a Turkish word fragment and appears in translations that
+    // are not about saving; the source column alone is how you get past that.
+    add('Save', 'Kaydet');
+    add('Saved', 'Kaydedildi');
+    add('Keep', 'Save et');
+  });
+
+  it('searches both columns by default', () => {
+    expect(found('save').sort()).toEqual(['Keep', 'Save', 'Saved']);
+  });
+
+  it('looks only in the source when asked', () => {
+    expect(found('save', false, 'source').sort()).toEqual(['Save', 'Saved']);
+  });
+
+  it('looks only in the translation when asked', () => {
+    expect(found('save', false, 'translation')).toEqual(['Keep']);
+  });
+
+  it('narrows and folds at the same time', () => {
+    add('Content', 'İÇERİK');
+    expect(found('içerik', false, 'translation')).toEqual(['Content']);
+    expect(found('içerik', false, 'source')).toEqual([]);
+  });
+
+  it('narrows and matches case at the same time', () => {
+    expect(found('save', true, 'source')).toEqual([]);
+    expect(found('Save', true, 'source').sort()).toEqual(['Save', 'Saved']);
   });
 });
 

@@ -28,6 +28,8 @@ export interface GlossaryQuery {
   contested?: boolean;
   /** Match the query's casing exactly. Off by default. */
   caseSensitive?: boolean;
+  /** Which column to search. Both, unless narrowed. */
+  scope?: 'source' | 'translation';
   limit?: number;
   offset?: number;
 }
@@ -58,8 +60,9 @@ export function searchGlossary(db: Db, query: GlossaryQuery = {}): GlossaryPage 
   if (query.search) {
     // `instr` over a folded copy rather than `LIKE`: SQLite's folding is ASCII
     // only, so `İÇERİK` did not match `içerik` while `SAVE` matched `save`.
-    where.push(match('g.source_text', 'g.translation', query.caseSensitive));
-    params.push(query.search, query.search);
+    const columns = searchColumns('g.source_text', 'g.translation', query.scope);
+    where.push(match(columns, query.caseSensitive));
+    for (const _ of columns) params.push(query.search);
   }
   if (query.tagId !== undefined) {
     where.push('g.tag_id = ?');
@@ -111,17 +114,27 @@ export function searchGlossary(db: Db, query: GlossaryQuery = {}): GlossaryPage 
   return { rows, total };
 }
 
+/** The columns a query looks in. Narrowing is the point: `Save` appears in
+ *  hundreds of translations that are not about saving anything. */
+export const searchColumns = (
+  source: string,
+  translation: string,
+  scope?: 'source' | 'translation',
+): string[] =>
+  scope === 'source' ? [source] : scope === 'translation' ? [translation] : [source, translation];
+
 /**
- * A two-column substring test, case-folded unless the owner asked otherwise.
+ * A substring test over those columns, case-folded unless the owner asked
+ * otherwise.
  *
  * Sensitive search is plain `instr`, which compares bytes — that is exactly
  * what "exactly as I typed it" means, and it is the only way to find `Save`
  * without also finding `save`.
  */
-const match = (left: string, right: string, sensitive?: boolean): string =>
-  sensitive
-    ? `(instr(${left}, ?) > 0 OR instr(${right}, ?) > 0)`
-    : `(instr(fold(${left}), fold(?)) > 0 OR instr(fold(${right}), fold(?)) > 0)`;
+export const match = (columns: readonly string[], sensitive?: boolean): string =>
+  `(${columns
+    .map((column) => (sensitive ? `instr(${column}, ?) > 0` : `instr(fold(${column}), fold(?)) > 0`))
+    .join(' OR ')})`;
 
 export interface EntrySource {
   label: string | null;

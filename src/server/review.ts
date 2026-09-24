@@ -1,4 +1,5 @@
 import type { Db } from '../db/open.ts';
+import { match, searchColumns } from './glossary.ts';
 import { collectTerms, type Term } from '../glossary/terminology.ts';
 import { checkTranslation, type CheckFailure } from '../quality/check.ts';
 
@@ -36,6 +37,8 @@ export interface UnitFilter {
   search?: string;
   /** Match the query's casing exactly. Off by default. */
   caseSensitive?: boolean;
+  /** Which column to search. Both, unless narrowed. */
+  scope?: 'source' | 'translation';
   limit?: number;
   offset?: number;
 }
@@ -85,12 +88,9 @@ export function listUnits(db: Db, projectId: number, filter: UnitFilter = {}): U
   if (filter.search) {
     // Folded in the application: SQLite's own folding stops at ASCII, so a
     // Turkish query missed every capitalised translation (R31).
-    where.push(
-      filter.caseSensitive
-        ? `(instr(u.msgid, ?) > 0 OR instr(ifnull(u.msgstr, ''), ?) > 0)`
-        : `(instr(fold(u.msgid), fold(?)) > 0 OR instr(fold(ifnull(u.msgstr, '')), fold(?)) > 0)`,
-    );
-    params.push(filter.search, filter.search);
+    const columns = searchColumns('u.msgid', `ifnull(u.msgstr, '')`, filter.scope);
+    where.push(match(columns, filter.caseSensitive));
+    for (const _ of columns) params.push(filter.search);
   }
 
   const rows = db

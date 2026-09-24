@@ -23,6 +23,7 @@ const tagId = ref('');
 const kind = ref<'' | 'memory' | 'term'>('');
 const contested = ref(false);
 const caseSensitive = ref(false);
+const scope = ref<'' | 'source' | 'translation'>('');
 const page = ref(0);
 const loading = ref(false);
 
@@ -55,6 +56,7 @@ async function load(): Promise<void> {
     if (kind.value) params.kind = kind.value;
     if (contested.value) params.contested = '1';
     if (caseSensitive.value) params.case = '1';
+    if (scope.value) params.in = scope.value;
 
     const result = await searchGlossary(params);
     if (mine !== ticket) return;
@@ -161,6 +163,11 @@ watch(page, load);
         <input v-model="caseSensitive" type="checkbox" @change="applyFilters" />
         Harf duyarlı
       </label>
+      <select v-model="scope" aria-label="Nerede aransın" @change="applyFilters">
+        <option value="">Kaynak + çeviri</option>
+        <option value="source">Yalnızca kaynak</option>
+        <option value="translation">Yalnızca çeviri</option>
+      </select>
       <button @click="applyFilters">Ara</button>
     </div>
 

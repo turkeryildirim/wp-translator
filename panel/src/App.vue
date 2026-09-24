@@ -26,6 +26,7 @@ const units = ref<Unit[]>([]);
 const filter = ref<'review' | 'blocked' | 'ambiguous' | 'all'>('review');
 const search = ref('');
 const caseSensitive = ref(false);
+const scope = ref<'' | 'source' | 'translation'>('');
 const loading = ref(false);
 const translating = ref<TranslateProgress | null>(null);
 let translatePoll: ReturnType<typeof setInterval> | null = null;
@@ -69,6 +70,7 @@ async function load(): Promise<void> {
     if (filter.value === 'ambiguous') params.ambiguous = '1';
     if (search.value) params.q = search.value;
     if (caseSensitive.value) params.case = '1';
+    if (scope.value) params.in = scope.value;
     units.value = await listUnits(selected.value, params);
   } finally {
     loading.value = false;
@@ -150,6 +152,11 @@ watch([selected, filter], load);
       </nav>
 
       <input v-model="search" placeholder="Ara…" @keyup.enter="load" />
+      <select v-model="scope" aria-label="Nerede aransın" @change="load">
+        <option value="">Kaynak + çeviri</option>
+        <option value="source">Yalnızca kaynak</option>
+        <option value="translation">Yalnızca çeviri</option>
+      </select>
       <label class="check" title="Kapalıyken İ/ı/I/i aynı sayılır ve büyük-küçük harf gözetilmez">
         <input v-model="caseSensitive" type="checkbox" @change="load" />
         Harf duyarlı
