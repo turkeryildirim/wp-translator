@@ -93,6 +93,13 @@ why, and include the measurement if one drove it.
   `pos IS NOT NULL` and keys on the translation too, because the official
   glossary offers alternatives under one part of speech. They have separate
   partial unique indexes. Matching uses memory rows only.
+- **Nothing in a project writes to the glossary.** Not an approval, not an edit,
+  not the model's output (D23). Three things write to `glossary_entries`:
+  `src/glossary/sync.ts`, `src/glossary/officialGlossary.ts`, and `updateEntry`
+  when the owner edits an entry that is already there. A match from the glossary
+  is placed without review precisely because a human approved it upstream; a
+  project's own output has not been through that. `test/glossary-writers.test.ts`
+  asserts it.
 - **A glossary entry is a source *and a translation*.** `msgctxt` is not part of
   the key and matching never reads it; it lives in `glossary_entry_contexts` as
   a note. Two wordings of one string are two rows, and matching ranks them
