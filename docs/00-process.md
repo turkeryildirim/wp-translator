@@ -283,6 +283,12 @@ Measured over 20 000 rows, both faults are needed for the disaster:
 
 Fixed as both: the page's ids are chosen in a CTE and only those rows are decorated, and `idx_glossary_source (source_hash, tag_id)` gives the sibling count a seek. Against the real glossary, offset 5 000 went from 40 588 ms to 10 ms.
 
+**R31 — SQLite's folding fails on exactly the half that matters.** `LIKE` and `NOCASE` fold ASCII only, so the search box found `save` from `SAVE` and found nothing at all for `İÇERİK` from `içerik`. The glossary is English sources and Turkish translations searched from one box, so the failing half was the Turkish one — measured against the seeded glossary, `içerik` and `İÇERİK` now both return 496 rows where the second returned a fraction.
+
+Folding is done in the application and registered as a SQLite function. The four i-forms collapse together — `I`, `ı`, `İ` and `i` all become `i` — rather than following Turkish casing, which would send `I` to `ı` and stop `item` finding `ITEM` in the English column. The distinction that costs is one nobody types a query to make. `İ` is replaced before lowercasing, because `'İ'.toLowerCase()` is `i` plus a combining dot and matches nothing.
+
+Substring search already scans, so the callback costs the same order: 140 ms folded against 25 ms for the byte comparison, over 49 500 rows and two columns. Exact-case search is plain `instr`, which is the only way to find `Save` without also finding `save`.
+
 ## 6. Open questions
 
 | # | Question | Phase |

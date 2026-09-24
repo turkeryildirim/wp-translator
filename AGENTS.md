@@ -113,8 +113,11 @@ why, and include the measurement if one drove it.
   `coalesce` instead, and spell `msgctxt IS NULL` as `ifnull(msgctxt, '') = ''`
   because that is what `idx_glossary_memory_key` is built on. Measured 6.777 ms
   against 0.007 ms per lookup (R28). `test/sync-plan.test.ts` asserts the plan.
-- **SQLite `NOCASE` folds ASCII only.** `içerik` and `İÇERİK` compare unequal, so
-  tag names are folded in the application with Turkish rules.
+- **SQLite `NOCASE` and `LIKE` fold ASCII only.** `içerik` and `İÇERİK` compare
+  unequal, so tag names and both search boxes fold in the application instead —
+  `src/db/fold.ts`, registered as the SQLite function `fold` in `openDb`. It
+  collapses all four i-forms rather than applying Turkish casing, because the
+  source column is English and `item` has to find `ITEM` (R31).
 - **The style guide is seeded once**, from `style-guide/tr-genel.md`, on a
   database's first open. Editing the file does not reach existing databases —
   `npm run style-guide:sync` does that, and refuses when the stored text looks

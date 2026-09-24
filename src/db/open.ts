@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { fold } from './fold.ts';
 import { latestVersion, migrations } from './migrations.ts';
 
 export type Db = Database.Database;
@@ -14,6 +15,13 @@ export function openDb(path: string): Db {
 
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+
+  // Searching folds in the application, because SQLite's own folding stops at
+  // ASCII. Both search paths already scan, so a callback per row costs the
+  // same order as the `LIKE` it replaces.
+  db.function('fold', { deterministic: true }, (value: unknown) =>
+    typeof value === 'string' ? fold(value) : value === null ? null : String(value),
+  );
 
   const current = db.pragma('user_version', { simple: true }) as number;
 

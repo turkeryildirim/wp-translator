@@ -22,6 +22,7 @@ const search = ref('');
 const tagId = ref('');
 const kind = ref<'' | 'memory' | 'term'>('');
 const contested = ref(false);
+const caseSensitive = ref(false);
 const page = ref(0);
 const loading = ref(false);
 
@@ -53,6 +54,7 @@ async function load(): Promise<void> {
     if (tagId.value) params.tag = tagId.value;
     if (kind.value) params.kind = kind.value;
     if (contested.value) params.contested = '1';
+    if (caseSensitive.value) params.case = '1';
 
     const result = await searchGlossary(params);
     if (mine !== ticket) return;
@@ -154,6 +156,10 @@ watch(page, load);
       <label class="check">
         <input v-model="contested" type="checkbox" @change="applyFilters" />
         Kaynaklar çelişiyor
+      </label>
+      <label class="check" title="Kapalıyken İ/ı/I/i aynı sayılır ve büyük-küçük harf gözetilmez">
+        <input v-model="caseSensitive" type="checkbox" @change="applyFilters" />
+        Harf duyarlı
       </label>
       <button @click="applyFilters">Ara</button>
     </div>

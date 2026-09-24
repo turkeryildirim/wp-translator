@@ -285,6 +285,7 @@ function readFilter(url: URL): UnitFilter {
 
   const search = url.searchParams.get('q');
   if (search) filter.search = search;
+  if (url.searchParams.get('case') === '1') filter.caseSensitive = true;
 
   const limit = Number(url.searchParams.get('limit'));
   if (Number.isFinite(limit) && limit > 0) filter.limit = limit;
@@ -296,6 +297,7 @@ function readGlossaryQuery(url: URL): GlossaryQuery {
   const query: GlossaryQuery = {};
   const search = url.searchParams.get('q');
   if (search) query.search = search;
+  if (url.searchParams.get('case') === '1') query.caseSensitive = true;
 
   const tagId = Number(url.searchParams.get('tag'));
   if (Number.isFinite(tagId) && tagId > 0) query.tagId = tagId;

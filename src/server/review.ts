@@ -34,6 +34,8 @@ export interface UnitFilter {
   /** Only units waiting on a candidate choice. */
   ambiguous?: boolean;
   search?: string;
+  /** Match the query's casing exactly. Off by default. */
+  caseSensitive?: boolean;
   limit?: number;
   offset?: number;
 }
@@ -81,8 +83,14 @@ export function listUnits(db: Db, projectId: number, filter: UnitFilter = {}): U
     params.push(filter.state);
   }
   if (filter.search) {
-    where.push('(u.msgid LIKE ? OR ifnull(u.msgstr, \'\') LIKE ?)');
-    params.push(`%${filter.search}%`, `%${filter.search}%`);
+    // Folded in the application: SQLite's own folding stops at ASCII, so a
+    // Turkish query missed every capitalised translation (R31).
+    where.push(
+      filter.caseSensitive
+        ? `(instr(u.msgid, ?) > 0 OR instr(ifnull(u.msgstr, ''), ?) > 0)`
+        : `(instr(fold(u.msgid), fold(?)) > 0 OR instr(fold(ifnull(u.msgstr, '')), fold(?)) > 0)`,
+    );
+    params.push(filter.search, filter.search);
   }
 
   const rows = db
