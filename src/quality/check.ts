@@ -32,8 +32,20 @@ export interface CheckFailure {
 const PRINTF = /%(?:\d+\$)?(?:ll|l|z|h)?[@sdifuxXgGc]|%%/g;
 /** `{count}`, `%(name)s` — common in JavaScript-side and Python-influenced strings. */
 const BRACE = /\{[a-zA-Z_][\w.]*\}|%\([a-zA-Z_]\w*\)[sdf]/g;
-/** Opening, closing and self-closing tags, compared by name and attributes. */
+/** Opening, closing and self-closing tags. */
 const HTML_TAG = /<\/?[a-zA-Z][^<>]*>/g;
+
+/**
+ * Attributes whose *value* is text the reader sees, so translating it is correct.
+ *
+ * Comparing these by value reports every properly translated tooltip as damage.
+ * Their presence is still compared: dropping the attribute is a real loss, and
+ * `href` and the rest are compared in full because a placeholder inside one must
+ * survive exactly.
+ */
+const TRANSLATABLE_ATTRIBUTES = new Set(['title', 'alt', 'aria-label', 'placeholder']);
+
+const ATTRIBUTE = /([a-zA-Z_:][-\w:.]*)\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+)/g;
 
 /**
  * Check a translation against its source.
@@ -85,12 +97,29 @@ function comparePlaceholders(
 }
 
 function compareTags(source: string, translation: string, failures: CheckFailure[]): void {
-  const inSource = countMatches(source, HTML_TAG);
-  const inTranslation = countMatches(translation, HTML_TAG);
+  const inSource = countTags(source);
+  const inTranslation = countTags(translation);
   const differences = describeDifferences(inSource, inTranslation);
   if (differences.length === 0) return;
 
   failures.push({ rule: 'html-tags', message: `HTML differs: ${differences.join('; ')}.` });
+}
+
+/** Tags keyed by name and attributes, with translatable attribute values blanked. */
+function countTags(text: string): Map<string, number> {
+  const counts = new Map<string, number>();
+
+  for (const [tag] of text.matchAll(new RegExp(HTML_TAG.source, HTML_TAG.flags))) {
+    const key = normaliseTag(tag);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function normaliseTag(tag: string): string {
+  return tag.replace(new RegExp(ATTRIBUTE.source, ATTRIBUTE.flags), (whole, name: string) =>
+    TRANSLATABLE_ATTRIBUTES.has(name.toLowerCase()) ? `${name}="…"` : whole,
+  );
 }
 
 function compareEdgeWhitespace(

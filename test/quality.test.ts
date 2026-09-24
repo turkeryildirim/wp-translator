@@ -76,6 +76,41 @@ describe('quality checks', () => {
     ).toEqual(['html-tags']);
   });
 
+  it('accepts a translated title, because a tooltip is text the reader sees', () => {
+    // Real WooCommerce string. Comparing title by value reported every properly
+    // translated tooltip as damage.
+    const source =
+      'by <a href="%1$s" title="Sharing Docs">sharing</a> or ' +
+      '<a href="%2$s" title="Transferring Docs">transferring</a>';
+    const translation =
+      '<a href="%1$s" title="Dokümanları Paylaşma">paylaşarak</a> veya ' +
+      '<a href="%2$s" title="Dokümanları Aktarma">aktararak</a>';
+
+    expect(rules({ msgid: source, msgstr: translation })).toEqual([]);
+  });
+
+  it('accepts a translated alt, aria-label and placeholder too', () => {
+    expect(
+      rules({
+        msgid: '<img alt="A cat"><input aria-label="Search" placeholder="Type here">',
+        msgstr: '<img alt="Bir kedi"><input aria-label="Ara" placeholder="Buraya yazın">',
+      }),
+    ).toEqual([]);
+  });
+
+  it('still catches a changed href, since a placeholder inside it must survive', () => {
+    expect(
+      rules({ msgid: '<a href="%1$s" title="A">x</a>', msgstr: '<a href="%2$s" title="B">y</a>' }),
+    ).toContain('html-tags');
+  });
+
+  it('still catches a dropped title', () => {
+    // Translating the tooltip is right; losing it is not.
+    expect(
+      rules({ msgid: '<a href="#" title="Help">x</a>', msgstr: '<a href="#">y</a>' }),
+    ).toEqual(['html-tags']);
+  });
+
   it('catches an unclosed tag', () => {
     expect(rules({ msgid: '<strong>Warning</strong>', msgstr: '<strong>Uyarı' })).toEqual([
       'html-tags',
