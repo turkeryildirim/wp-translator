@@ -52,7 +52,7 @@ port. Panel development: `npm run dev:panel`, which proxies `/api` to the server
 
 A fresh database already carries 41 trusted sources and the Turkish style guide.
 Press **Güncelle** on the trusted-sources screen once to download the glossary:
-about 54 000 entries, a little over a minute.
+about 50 700 entries, a little over a minute.
 
 opencode needs one-time setup — a provider and a tool-free agent. See
 [`docs/setup.md`](docs/setup.md).
@@ -94,7 +94,7 @@ most of them measured rather than reasoned. A few that shaped the code:
 ## Tests
 
 ```bash
-npm test            # 154 tests
+npm test            # 167 tests
 npm run typecheck   # tsc
 npx vue-tsc --noEmit -p tsconfig.json
 ```

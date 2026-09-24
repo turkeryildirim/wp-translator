@@ -16,6 +16,14 @@ export interface SyncResult {
  * and anything the source no longer carries is dropped. Nothing asks for
  * confirmation.
  *
+ * Rows that differ only by context and agree on the translation are merged into
+ * one context-less row (R27, `collapse.ts`). That merge has to hold across
+ * updates, so this import is aware of it: a context whose translation the
+ * context-less row already gives is not re-created, and its vouch goes to that
+ * row. Otherwise every update would rebuild the contextful rows, strip the
+ * merged row of its support, and sweep it away with the provenance of every
+ * unit filled from it.
+ *
  * The drop removes this source's *link*, not the entry. Several trusted sources
  * carry the same string — `Save` and `Cancel` are in core and in most plugins,
  * and WooCommerce alone shares 643 entries with core — so an entry survives
@@ -57,6 +65,7 @@ export function syncTrustedSource(
           tagId,
           trustedSourceId,
           translation,
+          translationPlural: unit.msgstrPlural ?? null,
           syncRunId,
         });
         entriesSeen += 1;
@@ -87,22 +96,46 @@ function prepare(db: Db) {
        WHERE id = ?`,
     ),
 
-    // The entry itself carries no translation yet — resolveTranslations decides it
-    // from the links, so that the result does not depend on which source synced last.
+    // The entry itself carries no translation yet — resolveTranslations decides
+    // it from the links, so the result does not depend on which source synced
+    // last.
+    //
+    // A context this source carries may already be answered by a context-less
+    // row that an earlier merge left behind (R27). Re-creating it would undo
+    // that merge on every update: the merged row would lose its vouches to the
+    // new rows, the sweep would delete it, and every unit filled from it would
+    // lose its provenance. So a source that agrees with the context-less row
+    // adds nothing; one that disagrees still gets its own contextful row, and
+    // the merge then leaves the pair alone.
     insertEntry: db.prepare(
       `INSERT INTO glossary_entries
          (source_hash, source_text, source_plural, msgctxt, tag_id,
           translation, translation_plural, origin)
-       VALUES (@hash, @text, @plural, @msgctxt, @tagId, @translation, @translationPlural, 'trusted')
+       SELECT @hash, @text, @plural, @msgctxt, @tagId, @translation, @translationPlural, 'trusted'
+        WHERE NOT EXISTS (
+              SELECT 1 FROM glossary_entries
+               WHERE source_hash = @hash AND tag_id = @tagId AND pos IS NULL
+                 AND msgctxt IS NULL
+                 AND translation = @translation
+                 AND ifnull(translation_plural, '') = ifnull(@translationPlural, ''))
        ON CONFLICT (source_hash, ifnull(msgctxt, ''), tag_id) WHERE pos IS NULL DO NOTHING`,
     ),
 
+    // Vouches for the row the entry actually landed on: its own context when
+    // one exists, otherwise the agreeing context-less row it was merged into.
+    // Without the second case the vouch would find nothing, the merged row
+    // would look unsupported, and the sweep would delete it.
     linkSource: db.prepare(
       `INSERT INTO glossary_entry_sources (entry_id, trusted_source_id, translation, last_seen_sync_id)
        SELECT id, @trustedSourceId, @translation, @syncRunId
          FROM glossary_entries
-        WHERE source_hash = @hash AND ifnull(msgctxt, '') = ifnull(@msgctxt, '')
-          AND pos IS NULL AND tag_id = @tagId
+        WHERE source_hash = @hash AND pos IS NULL AND tag_id = @tagId
+          AND (ifnull(msgctxt, '') = ifnull(@msgctxt, '')
+               OR (msgctxt IS NULL
+                   AND translation = @translation
+                   AND ifnull(translation_plural, '') = ifnull(@translationPlural, '')))
+        ORDER BY (msgctxt IS NOT NULL) DESC
+        LIMIT 1
        ON CONFLICT (entry_id, trusted_source_id) DO UPDATE SET
          translation = excluded.translation,
          last_seen_sync_id = excluded.last_seen_sync_id`,

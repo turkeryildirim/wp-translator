@@ -98,6 +98,12 @@ why, and include the measurement if one drove it.
   translation *and* plural, because `Cancel` really is three different words by
   context (R27). `src/glossary/collapse.ts` holds the SQL, and both migration 7
   and the end of every sync run it, so the two cannot drift.
+- **The merge only holds because the import knows about it.** `insertEntry` and
+  `linkSource` in `src/glossary/sync.ts` both treat an agreeing context-less row
+  as the answer for a context. Drop that and each update re-creates the
+  contextful rows, the merged row loses its vouches, the sweep deletes it, and
+  every unit filled from it loses its provenance — measured, the survivor's id
+  changed on the second update. `test/sync-cycle.test.ts` is the guard.
 - **SQLite `NOCASE` folds ASCII only.** `içerik` and `İÇERİK` compare unequal, so
   tag names are folded in the application with Turkish rules.
 - **The style guide is seeded once**, from `style-guide/tr-genel.md`, on a
