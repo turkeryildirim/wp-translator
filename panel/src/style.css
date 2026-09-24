@@ -143,7 +143,7 @@ h4 { margin: 12px 0 4px; font-size: 12px; color: var(--muted); }
 .glossary .split { display: grid; grid-template-columns: 1fr 300px; gap: 12px;
   align-items: start; min-height: 0; }
 .glossary .detail { border: 1px solid var(--line); border-radius: 6px; padding: 10px;
-  position: sticky; top: 0; }
+  position: sticky; top: 0; max-height: var(--dock-max, 100dvh); overflow: auto; }
 .glossary .detail h3 { margin: 0 0 6px; font-size: 14px; }
 .glossary .detail label { display: block; color: var(--muted); margin: 8px 0 4px; }
 .glossary .detail input { width: 100%; font: inherit; padding: 4px 6px;
@@ -205,3 +205,20 @@ tr.dropinto td { box-shadow: inset 0 2px 0 currentColor; }
 .tagmenu button:hover { background: var(--active); }
 .tagmenu em { color: var(--muted); padding: 3px 8px; font-style: normal; }
 .grid tfoot td { border-top: 2px solid var(--line); padding: 6px 8px; }
+
+/* Writes report here. Bottom-end rather than top: the top of every screen is a
+   toolbar the owner is aiming at, and a message that lands under the cursor
+   gets clicked away before it is read. */
+.toasts { position: fixed; inset-block-end: 12px; inset-inline-end: 12px; z-index: 50;
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
+  max-width: min(420px, calc(100vw - 24px)); pointer-events: none; }
+.toast { pointer-events: auto; display: flex; gap: 10px; align-items: baseline;
+  margin: 0; padding: 7px 10px; border: 1px solid var(--control-line); border-radius: 6px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / .35); }
+.toast.ok { background: var(--settled);
+  --muted: color-mix(in oklab, var(--color-text) 60%, var(--settled)); }
+.toast.error { background: var(--blocked);
+  --muted: color-mix(in oklab, var(--color-text) 60%, var(--blocked)); }
+.toast button { font: inherit; line-height: 1; padding: 0 4px; border: none;
+  border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
+.toast button:hover { color: inherit; }

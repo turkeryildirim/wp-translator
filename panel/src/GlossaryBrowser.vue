@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   entrySources,
   listTags,
@@ -72,6 +72,31 @@ function applyFilters(): void {
   void load();
 }
 
+const screenEl = ref<HTMLElement | null>(null);
+/**
+ * How tall the pinned detail panel is allowed to get.
+ *
+ * It is sticky, and a sticky box taller than what it is pinned inside has an
+ * unreachable bottom — the Kaydet button disappeared below the window once an
+ * entry had enough vouchers. The scrollport here is `.screen`, whose top is
+ * fixed by the layout, so the room below it is what the panel may use.
+ */
+const dockMax = ref('100dvh');
+
+function measureDock(): void {
+  const el = screenEl.value;
+  if (!el) return;
+  const styles = getComputedStyle(el);
+  const spare = el.getBoundingClientRect().top + parseFloat(styles.paddingBottom || '0');
+  dockMax.value = `calc(100dvh - ${Math.round(spare)}px)`;
+}
+
+onMounted(() => {
+  measureDock();
+  window.addEventListener('resize', measureDock);
+});
+onUnmounted(() => window.removeEventListener('resize', measureDock));
+
 onMounted(async () => {
   tags.value = await listTags();
   await load();
@@ -81,7 +106,7 @@ watch(page, load);
 </script>
 
 <template>
-  <section class="screen glossary">
+  <section ref="screenEl" class="screen glossary" :style="{ '--dock-max': dockMax }">
     <div class="toolbar">
       <input v-model="search" class="grow" placeholder="Kaynak ya da çeviride ara…" @keyup.enter="applyFilters" />
       <select v-model="tagId" @change="applyFilters">
