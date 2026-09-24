@@ -128,6 +128,10 @@ describe('the prompt', () => {
     expect(prompt).toMatch(/Özniteliği silme/);
   });
 
+  it('tells the model it may reorder placeholders and tags', () => {
+    expect(buildPrompt({ styleGuide: '', terms: [] })).toMatch(/SIRASI değişebilir/);
+  });
+
   it('always states the output contract', () => {
     const prompt = buildPrompt({ styleGuide: '', terms: [] });
 

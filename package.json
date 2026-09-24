@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "dev:panel": "vite",
     "build:panel": "vite build",
-    "serve": "node --experimental-strip-types src/cli/serve.ts"
+    "serve": "node --experimental-strip-types src/cli/serve.ts",
+    "style-guide:sync": "node --experimental-strip-types src/cli/sync-style-guide.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.6.0",

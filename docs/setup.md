@@ -78,3 +78,17 @@ npm run serve          # http://127.0.0.1:4173
 ```
 
 `WPT_DB` sets the database path, `WPT_PORT` the port.
+
+## Updating the style guide in an existing database
+
+The guide is seeded once, on first open, so a database created before an edit to
+`style-guide/tr-genel.md` keeps the older text. Re-seeding on every open would
+overwrite whatever has since been written in the panel.
+
+```
+npm run style-guide:sync            # replaces the general guide with the file
+npm run style-guide:sync -- --force # …even if it was edited by hand
+```
+
+Without `--force` it refuses when the stored text carries lines the file does
+not, and prints them — that is the signature of a hand edit.

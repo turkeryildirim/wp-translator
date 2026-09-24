@@ -24,6 +24,8 @@ export function buildPrompt(context: TranslationContext): string {
     '- Ama kullanıcıya görünen öznitelik metinlerini ÇEVİR: title, alt, aria-label, placeholder.',
     '  Örnek: <a href="%1$s" title="Sharing Docs"> → <a href="%1$s" title="Paylaşma belgeleri">',
     '  Özniteliği silme; yalnızca değerini çevir.',
+    '- Yer tutucuların ve etiketlerin SIRASI değişebilir — Türkçe söz dizimi bunu gerektirir.',
+    '  Sayıları ve biçimleri aynı kaldığı sürece serbestsin: "%1$s in %2$s" → "%2$s içinde %1$s".',
     '- Satır sonlarını (\\n) ve baştaki/sondaki boşlukları kaynaktaki gibi bırak.',
     '- Kaynak nokta ile bitmiyorsa çeviri de bitmesin.',
   ];

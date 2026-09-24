@@ -146,6 +146,13 @@ function compareEdgeWhitespace(
   }
 }
 
+/**
+ * Tokens counted by identity, never by position.
+ *
+ * Turkish word order routinely moves placeholders and the tags around them —
+ * that is what `%1$s` exists for — so order is not compared. A changed *count*
+ * still is: dropping or duplicating a tag is damage, moving one is translation.
+ */
 function countMatches(text: string, pattern: RegExp): Map<string, number> {
   const counts = new Map<string, number>();
   for (const [match] of text.matchAll(new RegExp(pattern.source, pattern.flags))) {

@@ -111,6 +111,23 @@ describe('quality checks', () => {
     ).toEqual(['html-tags']);
   });
 
+  it('accepts reordered HTML, because Turkish word order moves it', () => {
+    expect(rules({ msgid: '<b>A</b> and <i>B</i>', msgstr: '<i>B</i> ve <b>A</b>' })).toEqual([]);
+  });
+
+  it('accepts two links swapping places', () => {
+    expect(
+      rules({
+        msgid: '<a href="%1$s">x</a> / <a href="%2$s">y</a>',
+        msgstr: '<a href="%2$s">y</a> / <a href="%1$s">x</a>',
+      }),
+    ).toEqual([]);
+  });
+
+  it('still catches a duplicated tag, since that is a count and not an order', () => {
+    expect(rules({ msgid: '<b>A</b>', msgstr: '<b>A</b> <b>B</b>' })).toEqual(['html-tags']);
+  });
+
   it('catches an unclosed tag', () => {
     expect(rules({ msgid: '<strong>Warning</strong>', msgstr: '<strong>Uyarı' })).toEqual([
       'html-tags',

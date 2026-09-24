@@ -70,6 +70,10 @@ seslendirdiği metinlerdir; İngilizce bırakmak onları çevrilmemiş arayüz y
 
 Özniteliği **silme**; yalnızca değerini çevir.
 
+**Sıra serbesttir.** Etiketlerin ve yer tutucuların cümle içindeki yeri Türkçe söz
+dizimine göre değişebilir; önemli olan sayılarının ve biçimlerinin aynı kalması.
+`<b>A</b> and <i>B</i>` → `<i>B</i> ve <b>A</b>` doğrudur.
+
 ---
 
 ## 3. Kesme işareti
