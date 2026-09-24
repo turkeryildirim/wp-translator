@@ -4,6 +4,7 @@ import {
   OFFICIAL_GLOSSARY_CSV,
   parseGlossaryCsv,
 } from '../glossary/officialGlossary.ts';
+import { collapseAgreedContexts } from '../glossary/collapse.ts';
 import { syncTrustedSource } from '../glossary/sync.ts';
 import { parsePo } from '../po/parse.ts';
 import { fetchExport } from '../wporg/fetch.ts';
@@ -197,6 +198,8 @@ export interface SyncProgress {
   errors: { source: string; message: string }[];
   /** Terms taken from the official WordPress Turkish glossary. */
   glossaryTerms: number | null;
+  /** Rows merged away because they differed only by context and agreed (R27). */
+  collapsed: number | null;
   finishedAt: string | null;
 }
 
@@ -207,6 +210,7 @@ const idle = (): SyncProgress => ({
   current: null,
   errors: [],
   glossaryTerms: null,
+  collapsed: null,
   finishedAt: null,
 });
 
@@ -257,6 +261,19 @@ export function startSync(db: Db): SyncProgress {
       });
     }
     progress.done += 1;
+
+    // Once, at the end, rather than after each source: the work is a scan of
+    // the whole glossary, and running it 41 times would repeat it for rows no
+    // source touched. A source only ever adds contexts, so merging late loses
+    // nothing.
+    try {
+      progress.collapsed = collapseAgreedContexts(db);
+    } catch (error) {
+      progress.errors.push({
+        source: 'duplicate merge',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     progress.running = false;
     progress.current = null;

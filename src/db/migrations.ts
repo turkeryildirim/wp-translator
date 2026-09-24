@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { collapseSql } from '../glossary/collapse.ts';
 import { fileURLToPath } from 'node:url';
 
 export interface Migration {
@@ -172,6 +173,17 @@ export const migrations: readonly Migration[] = [
       return body
         ? `INSERT INTO style_rules (tag_id, body) VALUES (NULL, '${body}');`
         : 'SELECT 1;';
+    },
+  },
+  {
+    version: 7,
+    // Existing databases carry rows that differ only by msgctxt and agree on
+    // the translation — `&larr;` under eight contexts, all `&larr;`. They cost
+    // matches, not just space: a context-less unit matches context-less rows
+    // only (R27). The same statements run after every sync, so this cleans what
+    // is already there rather than being a one-off.
+    get sql() {
+      return collapseSql();
     },
   },
 ];

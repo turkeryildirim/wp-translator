@@ -240,6 +240,16 @@ The shape R19 predicted holds: exact matching settles roughly a tenth, and termi
 
 Export takes 534 ms for WooCommerce. The iOS row is the sharpest check on D24: every one of its strings carries `msgctxt`, and every one survives storage even though nothing in the system ever reads it.
 
+**R27 — most repeated glossary rows are redundant, but a third of them are not.** Sources carry the same string under many contexts: `&larr;` arrived under eight, all translated `&larr;`, none of them context-less. Grouped by (source, tag) over the 53 211 memory rows, the groups holding more than one row split three ways:
+
+| Group | Count | Meaning |
+|---|---:|---|
+| agree, no context-less row | 839 | matched nothing — `applyGlossary` matches a context-less unit against context-less rows only |
+| agree, context-less row present | 934 | pure redundancy; deleting the rest changes no outcome |
+| translations differ | 955 | `Cancel` is `İptal`, `İptal Et` and `Vazgeç` by context — the distinction `msgctxt` exists to make |
+
+So the merge rule is **agreement, not similarity**: a group collapses to one context-less row only when every row gives the same translation and the same plural. Applied to the seeded glossary this removed **3 045 rows** while the distinct (entry, source) vouch set stayed at **58 002** — no source lost its claim on any string. Grouping runs over an indexed temp copy: the table's indexes lead with `tag_id` or `source_text`, and grouping by `(source_hash, tag_id)` directly measured **30 s against 0.23 s**.
+
 ## 6. Open questions
 
 | # | Question | Phase |

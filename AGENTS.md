@@ -93,6 +93,11 @@ why, and include the measurement if one drove it.
   `pos IS NOT NULL` and keys on the translation too, because the official
   glossary offers alternatives under one part of speech. They have separate
   partial unique indexes. Matching uses memory rows only.
+- **Glossary rows that differ only by `msgctxt` are merged, not deduplicated.**
+  The rule is agreement: a group collapses only when every row gives the same
+  translation *and* plural, because `Cancel` really is three different words by
+  context (R27). `src/glossary/collapse.ts` holds the SQL, and both migration 7
+  and the end of every sync run it, so the two cannot drift.
 - **SQLite `NOCASE` folds ASCII only.** `içerik` and `İÇERİK` compare unequal, so
   tag names are folded in the application with Turkish rules.
 - **The style guide is seeded once**, from `style-guide/tr-genel.md`, on a
