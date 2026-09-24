@@ -105,7 +105,12 @@ footer { padding: 6px 12px; border-top: 1px solid var(--line);
 
 .detail { border-inline-start: 1px solid var(--line); padding: 10px; overflow: auto; }
 .failure { background: var(--blocked); color: var(--color-text);
-  padding: 6px 8px; border-radius: 4px; margin: 0 0 8px; }
+  padding: 6px 8px; border-radius: 4px; margin: 0 0 8px;
+  --muted: color-mix(in oklab, var(--color-text) 60%, var(--blocked)); }
+.failure p { margin: 0 0 6px; }
+.failure button { font: inherit; font-size: 13px; padding: 2px 8px;
+  border: 1px solid var(--control-line); border-radius: 4px;
+  background: transparent; color: inherit; cursor: pointer; }
 .hint { color: var(--muted); }
 .unit-detail dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; margin: 0 0 12px; }
 .unit-detail dt { color: var(--muted); }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { saveUnit, type Unit } from './api.ts';
+import { overrideCheck, saveUnit, type Unit } from './api.ts';
 import { notify } from './notify.ts';
 import UnitDetailPanel from './UnitDetailPanel.vue';
 
@@ -138,7 +138,17 @@ async function reject(): Promise<void> {
 
 async function approve(withEdit: boolean): Promise<void> {
   const unit = current.value;
-  if (!unit || unit.failures.length > 0) return;
+  if (!unit) return;
+
+  // Blocked rows used to refuse silently, so approving one looked like a key
+  // that did not work. Say what is wrong and what the two ways out are.
+  if (unit.failures.length > 0) {
+    notify(
+      'error',
+      `${unit.failures[0]!.message} — düzeltmek için "e", kuralı atlamak için sağdaki düğme.`,
+    );
+    return;
+  }
 
   const { unit: saved, blocked } = await saveUnit(
     unit.id,
@@ -168,6 +178,23 @@ function togglePick(): void {
   if (unit) setPicked(unit.id, !pickedSet.value.has(unit.id));
 }
 
+
+/**
+ * Record that this check is deliberately not met here, then save again so the
+ * unit is re-judged without it.
+ *
+ * The reason is asked for rather than assumed. A check the owner overrides is
+ * either wrong about this string or wrong in general, and the note is what
+ * tells those apart later.
+ */
+async function skipCheck(unit: Unit, rule: string): Promise<void> {
+  const reason = prompt(`"${rule}" kuralı bu dizgede neden atlanıyor?`);
+  if (!reason?.trim()) return;
+
+  await overrideCheck(unit.id, rule, reason.trim());
+  const { unit: saved } = await saveUnit(unit.id, {});
+  emit('changed', saved);
+}
 
 function toggleDetail(): void {
   const unit = current.value;
@@ -319,9 +346,10 @@ watch(
     </div>
 
     <aside v-if="current" class="detail">
-      <p v-for="failure in current.failures" :key="failure.rule" class="failure">
-        {{ failure.message }}
-      </p>
+      <div v-for="failure in current.failures" :key="failure.rule" class="failure">
+        <p>{{ failure.message }}</p>
+        <button @click="skipCheck(current!, failure.rule)">Bu kuralı bu dizgede atla</button>
+      </div>
       <UnitDetailPanel
         v-if="expanded.has(current.id) || current.structured"
         :unit-id="current.id"

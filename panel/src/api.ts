@@ -140,6 +140,15 @@ export const bulkSetState = (
 
 export const unitDetail = (unitId: number) => json<UnitDetail>(`/api/units/${unitId}/detail`);
 
+/**
+ * Record a deliberate exception to one quality check on one string.
+ *
+ * The reason is stored, not just the exception: a check that is wrong here is
+ * usually wrong for a reason worth finding later.
+ */
+export const overrideCheck = (unitId: number, rule: string, reason: string) =>
+  post<{ ok: true }>(`/api/units/${unitId}/override`, { rule, reason }, 'Kural atlandı');
+
 export const saveUnit = (unitId: number, edit: { msgstr?: string; msgstrPlural?: string }) =>
   json<{ unit: Unit; blocked?: CheckFailure[] }>(
     `/api/units/${unitId}`,
