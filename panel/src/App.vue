@@ -43,8 +43,8 @@ const counts = ref<Record<QueueView, number>>({
 });
 const page = ref(0);
 const PAGE = 100;
-// Translated is where the strings are — 2 413 of wordcamp's 3 116 — and a GTE
-// opens a project to review what is there, not only to fill what is missing.
+// Most of a mature project is already translated, and a GTE opens one to review
+// what is there rather than only to fill what is missing.
 const filter = ref<QueueView>('translated');
 const picked = ref<number[]>([]);
 const search = ref('');
@@ -227,8 +227,8 @@ const reloading = ref(false);
  * Fetch the project again and take what the service has.
  *
  * The warning names the number rather than the risk. "Changes will be lost" is
- * something people click past; "412 strings you translated will be discarded"
- * is not, and the number comes from the server so it is the real one.
+ * something people click past; naming how many strings go is not. The count
+ * comes from the server, so it is never a guess that has gone stale.
  */
 async function reload(): Promise<void> {
   const current = project.value;
@@ -297,7 +297,10 @@ onMounted(async () => {
   selected.value = projects.value[0]?.id ?? null;
 });
 
-watch([selected, filter], load);
+// `page` is watched, which is what makes the pager work: `goTo` only moves the
+// number. A filter change resets the page and loads explicitly, so both can
+// fire — the in-flight ticket drops whichever reply is stale.
+watch([selected, page], load);
 </script>
 
 <template>

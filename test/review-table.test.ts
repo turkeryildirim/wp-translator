@@ -37,6 +37,13 @@ describe('the review table', () => {
     expect(head).toContain('Çeviri');
   });
 
+  it('reloads when the page number moves', () => {
+    // The pager only sets the number; without a watcher on it the arrows go
+    // dead and the list never changes, which is exactly what happened.
+    const app = read('App.vue');
+    expect(app).toMatch(/watch\(\[[^\]]*\bpage\b[^\]]*\], load\)/);
+  });
+
   it('keeps the editor out of the rows', () => {
     // Editing belongs in the detail panel, which is the only place a sentence
     // fits and the only one that can grow without moving anything else.

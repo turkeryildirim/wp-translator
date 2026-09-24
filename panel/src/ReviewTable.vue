@@ -259,7 +259,7 @@ watch(
   <div class="review">
     <!-- A table, because this is tabular. It was a list of absolutely
          positioned divs at a fixed height, which is what virtualisation needed
-         when the screen loaded all 3 116 strings at once. Paging removed that
+         while the screen loaded a whole catalogue at once. Paging removed that
          reason and left only its costs: a long string overlapped the row under
          it, and the height lived in two files that could disagree. -->
     <div class="queue">

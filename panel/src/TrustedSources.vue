@@ -387,7 +387,7 @@ onUnmounted(() => {
     </p>
     <p class="hint">
       Sıra önemli: iki kaynak aynı metni farklı çevirdiğinde çoğunluk kazanır, berabere kalırsa
-      üstteki. Ölçümde çakışmaların %88'i beraberlik, yani kararı çoğu zaman bu sıra veriyor.
+      üstteki. Çakışmaların çoğu beraberlik olduğu için kararı genelde bu sıra veriyor.
       Satırları <b>⠿</b> tutamağından sürükleyerek ya da ok tuşlarıyla taşıyın.
     </p>
   </section>
