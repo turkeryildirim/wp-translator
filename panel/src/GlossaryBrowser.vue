@@ -179,11 +179,15 @@ watch(page, load);
             @click="select(row)"
           >
             <td>
-              <Reveal :value="row.sourceText" />
-              <em v-if="row.pos" class="pos">{{ row.pos }}</em>
-              <em v-if="row.msgctxt" class="ctx">{{ row.msgctxt }}</em>
+              <div class="clamp">
+                <Reveal :value="row.sourceText" />
+                <em v-if="row.pos" class="pos">{{ row.pos }}</em>
+                <em v-if="row.msgctxt" class="ctx">{{ row.msgctxt }}</em>
+              </div>
             </td>
-            <td><Reveal :value="row.translation" /></td>
+            <td>
+              <div class="clamp"><Reveal :value="row.translation" /></div>
+            </td>
             <td class="muted">{{ row.tag }}</td>
             <td class="num">{{ row.sources || (row.origin === 'owner' ? '—' : 0) }}</td>
           </tr>

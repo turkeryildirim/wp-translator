@@ -136,7 +136,19 @@ h4 { margin: 12px 0 4px; font-size: 12px; color: var(--muted); }
 .grid th { text-align: start; font-weight: 600; color: var(--muted);
   border-bottom: 1px solid var(--line); padding: 4px 8px; position: sticky; top: 0;
   background: var(--bg); }
-.grid td { padding: 4px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+/* `anywhere` rather than `break-word`: only this one lowers the cell's
+   min-content width, which is what stops a 1 536-character unbroken string —
+   WooCommerce ships four colour maps as translatable text — from widening the
+   column until the table leaves the screen. */
+.grid td { padding: 4px 8px; border-bottom: 1px solid var(--line); vertical-align: top;
+  overflow-wrap: anywhere; }
+/* Such a value is still forty lines tall once it wraps, which buries the rows
+   around it. The list shows the first few; the detail panel holds all of it.
+   The clamp goes on a box inside the cell, never on the cell: `display:
+   -webkit-box` on a `td` takes it out of the table and the columns come
+   apart. */
+.grid .clamp { display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
 .grid tbody tr { cursor: default; }
 .grid tbody tr.on { background: var(--active); }
 .grid tbody tr.term td:first-child { border-inline-start: 3px solid var(--muted); }
@@ -150,6 +162,7 @@ h4 { margin: 12px 0 4px; font-size: 12px; color: var(--muted); }
 .glossary .split { display: grid; grid-template-columns: 1fr 300px; gap: 12px;
   align-items: start; height: auto; }
 .glossary .detail { border: 1px solid var(--line); border-radius: 6px; padding: 10px;
+  overflow-wrap: anywhere;
   position: sticky; top: 0; max-height: var(--dock-max, 100dvh); overflow: auto; }
 .glossary .detail h3 { margin: 0 0 6px; font-size: 14px; }
 .glossary .detail label { display: block; color: var(--muted); margin: 8px 0 4px; }
