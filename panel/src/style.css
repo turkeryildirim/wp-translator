@@ -78,9 +78,17 @@ nav button.on { background: var(--active); }
 footer { padding: 6px 12px; border-top: 1px solid var(--line);
   color: var(--muted); font-size: 12px; }
 
-.review { flex: 1; display: grid; grid-template-columns: 1fr 320px; min-height: 0; }
-.viewport { overflow: auto; position: relative; }
+.review { flex: 1; display: grid; grid-template-columns: 1fr 320px;
+  grid-template-rows: auto 1fr; min-height: 0; }
+.viewport { grid-column: 1; grid-row: 2; overflow: auto; position: relative; }
 .spacer { position: relative; }
+
+/* The header repeats the row's grid so the columns line up. It is not one of
+   the positioned rows, so it keeps `position: static`. */
+.row.head { grid-column: 1; grid-row: 1;
+  position: static; height: auto; padding: 6px 10px; font-weight: 600;
+  color: var(--muted); border-bottom: 1px solid var(--line); background: var(--raised); }
+.row.head .source, .row.head .target { overflow: visible; }
 
 /* Matched by ROW_HEIGHT in ReviewTable.vue, which positions the rows. */
 .row { position: absolute; left: 0; right: 0; height: 40px; display: grid;
@@ -204,7 +212,8 @@ code { font: 12px ui-monospace, monospace; background: var(--line);
 .bulkbar button { font: inherit; padding: 3px 10px; border: 1px solid var(--control-line);
   border-radius: 4px; background: var(--bg); color: inherit; cursor: pointer; }
 .bulkbar button.primary { font-weight: 600; }
-.review { grid-template-rows: auto 1fr; }
+/* Spans both rows of `.review`, beside the header and the list together. */
+.detail { grid-column: 2; grid-row: 1 / -1; }
 .row { grid-template-columns: 16px 22px 1fr 1fr auto; }
 .row.picked { box-shadow: inset 3px 0 0 currentColor; }
 .pick { color: var(--muted); }

@@ -312,6 +312,15 @@ watch(
 
 <template>
   <div class="review">
+    <!-- Outside the scrolling viewport, so it stays put; it repeats the row's
+         grid so the columns line up with what it names. -->
+    <div class="row head">
+      <span></span>
+      <span class="state" title="Durum">◆</span>
+      <span class="source">Kaynak</span>
+      <span class="target">Çeviri</span>
+      <span class="badge">Kaynak</span>
+    </div>
     <div
       ref="viewport"
       class="viewport"

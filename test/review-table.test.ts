@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 const read = (name: string): string =>
   readFileSync(fileURLToPath(new URL(`../panel/src/${name}`, import.meta.url)), 'utf-8');
 
-describe('the virtualised row height', () => {
+describe('the review table', () => {
   it('is the same number in the component and the stylesheet', () => {
     // Rows are absolutely positioned from ROW_HEIGHT while the browser draws
     // them at the stylesheet's height. A disagreement does not fail anywhere —
@@ -23,6 +23,23 @@ describe('the virtualised row height', () => {
     // It was, twice, which is two more places to forget.
     const template = read('ReviewTable.vue').split('<template>')[1] ?? '';
     expect(template).not.toMatch(/\*\s*\d{2}\s*\+\s*'px'/);
+  });
+
+  it('reveals invisible characters in both columns', () => {
+    // Same as the glossary: a trailing space or a stray U+200E is exactly what
+    // a reviewer is looking for, and neither column draws it on its own.
+    const template = read('ReviewTable.vue').split('<template>')[1] ?? '';
+    expect(template).toMatch(/class="source"><Reveal/);
+    expect(template).toMatch(/class="target"><Reveal/);
+  });
+
+  it('names its columns', () => {
+    // The grid is divs, not a table, so nothing labels the columns unless a
+    // header row does.
+    const template = read('ReviewTable.vue').split('<template>')[1] ?? '';
+    expect(template).toContain('class="row head"');
+    expect(template).toContain('Kaynak');
+    expect(template).toContain('Çeviri');
   });
 
   it('has no text box inside a row', () => {

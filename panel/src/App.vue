@@ -43,7 +43,9 @@ const counts = ref<Record<QueueView, number>>({
 });
 const page = ref(0);
 const PAGE = 100;
-const filter = ref<QueueView>('waiting');
+// Translated is where the strings are — 2 413 of wordcamp's 3 116 — and a GTE
+// opens a project to review what is there, not only to fill what is missing.
+const filter = ref<QueueView>('translated');
 const picked = ref<number[]>([]);
 const search = ref('');
 const caseSensitive = ref(false);
