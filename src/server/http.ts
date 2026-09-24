@@ -66,7 +66,7 @@ const MIME: Record<string, string> = {
  * The panel's back end.
  *
  * Bound to localhost only. There is no authentication because there are no
- * users (D13) — binding elsewhere would put an unauthenticated database on the
+ * users — binding elsewhere would put an unauthenticated database on the
  * network, so it does not.
  */
 export function startServer(options: ServerOptions): ReturnType<typeof createServer> {

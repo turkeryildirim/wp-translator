@@ -135,7 +135,7 @@ export interface StyleRule {
   updatedAt: string | null;
 }
 
-/** The general guide plus one per tag (D12), each a free-text field (D34). */
+/** The general guide plus one per tag, each a free-text field. */
 export function listStyleRules(db: Db): StyleRule[] {
   return db
     .prepare(

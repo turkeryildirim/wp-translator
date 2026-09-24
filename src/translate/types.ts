@@ -27,7 +27,7 @@ export interface ResponseItem {
 export interface TranslationContext {
   /** The general style guide plus any per-tag rules. */
   styleGuide: string;
-  /** Glossary terms appearing in this batch (D41). */
+  /** Glossary terms appearing in this batch. */
   terms: readonly Term[];
   project?: {
     name?: string;

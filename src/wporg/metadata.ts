@@ -13,7 +13,7 @@ export interface ProjectMetadata {
  * Fetch what wordpress.org knows about a project.
  *
  * Only plugins and themes are slug-addressable; `wp`, `apps`, `meta` and
- * `patterns` are WordPress's own projects with no info API and no ZIP (R8), so
+ * `patterns` are WordPress's own projects with no info API and no ZIP, so
  * for those this returns nothing and the owner supplies the tags directly.
  */
 export async function fetchMetadata(

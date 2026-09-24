@@ -71,7 +71,7 @@ describe('trusted-source sync', () => {
 
   it('keeps distinct translations apart and records where each was seen', () => {
     // WordPress core translates "May" as the month and as its abbreviation.
-    // Two wordings are two entries; the contexts ride along as a note (D44).
+    // Two wordings are two entries; the contexts ride along as a note.
     syncTrustedSource(
       db,
       coreId,
@@ -126,8 +126,7 @@ describe('trusted-source sync', () => {
   });
 
   it('keeps an entry a second source still vouches for', () => {
-    // A single owner column cannot express this, and it is the normal case:
-    // WooCommerce shares 643 entries with core (R14).
+    // A single owner column cannot express this, and sharing is the normal case.
     syncTrustedSource(db, coreId, catalogue([{ msgid: 'Save', msgstr: 'Kaydet' }]), [tagId]);
     syncTrustedSource(db, wooId, catalogue([{ msgid: 'Save', msgstr: 'Kaydet' }]), [tagId]);
     expect(countLinks('Save')).toBe(2);
@@ -140,8 +139,7 @@ describe('trusted-source sync', () => {
 
   it('stores both readings rather than choosing between them', () => {
     // Choosing is matching's job, where the owner can see the alternatives and
-    // override them (D44). Storing a winner here hid the other reading and made
-    // the result depend on which source synced last.
+    // override them. Storing a winner here would hide the other reading.
     syncTrustedSource(db, coreId, catalogue([{ msgid: 'Save', msgstr: 'Kaydet' }]), [tagId]);
     syncTrustedSource(db, wooId, catalogue([{ msgid: 'Save', msgstr: 'Sakla' }]), [tagId]);
 

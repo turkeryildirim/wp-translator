@@ -37,8 +37,8 @@ beforeEach(() => {
 /**
  * The glossary holds what humans reviewed and approved on
  * translate.wordpress.org, and that is the whole reason a match from it can be
- * placed without review (D22). A project's own output has not been through
- * that, so it stays out (D23). The way in is to add the project as a trusted
+ * placed without review. A project's own output has not been through
+ * that, so it stays out. The way in is to add the project as a trusted
  * source and let the next sync take it.
  */
 describe('a project never writes to the glossary', () => {

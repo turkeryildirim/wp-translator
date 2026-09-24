@@ -22,27 +22,35 @@ personal glossary, and it cannot run AI translation.
    catalogue is fetched, and for plugins and themes its wordpress.org metadata
    comes too.
 3. **What the service already has.** The export arrives with its translations,
-   so a project shows what is done, what is not, and what fails a quality check
-   — `meta/wordcamp` is 2 413 translated against 703 untranslated, not 3 116
-   untranslated.
+   so a project shows what is done, what is not, and what fails a quality check.
+   Most of a mature project is already translated, and those strings are what a
+   GTE is reviewing.
 4. **Glossary match.** Strings translated before are filled in automatically and
-   count as done.
+   count as done. Where the glossary knows several translations of one string
+   the best-supported is used, and the rest stay one keystroke away.
 5. **AI for the rest.** Everything left goes to the model in JSON batches, each
-   carrying the glossary terms that appear in it and the Turkish style guide.
-6. **Review.** Every AI translation waits for you, in a paged queue filtered by
-   what you are looking for. Approve, or edit and approve — editing *is*
-   rejecting.
+   carrying the glossary terms that appear in it and the Turkish style guide. A
+   run can be aimed at the untranslated strings, the ones awaiting approval, the
+   rows you picked, or the whole catalogue from scratch.
+6. **Review.** A paged queue you filter by what you are looking for. Approve,
+   edit and approve, or reject — which empties the string and sends it back to
+   be translated again.
 7. **Export.** Only approved strings, as a PO GlotPress will import cleanly.
 
 ### What the glossary is actually for
 
-Exact full-string reuse covers about a tenth of a project — 11.8 % of Contact
-Form 7, 7.8 % of Astra, measured. The other nine tenths are strings nobody has
-translated before, and consistency there comes from **terminology**: 70–100 % of
-a project's strings contain at least one term the glossary knows, three to six
-on average, and most of those carry a term with more than one known translation.
-That is the `item → ürün` in an e-commerce plugin, `öge` elsewhere problem, and
-handing the model those terms is what solves it.
+Exact full-string reuse covers about a tenth of a project. The other nine tenths
+are strings nobody has translated before, and consistency there comes from
+**terminology**: most strings contain at least one term the glossary knows, and
+many of those terms have more than one known translation. That is the
+`item → ürün` in an e-commerce plugin, `öge` elsewhere problem, and handing the
+model those terms is what solves it.
+
+Nothing translated in a project ever enters the glossary — not your edits, not
+the model's output. The glossary holds what humans reviewed and approved
+upstream, which is the whole reason a match from it can be used without review.
+To get a project's work in, add it as a trusted source once it has been approved
+on translate.wordpress.org.
 
 ## Running
 
@@ -55,12 +63,70 @@ npm run serve            # http://127.0.0.1:4173
 `WPT_DB` sets the database path (default `wp-translator.sqlite`), `WPT_PORT` the
 port. Panel development: `npm run dev:panel`, which proxies `/api` to the server.
 
-A fresh database already carries 41 trusted sources and the Turkish style guide.
-Press **Güncelle** on the trusted-sources screen once to download the glossary:
-about 49 500 entries, half a minute.
+A fresh database already carries the trusted sources and the Turkish style guide
+— nothing to paste in. The official WordPress Turkish glossary is not seeded,
+because it needs a network fetch: press **Güncelle** on the trusted-sources
+screen once and it arrives along with every source.
 
-opencode needs one-time setup — a provider and a tool-free agent. See
-[`docs/setup.md`](docs/setup.md).
+**Splitting the tag is your call.** Everything starts under one `wordpress` tag.
+Giving WooCommerce its own tag is what makes `item` come out as `ürün` there and
+`öge` elsewhere; until that split exists the two senses share a tag and the
+source ranking decides.
+
+## Setting up opencode
+
+The tool drives opencode, which has to be configured once.
+
+**A provider.** `opencode auth` — any provider opencode supports.
+`opencode api model.list` then shows what is available.
+
+**A tool-free agent.** opencode is a *coding* agent: its default `build` agent
+can read files, write them and run shell commands. Asked to translate, a model
+may instead try to *read* the attached file with a tool. That raises a
+permission request, nothing answers it because no human is watching, and the run
+hangs. In `~/.config/opencode/opencode.json`:
+
+```json
+{
+  "agents": {
+    "wp-translator": {
+      "description": "Translates JSON batches of WordPress UI strings into Turkish. Text only, no tools.",
+      "mode": "primary",
+      "permissions": [{ "action": "*", "resource": "*", "effect": "deny" }],
+      "system": "You translate WordPress interface strings into Turkish. …"
+    }
+  }
+}
+```
+
+Verify it:
+
+```
+opencode run --agent wp-translator "List the files here using your tools."
+→ I can't list files because I don't have tool access.
+```
+
+`opencode api agent.list` returns an empty array even when the agent loads; the
+run header (`> wp-translator · <model>`) is what confirms it.
+
+**Do not pin a model.** The free roster rotates: a model that answered yesterday
+can start returning *"OpenCode's free tier can only be used from within
+OpenCode"*, and another appears in its place. Leave it unset so opencode's own
+default is used.
+
+## Updating the style guide in an existing database
+
+The guide is seeded once, on first open, so a database created before an edit to
+`style-guide/tr-genel.md` keeps the older text. Re-seeding on every open would
+overwrite whatever has since been written in the panel.
+
+```bash
+npm run style-guide:sync            # replaces the general guide with the file
+npm run style-guide:sync -- --force # …even if it was edited by hand
+```
+
+Without `--force` it refuses when the stored text carries lines the file does
+not, and prints them — that is the signature of a hand edit.
 
 ## Layout
 
@@ -74,40 +140,22 @@ opencode needs one-time setup — a provider and a tool-free agent. See
 | `src/wporg/` | translate.wordpress.org and wordpress.org access |
 | `src/server/` | HTTP API and the panel's back end |
 | `panel/` | Vue 3 panel |
-| `docs/` | the design, phase by phase |
 | `style-guide/` | the Turkish style guide seeded into new databases |
-
-## Design
-
-`docs/00-process.md` is the register: 45 numbered decisions and 32 constraints,
-most of them measured rather than reasoned. A few that shaped the code:
-
-- **Matching is byte-exact.** Lowercasing would gain 253 matches across
-  WooCommerce's 14 159 distinct sources, but 197 of them map to a *different*
-  translation — `Saved for Later` is `Sonraya Kaydet`, `Saved for later` is
-  `Sonraya kaydedildi`. Normalising is a net loss, and nothing malformed exists
-  for the checks to catch.
-- **A project's `msgctxt` is carried but never read.** GlotPress matches an
-  imported entry by singular + plural + context, so an export that drops it
-  loses those translations. Classic Editor has 8 in 54 strings. The *glossary*
-  is a different matter: context was part of its key until it was measured, and
-  over three real plugins it decided none of the 281 matches it could have.
-- **Several sources vouch for one entry.** WooCommerce and WordPress core share
-  643; across all 41 sources, 5 511. A single owner column cannot express that,
-  so sources link to entries and an entry goes only when the last link does.
-- **The quality checks compare counts, never positions.** Turkish word order
-  moves placeholders and the tags around them; that is what `%1$s` is for.
 
 ## Tests
 
 ```bash
-npm test            # 227 tests
-npm run typecheck   # tsc
+npm test
+npm run typecheck
 npx vue-tsc --noEmit -p tsconfig.json
+npx vite build
 ```
 
 They assert the properties the design argued for rather than the happy path: PO
 round-trip keyed by GlotPress's own identity, an entry surviving when a second
 source still carries it, two disagreeing sources giving the same answer whichever
-order they sync in, and a translation refused by the checks staying out of a bulk
-approve.
+order they sync in, a translation refused by the checks staying out of a bulk
+approve, and a project's work never reaching the glossary.
+
+`AGENTS.md` is the other half of the documentation: why the code is shaped the
+way it is, and what will bite you if you change it.

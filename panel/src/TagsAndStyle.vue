@@ -136,7 +136,7 @@ onMounted(load);
         </label>
       </div>
       <p v-if="preview.colliding" class="hint">
-        Çakışma, iki etiketin aynı metni farklı çevirmesi — D29'daki durumun aynısı. Yüzlerce
+        Çakışma, iki etiketin aynı metni farklı çevirmesi demek. Yüzlerce
         çakışmada tek tek sormak bitirilebilir bir iş olmadığı için karar birleştirmenin tamamına
         uygulanır.
       </p>

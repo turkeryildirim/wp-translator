@@ -52,7 +52,7 @@ describe('PO export', () => {
 
   it('carries msgctxt through untouched', () => {
     // GlotPress matches by singular + plural + context; an entry that loses its
-    // context matches no original and the translation is dropped on import (R2).
+    // context matches no original and the translation is dropped on import.
     const id = importProject(
       db,
       { family: 'plugin', projectPath: 'p', translateUrl: 't' },

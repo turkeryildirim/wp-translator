@@ -34,7 +34,7 @@ beforeEach(() => {
 describe('folding a search', () => {
   it('finds a Turkish word however it is capitalised', () => {
     // SQLite's own folding is ASCII only, so `İÇERİK` matched nothing while
-    // `SAVE` matched `save` — the half that failed is the Turkish half (R31).
+    // `SAVE` matched `save` — the half that failed is the Turkish half.
     add('Content', 'İÇERİK');
     add('Body', 'içerik');
 

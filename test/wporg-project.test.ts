@@ -51,7 +51,7 @@ describe('project URL parsing', () => {
 
 describe('export URL', () => {
   it('asks for current translations only', () => {
-    // `waiting` is unreviewed and would dilute the glossary (D26).
+    // `waiting` is unreviewed and would dilute the glossary.
     expect(exportUrl('wp/dev')).toBe(
       'https://translate.wordpress.org/projects/wp/dev/tr/default/export-translations/' +
         '?format=po&filters%5Bstatus%5D=current',

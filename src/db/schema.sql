@@ -103,7 +103,7 @@ CREATE TABLE translation_units (
   source_hash        TEXT NOT NULL,
   msgid              TEXT NOT NULL,
   msgid_plural       TEXT,
-  msgctxt            TEXT,                   -- carried verbatim, never matched (D24)
+  msgctxt            TEXT,                   -- carried verbatim, never matched
   refs               TEXT,                   -- '#:' block, verbatim
   extracted_comments TEXT,                   -- '#.' block, verbatim
   msgstr             TEXT,

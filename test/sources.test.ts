@@ -77,7 +77,7 @@ describe('bulk source operations', () => {
   });
 
   it('keeps glossary entries another source still vouches for', () => {
-    // Removing a source must not take entries a survivor carries (R14).
+    // Removing a source must not take entries a survivor carries.
     const [first, second] = listSources(db);
     const entryId = Number(
       db

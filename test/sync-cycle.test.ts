@@ -78,8 +78,8 @@ describe('one string arriving under many contexts', () => {
   });
 
   it('keeps its identity across repeated updates', () => {
-    // An entry re-created each update loses the vouches that keep it alive
-    // (R14), is swept, and takes the provenance of every unit filled from it.
+    // An entry re-created each update loses the vouches that keep it alive, is
+    // swept, and takes the provenance of every unit filled from it.
     fullUpdate();
     const first = arrow()[0]!.id;
 

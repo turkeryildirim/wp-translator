@@ -23,7 +23,7 @@ describe('reading opencode output', () => {
   });
 
   it('returns nothing for an empty stream', () => {
-    // What a hang looks like: zero bytes rather than an error (R21).
+    // What a hang looks like: zero bytes rather than an error.
     expect(collectText('')).toBe('');
   });
 });

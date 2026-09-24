@@ -66,7 +66,7 @@ describe('PO round trip', () => {
   });
 
   it('keeps significant trailing whitespace', () => {
-    // Matching is byte-exact (R13), so a trimmed source silently stops matching.
+    // Matching is byte-exact, so a trimmed source silently stops matching.
     const { reparsed } = roundTrip('edge-cases.po');
     expect(reparsed.units.find((u) => u.msgid === 'SKU: ')?.msgstr).toBe('Stok kodu: ');
   });
@@ -85,7 +85,7 @@ describe('PO round trip', () => {
   });
 
   it('lowercases only the header charset, which is case-insensitive', () => {
-    // The one mutation gettext-parser makes (ADR-0001). Asserted so a future
+    // The one mutation gettext-parser makes. Asserted so a future
     // version changing behaviour is caught rather than discovered in GlotPress.
     const written = serializePo(parsePo(fixture('edge-cases.po'))).toString('utf-8');
     expect(written).toContain('charset=utf-8');

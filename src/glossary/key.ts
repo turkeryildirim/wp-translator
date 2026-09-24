@@ -8,7 +8,7 @@ const FIELD_SEPARATOR = '\u001f';
  *
  * Hashing rather than indexing the text keeps the unique index compact —
  * WooCommerce source strings run to several hundred characters — and matching is
- * byte-exact by design (R13), so there is nothing to normalise first.
+ * byte-exact by design, so there is nothing to normalise first.
  */
 export function sourceHash(msgid: string, msgidPlural?: string): string {
   return createHash('sha256')

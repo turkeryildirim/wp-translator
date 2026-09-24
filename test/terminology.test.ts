@@ -56,7 +56,7 @@ describe('terminology retrieval', () => {
 
   it('reports every translation a term has, which is the case that matters', () => {
     // A term the glossary translates more than one way is exactly what the model
-    // cannot guess; 60–76% of strings carrying a known term carry one of these.
+    // cannot guess, and most strings carrying a known term carry one of these.
     addTerm(ecommerce, 'Item', 'Ürün');
     addTerm(other, 'Item', 'Öge');
     setProjectTags(db, projectId, [ecommerce, other]);

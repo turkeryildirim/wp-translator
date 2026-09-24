@@ -3,10 +3,10 @@ import type { TranslationContext } from './types.ts';
 /**
  * Build the instruction that accompanies the JSON payload.
  *
- * The payload is attached as a file (D39); this is the prose around it. The
+ * The payload is attached as a file; this is the prose around it. The
  * terminology block is the part that does the real work: exact matching settles
  * about a tenth of a project, and consistency across the rest comes from telling
- * the model how each known term has already been translated (R19).
+ * the model how each known term has already been translated.
  */
 export function buildPrompt(context: TranslationContext): string {
   const sections = [

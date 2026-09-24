@@ -15,7 +15,7 @@ export interface TrustedSourceRow {
   projectPath: string;
   family: string;
   label: string | null;
-  /** Lower wins when sources disagree (D36). Ties are the common case (R15). */
+  /** Lower wins when sources disagree. Ties are the common case. */
   rank: number;
   lastSyncedAt: string | null;
   entries: number;
@@ -176,7 +176,7 @@ export function removeSources(db: Db, ids: readonly number[]): number {
   })();
 }
 
-/** Reorder by rank. The order is what actually decides most disagreements (R15). */
+/** Reorder by rank. The order is what actually decides most disagreements. */
 export function reorderSources(db: Db, ids: readonly number[]): void {
   const update = db.prepare(`UPDATE trusted_sources SET rank = ? WHERE id = ?`);
   db.transaction(() => {

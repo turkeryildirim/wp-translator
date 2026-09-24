@@ -14,8 +14,8 @@ describe('quality checks', () => {
   });
 
   it('finds nothing to say about a string with no technical structure', () => {
-    // 51–92% of a project looks like this, and the checks are silent there by
-    // design — review of those strings is semantic, not mechanical (R20).
+    // Most of a project looks like this, and the checks are silent there by
+    // design — review of those strings is semantic, not mechanical.
     expect(rules({ msgid: 'Overlay position', msgstr: 'Yer paylaşımı konumu' })).toEqual([]);
   });
 
@@ -48,7 +48,7 @@ describe('quality checks', () => {
   });
 
   it('understands the iOS object placeholder', () => {
-    // The iOS catalogue carries 313 of these; a pattern without %@ reports it clean.
+    // The iOS catalogues are full of these; a pattern without %@ calls them clean.
     expect(rules({ msgid: 'Posted to %@', msgstr: 'Gönderildi' })).toEqual([
       'printf-placeholders',
     ]);
@@ -156,7 +156,7 @@ describe('quality checks', () => {
   });
 
   it('catches lost trailing whitespace', () => {
-    // Matching is byte-exact, so a trimmed string stops matching next time (R13).
+    // Matching is byte-exact, so a trimmed string stops matching next time.
     expect(rules({ msgid: 'SKU: ', msgstr: 'Stok kodu:' })).toEqual(['trailing-whitespace']);
   });
 

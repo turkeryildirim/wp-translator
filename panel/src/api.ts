@@ -235,7 +235,7 @@ export const searchGlossary = (params: Record<string, string>) =>
   json<{ rows: GlossaryEntry[]; total: number }>(`/api/glossary?${new URLSearchParams(params)}`);
 export interface EntryDetail {
   sources: EntrySource[];
-  /** Where this translation has been seen. Informational only (D44). */
+  /** Where this translation has been seen. Informational only. */
   contexts: string[];
 }
 
