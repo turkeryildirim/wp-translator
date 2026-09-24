@@ -78,41 +78,20 @@ nav button.on { background: var(--active); }
 footer { padding: 6px 12px; border-top: 1px solid var(--line);
   color: var(--muted); font-size: 12px; }
 
-.review { flex: 1; display: grid; grid-template-columns: 1fr 320px;
-  grid-template-rows: auto 1fr; min-height: 0; }
-.viewport { grid-column: 1; grid-row: 2; overflow: auto; position: relative; }
-.spacer { position: relative; }
+.review { flex: 1; display: grid; grid-template-columns: 1fr 320px; min-height: 0; }
 
-/* The header repeats the row's grid so the columns line up. It is not one of
-   the positioned rows, so it keeps `position: static`. */
-.row.head { grid-column: 1; grid-row: 1;
-  position: static; height: auto; padding: 6px 10px; font-weight: 600;
-  color: var(--muted); border-bottom: 1px solid var(--line); background: var(--raised); }
-.row.head .source, .row.head .target { overflow: visible; }
-
-/* Matched by ROW_HEIGHT in ReviewTable.vue, which positions the rows. */
-.row { position: absolute; left: 0; right: 0; height: 40px; display: grid;
-  grid-template-columns: 22px 1fr 1fr auto; gap: 8px; align-items: center;
-  padding: 0 10px; border-bottom: 1px solid var(--line); cursor: default; }
-.row.settled { background: var(--settled); }
-.row.ambiguous { background: var(--ambiguous); }
-.row.blocked { background: var(--blocked); }
-.row.active { background: var(--active); outline: 2px solid currentColor; outline-offset: -2px; }
-.state { color: var(--muted); text-align: center; }
-.row.blocked .state { color: var(--blocked-fg); font-weight: 700; }
-.source, .target { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.source { color: var(--muted); }
-/* Editing happens in the detail panel, never in a row: a 40px row cannot show a
-   sentence, and a box that grew inside one would sit on top of its neighbour,
-   because the rows are absolutely positioned from a fixed height. */
-.target-editor { width: 100%; font: inherit; padding: 6px 8px; resize: vertical;
-  border: 1px solid var(--control-line); border-radius: 4px;
-  background: var(--bg); color: inherit; }
-.detail label { display: block; margin: 10px 0 4px; color: var(--muted); }
-.editor-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+/* The queue is an ordinary table; only the states it can be in are special. */
+.queue { grid-column: 1; grid-row: 1 / -1; overflow: auto; }
+.queue .grid tbody tr { cursor: default; }
+.queue .grid tbody tr.settled { background: var(--settled); }
+.queue .grid tbody tr.blocked { background: var(--blocked); }
+.queue .grid tbody tr.on { background: var(--active); }
+.queue .grid tbody tr.picked td:first-child { box-shadow: inset 3px 0 0 currentColor; }
+.queue .state { text-align: center; color: var(--muted); }
+.queue tr.blocked .state { color: var(--blocked-fg); font-weight: 700; }
 .candidates span { margin-inline-end: 12px; }
-.candidates em { color: var(--muted); font-style: normal; font-size: 11px; }
-.badge { font-size: 11px; color: var(--muted); }
+.candidates em { color: var(--muted); font-style: normal; font-size: 12px; }
+.badge { font-size: 12px; color: var(--muted); }
 
 .detail { border-inline-start: 1px solid var(--line); padding: 10px; overflow: auto; }
 .failure { background: var(--blocked); color: var(--color-text);
@@ -212,10 +191,7 @@ code { font: 12px ui-monospace, monospace; background: var(--line);
 .bulkbar button { font: inherit; padding: 3px 10px; border: 1px solid var(--control-line);
   border-radius: 4px; background: var(--bg); color: inherit; cursor: pointer; }
 .bulkbar button.primary { font-weight: 600; }
-/* Spans both rows of `.review`, beside the header and the list together. */
 .detail { grid-column: 2; grid-row: 1 / -1; }
-.row { grid-template-columns: 16px 22px 1fr 1fr auto; }
-.row.picked { box-shadow: inset 3px 0 0 currentColor; }
 .pick { color: var(--muted); }
 
 .translate { font: inherit; padding: 4px 12px; border: 1px solid var(--control-line);

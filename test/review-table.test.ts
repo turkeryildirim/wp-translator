@@ -6,49 +6,42 @@ const read = (name: string): string =>
   readFileSync(fileURLToPath(new URL(`../panel/src/${name}`, import.meta.url)), 'utf-8');
 
 describe('the review table', () => {
-  it('is the same number in the component and the stylesheet', () => {
-    // Rows are absolutely positioned from ROW_HEIGHT while the browser draws
-    // them at the stylesheet's height. A disagreement does not fail anywhere —
-    // the list just drifts, a little further with every row, and the cursor
-    // lands on the wrong string.
-    const script = /const ROW_HEIGHT = (\d+);/.exec(read('ReviewTable.vue'));
-    const style = /\.row \{[^}]*height: (\d+)px/.exec(read('style.css'));
-
-    expect(script?.[1]).toBeDefined();
-    expect(style?.[1]).toBeDefined();
-    expect(script![1]).toBe(style![1]);
-  });
-
-  it('is not repeated as a literal in the template', () => {
-    // It was, twice, which is two more places to forget.
+  it('is a table, not a stack of positioned boxes', () => {
+    // It was a list of absolutely positioned divs at a fixed height — what
+    // virtualisation needed while the screen loaded all 3 116 strings at once.
+    // Paging removed the reason and left the costs: a long string overlapped
+    // the row beneath it, and the height lived in two files that could
+    // disagree.
     const template = read('ReviewTable.vue').split('<template>')[1] ?? '';
-    expect(template).not.toMatch(/\*\s*\d{2}\s*\+\s*'px'/);
+
+    expect(template).toContain('<table class="grid">');
+    expect(template).toContain('<thead>');
+    expect(read('ReviewTable.vue')).not.toContain('ROW_HEIGHT');
+    expect(template).not.toMatch(/position: absolute|class="spacer"/);
   });
 
   it('reveals invisible characters in both columns', () => {
     // Same as the glossary: a trailing space or a stray U+200E is exactly what
     // a reviewer is looking for, and neither column draws it on its own.
     const template = read('ReviewTable.vue').split('<template>')[1] ?? '';
-    expect(template).toMatch(/class="source"><Reveal/);
-    expect(template).toMatch(/class="target"><Reveal/);
+    const rows = template.slice(template.indexOf('<tbody>'), template.indexOf('</tbody>'));
+    expect(rows.match(/<Reveal/g) ?? []).toHaveLength(2);
   });
 
   it('names its columns', () => {
     // The grid is divs, not a table, so nothing labels the columns unless a
     // header row does.
     const template = read('ReviewTable.vue').split('<template>')[1] ?? '';
-    expect(template).toContain('class="row head"');
-    expect(template).toContain('Kaynak');
-    expect(template).toContain('Çeviri');
+    const head = template.slice(template.indexOf('<thead>'), template.indexOf('</thead>'));
+    expect(head).toContain('Kaynak');
+    expect(head).toContain('Çeviri');
   });
 
-  it('has no text box inside a row', () => {
-    // A row is one fixed height and the rows are absolutely positioned from it,
-    // so anything that grows in one lands on its neighbour. Editing belongs in
-    // the detail panel, which is also the only place a sentence fits.
+  it('keeps the editor out of the rows', () => {
+    // Editing belongs in the detail panel, which is the only place a sentence
+    // fits and the only one that can grow without moving anything else.
     const template = read('ReviewTable.vue').split('<template>')[1] ?? '';
-    const row = template.slice(template.indexOf('class="row"'), template.indexOf('</aside>'));
-    const rowMarkup = row.slice(0, row.indexOf('</div>\n      </div>'));
-    expect(rowMarkup).not.toContain('<textarea');
+    const rows = template.slice(template.indexOf('<tbody>'), template.indexOf('</tbody>'));
+    expect(rows).not.toContain('<textarea');
   });
 });

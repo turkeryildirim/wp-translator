@@ -343,7 +343,6 @@ watch([selected, filter], load);
       <span><kbd>j</kbd>/<kbd>k</kbd> gez</span>
       <span><kbd>e</kbd> düzenle</span>
       <span><kbd>x</kbd> seç</span>
-      <span><kbd>boşluk</kbd> ayrıntı</span>
       <span><kbd>1</kbd>–<kbd>9</kbd> aday seç</span>
     </p>
 

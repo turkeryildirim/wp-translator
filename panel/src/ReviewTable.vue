@@ -22,40 +22,15 @@ function setPicked(id: number, on: boolean): void {
   emit('update:picked', [...next]);
 }
 
-/**
- * Must match `.row`'s height in the stylesheet: rows are absolutely positioned
- * from this number, so a disagreement leaves the list a row out. The template
- * used to repeat the literal, which is two more places to get it wrong.
- */
-const ROW_HEIGHT = 40;
-const OVERSCAN = 8;
-
 const cursor = ref(0);
 const editing = ref(false);
-// Keyed by unit id, not by row index: a virtualised row unmounts when it
-// scrolls out of view, and the row being edited is exactly the one that must
-// not lose its state.
+// Keyed by unit id rather than by row index, so a draft survives the list being
+// reloaded under it.
 const drafts = ref(new Map<number, string>());
-const expanded = ref(new Set<number>());
-const viewport = ref<HTMLElement | null>(null);
-const scrollTop = ref(0);
-const viewportHeight = ref(600);
 const editor = ref<HTMLTextAreaElement | null>(null);
+const rowEls = ref<HTMLElement[]>([]);
 
 const current = computed(() => props.units[cursor.value]);
-
-const windowRange = computed(() => {
-  const first = Math.max(0, Math.floor(scrollTop.value / ROW_HEIGHT) - OVERSCAN);
-  const visible = Math.ceil(viewportHeight.value / ROW_HEIGHT) + OVERSCAN * 2;
-  return { first, last: Math.min(props.units.length, first + visible) };
-});
-
-const slice = computed(() =>
-  props.units.slice(windowRange.value.first, windowRange.value.last).map((unit, index) => ({
-    unit,
-    index: windowRange.value.first + index,
-  })),
-);
 
 const draftOf = (unit: Unit): string => drafts.value.get(unit.id) ?? unit.msgstr ?? '';
 
@@ -94,15 +69,9 @@ function advance(): void {
   move(1);
 }
 
+/** Let the browser decide how far to scroll; rows are no longer a fixed size. */
 function scrollIntoView(index: number): void {
-  const element = viewport.value;
-  if (!element) return;
-
-  const top = index * ROW_HEIGHT;
-  if (top < element.scrollTop) element.scrollTop = top;
-  else if (top + ROW_HEIGHT > element.scrollTop + element.clientHeight) {
-    element.scrollTop = top + ROW_HEIGHT - element.clientHeight;
-  }
+  rowEls.value[index]?.scrollIntoView({ block: 'nearest' });
 }
 
 /** `e` puts the caret in the panel's box; there is nowhere else to type. */
@@ -209,14 +178,6 @@ async function saveOnly(): Promise<void> {
   emit('changed', saved);
 }
 
-function toggleDetail(): void {
-  const unit = current.value;
-  if (!unit) return;
-  const next = new Set(expanded.value);
-  if (next.has(unit.id)) next.delete(unit.id);
-  else next.add(unit.id);
-  expanded.value = next;
-}
 
 function onKey(event: KeyboardEvent): void {
   // While the caret is in the box, only the combinations survive: everything
@@ -275,10 +236,6 @@ function onKey(event: KeyboardEvent): void {
       event.preventDefault();
       togglePick();
       break;
-    case ' ':
-      event.preventDefault();
-      toggleDetail();
-      break;
     default:
       if (/^[1-9]$/.test(event.key)) {
         event.preventDefault();
@@ -287,20 +244,8 @@ function onKey(event: KeyboardEvent): void {
   }
 }
 
-function measure(): void {
-  viewportHeight.value = viewport.value?.clientHeight ?? 600;
-}
-
-onMounted(() => {
-  window.addEventListener('keydown', onKey);
-  window.addEventListener('resize', measure);
-  measure();
-});
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', onKey);
-  window.removeEventListener('resize', measure);
-});
+onMounted(() => window.addEventListener('keydown', onKey));
+onUnmounted(() => window.removeEventListener('keydown', onKey));
 
 watch(
   () => props.units,
@@ -312,59 +257,62 @@ watch(
 
 <template>
   <div class="review">
-    <!-- Outside the scrolling viewport, so it stays put; it repeats the row's
-         grid so the columns line up with what it names. -->
-    <div class="row head">
-      <span></span>
-      <span class="state" title="Durum">◆</span>
-      <span class="source">Kaynak</span>
-      <span class="target">Çeviri</span>
-      <span class="badge">Kaynak</span>
-    </div>
-    <div
-      ref="viewport"
-      class="viewport"
-      @scroll="scrollTop = ($event.target as HTMLElement).scrollTop"
-    >
-      <div class="spacer" :style="{ height: units.length * ROW_HEIGHT + 'px' }">
-        <div
-          v-for="row in slice"
-          :key="row.unit.id"
-          class="row"
-          :class="{
-            active: row.index === cursor,
-            blocked: row.unit.failures.length > 0,
-            ambiguous: row.unit.candidates.length > 0,
-            settled: row.unit.state === 'ok',
-            picked: pickedSet.has(row.unit.id),
-          }"
-          :style="{ top: row.index * ROW_HEIGHT + 'px' }"
-          @click="cursor = row.index"
-        >
-          <input
-            class="pick"
-            type="checkbox"
-            :checked="pickedSet.has(row.unit.id)"
-            :aria-label="`Seç: ${row.unit.msgid.slice(0, 40)}`"
-            @click.stop
-            @change="setPicked(row.unit.id, ($event.target as HTMLInputElement).checked)"
-          />
-          <span class="state">{{
-            row.unit.state === 'ok' ? '✓' : row.unit.failures.length ? '!' : '·'
-          }}</span>
-          <span class="source"><Reveal :value="row.unit.msgid" /></span>
-
-          <span v-if="row.unit.candidates.length" class="target candidates">
-            <span v-for="(candidate, i) in row.unit.candidates" :key="candidate.tag">
-              <kbd>{{ i + 1 }}</kbd> {{ candidate.translation }}
-              <em>{{ candidate.tag }}</em>
-            </span>
-          </span>
-          <span v-else class="target"><Reveal :value="draftOf(row.unit)" /></span>
-
-          <span v-if="row.unit.provenance" class="badge">{{ row.unit.provenance }}</span>
-        </div>
-      </div>
+    <!-- A table, because this is tabular. It was a list of absolutely
+         positioned divs at a fixed height, which is what virtualisation needed
+         when the screen loaded all 3 116 strings at once. Paging removed that
+         reason and left only its costs: a long string overlapped the row under
+         it, and the height lived in two files that could disagree. -->
+    <div class="queue">
+      <table class="grid">
+        <thead>
+          <tr>
+            <th></th>
+            <th title="Durum">·</th>
+            <th>Kaynak</th>
+            <th>Çeviri</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="(unit, index) in units"
+            :key="unit.id"
+            :ref="(el) => { if (el) rowEls[index] = el as HTMLElement }"
+            :class="{
+              on: index === cursor,
+              blocked: unit.failures.length > 0,
+              settled: unit.state === 'ok',
+              picked: pickedSet.has(unit.id),
+            }"
+            @click="cursor = index"
+          >
+            <td>
+              <input
+                class="pick"
+                type="checkbox"
+                :checked="pickedSet.has(unit.id)"
+                :aria-label="`Seç: ${unit.msgid.slice(0, 40)}`"
+                @click.stop
+                @change="setPicked(unit.id, ($event.target as HTMLInputElement).checked)"
+              />
+            </td>
+            <td class="state">
+              {{ unit.state === 'ok' ? '✓' : unit.failures.length ? '!' : '·' }}
+            </td>
+            <td>
+              <div class="clamp"><Reveal :value="unit.msgid" /></div>
+            </td>
+            <td>
+              <div v-if="unit.candidates.length" class="clamp candidates">
+                <span v-for="(candidate, i) in unit.candidates" :key="candidate.tag">
+                  <kbd>{{ i + 1 }}</kbd> {{ candidate.translation }}
+                  <em>{{ candidate.tag }}</em>
+                </span>
+              </div>
+              <div v-else class="clamp"><Reveal :value="draftOf(unit)" /></div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <aside v-if="current" class="detail">
@@ -401,11 +349,10 @@ watch(
         <p>{{ failure.message }}</p>
         <button @click="skipCheck(current!, failure.rule)">Bu kuralı bu dizgede atla</button>
       </div>
-      <UnitDetailPanel
-        v-if="expanded.has(current.id) || current.structured"
-        :unit-id="current.id"
-      />
-      <p v-else class="hint">Ayrıntı için <kbd>boşluk</kbd></p>
+      <!-- Always, for the row under the cursor: where the string lives in the
+           source tree is the context a reviewer reads it in, and it has no
+           column of its own. -->
+      <UnitDetailPanel :unit-id="current.id" />
     </aside>
   </div>
 </template>
