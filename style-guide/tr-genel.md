@@ -52,6 +52,26 @@ Ekten kaçınılamıyorsa iki yol var: ya değeri tırnağa al (`"%s" silinsin m
 
 ---
 
+## 2b. HTML içeren dizeler
+
+Etiketler ve **yapısal** öznitelikler olduğu gibi kalır: `href`, `src`, `class`, `id`,
+`target`, `rel`. Bunlarda yer tutucu varsa (`href="%1$s"`) birebir korunur.
+
+Ama **kullanıcının gördüğü öznitelik metinleri çevrilir**: `title`, `alt`,
+`aria-label`, `placeholder`. Bunlar ekranda görünen ya da ekran okuyucunun
+seslendirdiği metinlerdir; İngilizce bırakmak onları çevrilmemiş arayüz yapar.
+
+| | |
+|---|---|
+| ✅ | `<a href="%1$s" title="Sharing Docs">` → `<a href="%1$s" title="Paylaşma belgeleri">` |
+| ❌ | `<a href="%2$s" title="Sharing Docs">` — href değişmiş |
+| ❌ | `<a href="%1$s">` — title silinmiş |
+| ❌ | `<a href="%1$s" title="Sharing Docs">` — title çevrilmemiş |
+
+Özniteliği **silme**; yalnızca değerini çevir.
+
+---
+
 ## 3. Kesme işareti
 
 **Kullanılır:**

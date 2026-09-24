@@ -118,6 +118,16 @@ describe('the prompt', () => {
     );
   });
 
+  it('tells the model to translate user-visible attribute text', () => {
+    // The rule the checks enforce: structural attributes stay, title and its
+    // kind are translated. Without it the prompt asks for untranslated tooltips.
+    const prompt = buildPrompt({ styleGuide: '', terms: [] });
+
+    expect(prompt).toContain('title, alt, aria-label, placeholder');
+    expect(prompt).toContain('href');
+    expect(prompt).toMatch(/Özniteliği silme/);
+  });
+
   it('always states the output contract', () => {
     const prompt = buildPrompt({ styleGuide: '', terms: [] });
 

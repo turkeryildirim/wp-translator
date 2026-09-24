@@ -20,7 +20,10 @@ export function buildPrompt(context: TranslationContext): string {
     '',
     'ÇEVİRİ KURALLARI:',
     '- Yer tutucuları (%s, %d, %1$s, %@) kaynaktakiyle aynı sayıda ve aynı biçimde koru.',
-    '- HTML etiketlerini ve özniteliklerini olduğu gibi koru.',
+    '- HTML etiketlerini ve yapısal özniteliklerini (href, src, class, id, target…) olduğu gibi koru.',
+    '- Ama kullanıcıya görünen öznitelik metinlerini ÇEVİR: title, alt, aria-label, placeholder.',
+    '  Örnek: <a href="%1$s" title="Sharing Docs"> → <a href="%1$s" title="Paylaşma belgeleri">',
+    '  Özniteliği silme; yalnızca değerini çevir.',
     '- Satır sonlarını (\\n) ve baştaki/sondaki boşlukları kaynaktaki gibi bırak.',
     '- Kaynak nokta ile bitmiyorsa çeviri de bitmesin.',
   ];
