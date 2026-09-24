@@ -203,6 +203,17 @@ async function runBulk(): Promise<void> {
   await load();
 }
 
+const allOnPage = computed(
+  () => units.value.length > 0 && units.value.every((unit) => picked.value.includes(unit.id)),
+);
+
+function togglePage(): void {
+  const ids = units.value.map((unit) => unit.id);
+  picked.value = allOnPage.value
+    ? picked.value.filter((id) => !ids.includes(id))
+    : [...new Set([...picked.value, ...ids])];
+}
+
 function clearSelection(): void {
   picked.value = [];
   wholeFilter.value = false;
@@ -288,7 +299,7 @@ watch([selected, filter], load);
 </script>
 
 <template>
-  <div class="app">
+  <div class="app" :class="{ 'review-screen': screen === 'review' }">
     <nav class="screens">
       <button
         v-for="option in (['review', 'add', 'sources', 'glossary', 'tags'] as const)"
@@ -314,8 +325,9 @@ watch([selected, filter], load);
     <AddProject v-else-if="screen === 'add'" @added="onProjectAdded" />
 
     <template v-else>
-    <!-- Top to bottom: what the markers mean, then what to run, then what to
-         look at. Reading order matches the order the work happens in. -->
+    <!-- Fixed reading order, top to bottom: what the markers mean, what the
+         project is, what to run on it, what to look at, what to do with the
+         selection, then the rows between their two pagers. -->
     <Legend />
     <p class="legend">
       <span class="muted">Satır:</span>
@@ -326,17 +338,22 @@ watch([selected, filter], load);
       <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> onayla, ilerle</span>
       <span><kbd>Shift</kbd>+<kbd>Enter</kbd> reddet, ilerle</span>
       <span><kbd>Ctrl</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> satır</span>
+      <span><kbd>j</kbd>/<kbd>k</kbd> gez</span>
       <span><kbd>e</kbd> düzenle</span>
       <span><kbd>x</kbd> seç</span>
       <span><kbd>boşluk</kbd> ayrıntı</span>
+      <span><kbd>1</kbd>–<kbd>9</kbd> aday seç</span>
     </p>
 
-    <header>
-      <select v-model="selected" aria-label="Proje">
+    <div class="toolbar">
+      <select v-model="selected" class="grow" aria-label="Proje">
         <option v-for="p in projects" :key="p.id" :value="p.id">
           {{ p.name ?? p.projectPath }}
         </option>
       </select>
+      <button :disabled="!project" title="Projeyi ve çevirilerini sil" @click="dropProject">
+        Projeyi sil
+      </button>
       <button
         :disabled="!project || reloading"
         title="Kataloğu wp.org'dan yeniden al"
@@ -344,10 +361,14 @@ watch([selected, filter], load);
       >
         {{ reloading ? 'Yenileniyor…' : 'Yenile' }}
       </button>
-      <button :disabled="!project" title="Projeyi ve çevirilerini sil" @click="dropProject">
-        Projeyi sil
+      <button :disabled="counts.translated === 0" title="Onaylı dizgeleri PO olarak indir"
+        @click="exportPo">
+        PO indir
       </button>
+      <span v-if="project" class="progress">{{ project.ok }} / {{ project.total }} tamam</span>
+    </div>
 
+    <div class="toolbar">
       <select v-model="translateScope" aria-label="Neler çevrilsin" :disabled="translating?.running">
         <option value="untranslated">Çevrilmemişler ({{ counts.untranslated }})</option>
         <option value="waiting">Bekleyenler ({{ counts.waiting }})</option>
@@ -365,26 +386,14 @@ watch([selected, filter], load);
             : 'AI ile çevir'
         }}
       </button>
-
-      <button :disabled="counts.translated === 0" title="Onaylı dizgeleri PO olarak indir"
-        @click="exportPo">
-        PO indir
-      </button>
-
-      <span v-if="project" class="progress">{{ project.ok }} / {{ project.total }} tamam</span>
-    </header>
-
-    <p v-if="translating && !translating.running && translating.finishedAt" class="status">
-      Çeviri bitti: {{ translating.translated }} string incelemeye hazır<span
-        v-if="translating.flagged"
-      >
-        , {{ translating.flagged }} tanesi kalite kontrolünde işaretli</span
-      >.
-    </p>
+      <span v-if="translating && !translating.running && translating.finishedAt" class="muted">
+        Son çeviri: {{ translating.translated }} dizge<span v-if="translating.flagged">
+          , {{ translating.flagged }} tanesi işaretli</span
+        >.
+      </span>
+    </div>
 
     <div class="toolbar">
-      <Pager :page="page" :total="total" :page-size="PAGE" :busy="loading" @go="goTo" />
-
       <nav>
         <button
           v-for="option in VIEWS"
@@ -396,8 +405,7 @@ watch([selected, filter], load);
           {{ option.label }} <b>{{ counts[option.view].toLocaleString('tr') }}</b>
         </button>
       </nav>
-
-      <input v-model="search" placeholder="Ara…" @keyup.enter="show(filter)" />
+      <input v-model="search" class="grow" placeholder="Ara…" @keyup.enter="show(filter)" />
       <select v-model="scope" aria-label="Nerede aransın" @change="show(filter)">
         <option value="">Kaynak + çeviri</option>
         <option value="source">Yalnızca kaynak</option>
@@ -414,17 +422,24 @@ watch([selected, filter], load);
         <option value="">Toplu işlem…</option>
         <option v-for="(label, key) in BULK_LABEL" :key="key" :value="key">{{ label }}</option>
       </select>
-      <!-- Disabled until both a target and an action exist: the cost of a
-           mis-click here is measured in thousands of strings. -->
+      <!-- Dead until both a target and an action exist: the cost of a mis-click
+           here is measured in thousands of strings. -->
       <button class="primary" :disabled="!bulkAction || bulkCount === 0" @click="runBulk">
         Uygula{{ bulkCount ? ` (${bulkCount.toLocaleString('tr')})` : '' }}
       </button>
       <label class="check">
-        <input v-model="wholeFilter" type="checkbox" />
-        Sayfa yerine filtredeki {{ total.toLocaleString('tr') }} kaydın tümü
+        <input type="checkbox" :checked="allOnPage" @change="togglePage" />
+        Sayfadakiler
       </label>
+      <label class="check">
+        <input v-model="wholeFilter" type="checkbox" />
+        Filtredeki {{ total.toLocaleString('tr') }} kaydın tümü
+      </label>
+      <span v-if="picked.length && !wholeFilter" class="muted">{{ picked.length }} satır seçili</span>
       <button v-if="picked.length || wholeFilter" @click="clearSelection">Seçimi bırak</button>
     </div>
+
+    <Pager :page="page" :total="total" :page-size="PAGE" :busy="loading" @go="goTo" />
 
     <p v-if="loading" class="status">Yükleniyor…</p>
     <p v-else-if="!units.length" class="status">
@@ -432,21 +447,16 @@ watch([selected, filter], load);
     </p>
     <ReviewTable
       v-else
+      v-model:picked="picked"
       :units="units"
       @changed="onChanged"
       @bulk="load"
-      @picked="picked = $event"
       @page="goTo(page + 1)"
     />
 
     <Pager :page="page" :total="total" :page-size="PAGE" :busy="loading" @go="goTo" />
     </template>
 
-    <footer v-if="screen === 'review'">
-      <kbd>j</kbd>/<kbd>k</kbd> gez · <kbd>Enter</kbd> onayla · <kbd>e</kbd> düzenle ·
-      <kbd>Ctrl+Enter</kbd> kaydet ve onayla · <kbd>boşluk</kbd> ayrıntı ·
-      <kbd>1</kbd>–<kbd>9</kbd> aday seç · <kbd>x</kbd> toplu seçim
-    </footer>
     <Toasts />
   </div>
 </template>

@@ -281,7 +281,10 @@ tr.dropinto td { box-shadow: inset 0 2px 0 currentColor; }
   font-family: ui-monospace, monospace; font-size: 12px; }
 .legend b { font-family: ui-monospace, monospace; }
 
-/* Row selection sits with the rows, not with the actions that consume it. */
-.pickbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
-  padding: 6px 12px; border-bottom: 1px solid var(--line); }
+/* One row per decision, stacked in the order the work happens: which project,
+   what to run on it, what to look at, what to do with the selection. */
+.review-screen > .toolbar { padding: 0 12px; }
+.review-screen > .toolbar:last-of-type { padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.review-screen > .legend { padding-inline: 12px; }
+.review-screen > .pager { padding: 6px 12px; }
 .pick { margin: 0; }
