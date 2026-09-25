@@ -34,10 +34,19 @@ describe('the review table', () => {
     expect(head).toContain('Çeviri');
   });
 
+  it('starts a different project at the beginning', () => {
+    // Carrying a page number across asks the new project for an offset it may
+    // not reach, which answers with counts but no rows.
+    const app = read('App.vue');
+    const onSelect = app.slice(app.indexOf('watch(selected,'), app.indexOf('watch(page,'));
+    expect(onSelect).toContain('page.value = 0');
+    expect(onSelect).toContain('clearSelection()');
+  });
+
   it('reloads when the page number moves', () => {
     // The pager only sets the number; without a watcher the list never changes.
     const app = read('App.vue');
-    expect(app).toMatch(/watch\(\[[^\]]*\bpage\b[^\]]*\], load\)/);
+    expect(app).toMatch(/watch\(page, load\)/);
   });
 
   it('offers a way to copy the source verbatim', () => {

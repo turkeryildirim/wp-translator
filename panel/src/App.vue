@@ -296,9 +296,18 @@ onMounted(async () => {
   selected.value = projects.value[0]?.id ?? null;
 });
 
+// A different project starts at the beginning with nothing selected: carrying a
+// page number across means asking the new project for an offset it may not
+// reach, which answers with counts but no rows.
+watch(selected, () => {
+  page.value = 0;
+  clearSelection();
+  void load();
+});
+
 // Watching `page` is what makes the pager work; `goTo` only moves the number.
 // A filter change also loads explicitly, and the ticket drops the stale reply.
-watch([selected, page], load);
+watch(page, load);
 </script>
 
 <template>
@@ -461,6 +470,10 @@ watch([selected, page], load);
     <Pager :page="page" :total="total" :page-size="PAGE" :busy="loading" @go="goTo" />
 
     <p v-if="loading" class="status">Yükleniyor…</p>
+    <p v-else-if="!units.length && total > 0" class="status">
+      Bu sayfa boş — filtrede {{ total.toLocaleString('tr') }} kayıt var.
+      <button @click="goTo(0)">Başa dön</button>
+    </p>
     <p v-else-if="!units.length" class="status">
       Bu filtrede bir şey yok. Dışa aktarmaya hazır olabilirsiniz.
     </p>
