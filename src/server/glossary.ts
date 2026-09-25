@@ -187,8 +187,16 @@ export interface EntryUpdate {
  * Change an entry's translation, which also makes it the owner's. It has to be:
  * the translation is part of the key, so an edited entry matches no source's
  * wording and the sweep would delete it as unvouched.
+ *
+ * @param translationPlural left out to keep whatever is stored; both halves are
+ * part of the key, so changing either can collide with an existing entry.
  */
-export function updateEntry(db: Db, entryId: number, translation: string): EntryUpdate {
+export function updateEntry(
+  db: Db,
+  entryId: number,
+  translation: string,
+  translationPlural?: string | null,
+): EntryUpdate {
   const before = db
     .prepare(`SELECT origin, sources FROM (${ENTRY_SELECT.trim()})`)
     .get(entryId) as { origin: string; sources: number } | undefined;
@@ -197,9 +205,16 @@ export function updateEntry(db: Db, entryId: number, translation: string): Entry
   try {
     db.prepare(
       `UPDATE glossary_entries
-          SET translation = ?, origin = 'owner', updated_at = datetime('now')
+          SET translation = ?,
+              translation_plural = CASE WHEN ? THEN ? ELSE translation_plural END,
+              origin = 'owner', updated_at = datetime('now')
         WHERE id = ?`,
-    ).run(translation, entryId);
+    ).run(
+      translation,
+      translationPlural === undefined ? 0 : 1,
+      translationPlural === undefined ? null : (translationPlural || null),
+      entryId,
+    );
   } catch (problem) {
     // The key is source plus translation, so this wording is already an entry.
     if (problem instanceof Error && problem.message.includes('UNIQUE')) {

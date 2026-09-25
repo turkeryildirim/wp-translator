@@ -206,8 +206,15 @@ async function api(
       return send(response, 200, { sources: entrySources(db, id), contexts: entryContexts(db, id) });
     }
     if (method === 'POST') {
-      const body = (await readJson(request)) as { translation: string };
-      return send(response, 200, updateEntry(db, Number(entry[1]), body.translation));
+      const body = (await readJson(request)) as {
+        translation: string;
+        translationPlural?: string;
+      };
+      return send(
+        response,
+        200,
+        updateEntry(db, Number(entry[1]), body.translation, body.translationPlural),
+      );
     }
   }
 

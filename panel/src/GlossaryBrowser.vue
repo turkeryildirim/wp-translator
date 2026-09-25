@@ -31,6 +31,7 @@ const selected = ref<GlossaryEntry | null>(null);
 const vouchers = ref<EntrySource[]>([]);
 const contexts = ref<string[]>([]);
 const draft = ref('');
+const draftPlural = ref('');
 const notice = ref('');
 
 /**
@@ -74,6 +75,7 @@ function goTo(next: number): void {
 async function select(entry: GlossaryEntry): Promise<void> {
   selected.value = entry;
   draft.value = entry.translation;
+  draftPlural.value = entry.translationPlural ?? '';
   notice.value = '';
   vouchers.value = [];
   contexts.value = [];
@@ -86,11 +88,16 @@ async function select(entry: GlossaryEntry): Promise<void> {
 
 async function save(): Promise<void> {
   if (!selected.value) return;
-  const { entry, sourceWordingReturns } = await updateEntry(selected.value.id, draft.value);
+  const { entry, sourceWordingReturns } = await updateEntry(
+    selected.value.id,
+    draft.value,
+    selected.value.sourcePlural === null ? undefined : draftPlural.value,
+  );
 
   const index = rows.value.findIndex((row) => row.id === entry.id);
   if (index >= 0) rows.value[index] = entry;
   selected.value = entry;
+  draftPlural.value = entry.translationPlural ?? '';
 
   notice.value = sourceWordingReturns
     ? 'Kaydedildi. Bu sizin girdiniz oldu; kaynağın kendi çevirisi sonraki güncellemede ikinci bir seçenek olarak geri gelecek, ama doldurmada sizinki önde.'
@@ -201,9 +208,6 @@ watch(page, load);
 
       <aside v-if="selected" class="detail">
         <h3><Reveal :value="selected.sourceText" /></h3>
-        <p v-if="selected.sourcePlural" class="note">
-          çoğul: <Reveal :value="selected.sourcePlural" />
-        </p>
         <p v-if="selected.note" class="note">{{ selected.note }}</p>
 
         <!-- The box cannot mark invisible characters, so the stored wording is
@@ -211,10 +215,20 @@ watch(page, load);
         <p class="note stored"><Reveal :value="selected.translation" /></p>
 
         <label>
-          Çeviri
+          {{ selected.sourcePlural ? 'Çeviri — tekil' : 'Çeviri' }}
           <!-- Enter inserts a newline; a translation can legitimately hold one. -->
           <textarea v-model="draft" rows="3" @keydown.ctrl.enter.prevent="save" />
         </label>
+
+        <!-- A source with a plural needs both halves, exactly as a project unit
+             does; both are part of the entry's key. -->
+        <template v-if="selected.sourcePlural">
+          <p class="stored"><Reveal :value="selected.sourcePlural" /></p>
+          <label>
+            Çeviri — çoğul
+            <textarea v-model="draftPlural" rows="3" @keydown.ctrl.enter.prevent="save" />
+          </label>
+        </template>
         <div class="editor-actions">
           <button class="primary" @click="save">Kaydet</button>
           <button title="Kaynağı çeviri alanına kopyala" @click="draft = selected.sourceText">

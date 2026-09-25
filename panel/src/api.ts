@@ -240,10 +240,14 @@ export interface EntryDetail {
 }
 
 export const entryDetail = (id: number) => json<EntryDetail>(`/api/glossary/${id}`);
-export const updateEntry = (id: number, translation: string) =>
+export const updateEntry = (
+  id: number,
+  translation: string,
+  translationPlural?: string,
+) =>
   post<{ entry: GlossaryEntry; sourceWordingReturns: boolean }>(
     `/api/glossary/${id}`,
-    { translation },
+    translationPlural === undefined ? { translation } : { translation, translationPlural },
     'Sözlük girdisi kaydedildi',
   );
 
