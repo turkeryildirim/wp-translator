@@ -1,7 +1,7 @@
 import type { Db } from '../db/open.ts';
 import { collectTerms } from '../glossary/terminology.ts';
 import { checkTranslation } from '../quality/check.ts';
-import { OpencodeProvider } from '../translate/opencode.ts';
+import { DEFAULT_TIMEOUT_MS, OpencodeProvider } from '../translate/opencode.ts';
 import type { RequestItem, TranslationProvider } from '../translate/types.ts';
 import { styleGuideFor } from './tags.ts';
 
@@ -27,6 +27,14 @@ export interface TranslateProgress {
   errors: { chunk: number; message: string }[];
   /** The tail of what the provider wrote, newest last, for watching a run. */
   log: string[];
+  /**
+   * When the request in flight went out, as epoch milliseconds, or null between
+   * requests. opencode delivers an answer in one piece rather than streaming
+   * it, so elapsed time is the only sign of life there is.
+   */
+  waitingSince: number | null;
+  /** How long one request may take before it is killed. */
+  timeoutMs: number;
   finishedAt: string | null;
 }
 
@@ -43,6 +51,8 @@ const idle = (): TranslateProgress => ({
   flagged: 0,
   errors: [],
   log: [],
+  waitingSince: null,
+  timeoutMs: 0,
   finishedAt: null,
 });
 
@@ -72,6 +82,7 @@ export type TranslateScope = 'untranslated' | 'waiting' | 'selected' | 'all';
 
 export interface TranslateOptions {
   chunkSize?: number;
+  timeoutMs?: number;
   model?: string;
   agent?: string;
   provider?: TranslationProvider;
@@ -112,7 +123,13 @@ export function startTranslation(
             usageSurface: string | null;
           }[]);
 
-  progress = { ...idle(), running: true, projectId, total: pending.length };
+  progress = {
+    ...idle(),
+    running: true,
+    projectId,
+    total: pending.length,
+    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  };
   running = new AbortController();
   const { signal } = running;
 
@@ -132,6 +149,7 @@ export function startTranslation(
     new OpencodeProvider({
       ...(options.model ? { model: options.model } : {}),
       ...(options.agent ? { agent: options.agent } : {}),
+      ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
       onLine: record,
     });
 
@@ -165,8 +183,9 @@ export function startTranslation(
         const terms = collectTerms(db, projectId, items.map((item) => item.s));
         // A stalled request is the common failure, and it costs the chunk. One
         // retry turns that into a delay rather than fifty lost strings.
-        const answers = await attempt(ATTEMPTS, () =>
-          provider.translate(
+        const answers = await attempt(ATTEMPTS, () => {
+          progress.waitingSince = Date.now();
+          return provider.translate(
             {
               items,
               context: {
@@ -180,8 +199,9 @@ export function startTranslation(
               },
             },
             signal,
-          ),
-        );
+          );
+        });
+        progress.waitingSince = null;
 
         db.transaction(() => {
           for (const [index, answer] of answers.entries()) {
@@ -217,6 +237,7 @@ export function startTranslation(
         });
       }
 
+      progress.waitingSince = null;
       progress.done = Math.min(start + size, pending.length);
     }
 

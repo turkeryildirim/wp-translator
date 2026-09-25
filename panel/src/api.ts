@@ -312,6 +312,9 @@ export interface TranslateProgress {
   errors: { chunk: number; message: string }[];
   /** The tail of what opencode wrote, newest last. */
   log: string[];
+  /** When the request in flight went out, epoch ms, or null between requests. */
+  waitingSince: number | null;
+  timeoutMs: number;
   finishedAt: string | null;
 }
 

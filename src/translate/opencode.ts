@@ -34,7 +34,7 @@ export interface OpencodeOptions {
  * the request has stalled rather than slowed, and waiting longer only delays
  * the retry.
  */
-const DEFAULT_TIMEOUT_MS = 120_000;
+export const DEFAULT_TIMEOUT_MS = 120_000;
 
 export class OpencodeProvider implements TranslationProvider {
   readonly name = 'opencode';

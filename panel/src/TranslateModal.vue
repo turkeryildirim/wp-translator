@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { TranslateProgress } from './api.ts';
 
 const props = defineProps<{ progress: TranslateProgress }>();
@@ -7,6 +7,29 @@ const emit = defineEmits<{ stop: [] }>();
 
 const logEl = ref<HTMLElement | null>(null);
 const stopping = ref(false);
+
+/**
+ * Seconds the request in flight has been out.
+ *
+ * opencode delivers an answer in one piece rather than streaming it, so between
+ * "sent" and the answer there is nothing to show but the clock — and the clock
+ * is what says the difference between working and stuck.
+ */
+const now = ref(Date.now());
+let tick: ReturnType<typeof setInterval> | null = null;
+onMounted(() => {
+  tick = setInterval(() => (now.value = Date.now()), 500);
+});
+onUnmounted(() => {
+  if (tick) clearInterval(tick);
+});
+
+const waited = computed(() =>
+  props.progress.waitingSince === null
+    ? null
+    : Math.floor((now.value - props.progress.waitingSince) / 1000),
+);
+const limit = computed(() => Math.round(props.progress.timeoutMs / 1000));
 
 // Follow the tail, which is where a stalled request shows itself.
 watch(
@@ -40,6 +63,17 @@ function stop(): void {
         </span>
       </p>
       <progress :value="progress.done" :max="progress.total || 1" />
+
+      <p class="waiting">
+        <template v-if="waited === null">Küme hazırlanıyor…</template>
+        <template v-else>
+          Model yanıtı bekleniyor — <b>{{ waited }}</b> / {{ limit }} sn
+          <span class="muted">
+            · opencode yanıtı parça parça değil tek seferde verir, bu yüzden bu süre
+            dolana kadar başka bir işaret gelmez.
+          </span>
+        </template>
+      </p>
 
       <p v-if="progress.errors.length" class="failure-inline">
         {{ progress.errors[progress.errors.length - 1]!.message }}

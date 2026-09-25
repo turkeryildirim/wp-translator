@@ -182,6 +182,32 @@ describe('running a translation', () => {
 });
 
 describe('watching a run', () => {
+  it('reports how long the request in flight has been out', async () => {
+    // opencode answers in one piece rather than streaming, so elapsed time is
+    // the only sign of life between the request and the answer.
+    let seen: number | null = -1;
+    const provider = stub((request) => {
+      seen = translateProgress().waitingSince;
+      return request.items.map((item) => ({ i: item.i, t: 'ok' }));
+    });
+
+    startTranslation(db, projectId, { provider, chunkSize: 4 });
+    expect(seen).not.toBeNull();
+    await settled();
+
+    // Cleared once nothing is out, so the clock does not run on after the end.
+    expect(translateProgress().waitingSince).toBeNull();
+  });
+
+  it('publishes the timeout, so the wait has a stated bound', async () => {
+    const provider = stub((request) => request.items.map((item) => ({ i: item.i, t: 'ok' })));
+
+    startTranslation(db, projectId, { provider, chunkSize: 4, timeoutMs: 90_000 });
+    await settled();
+
+    expect(translateProgress().timeoutMs).toBe(90_000);
+  });
+
   it('keeps the tail of what the provider wrote', async () => {
     // A stalled request and a slow one look identical from outside; the
     // provider's own output is the difference.
