@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collectText, parseResponse, reconcile } from '../src/translate/opencode.ts';
+import { collectText, parseResponse, reconcile, describeEvent } from '../src/translate/opencode.ts';
 import { buildPrompt } from '../src/translate/prompt.ts';
 import type { TranslationRequest } from '../src/translate/types.ts';
 
@@ -137,5 +137,38 @@ describe('the prompt', () => {
 
     expect(prompt).toContain('Yalnızca bir JSON dizisi döndür');
     expect(prompt).toContain('Yer tutucuları');
+  });
+});
+
+describe('reading opencode’s event stream', () => {
+  const line = (event: unknown): string | null => describeEvent(JSON.stringify(event));
+
+  it('shows the text the model is producing', () => {
+    // The only part of the stream worth watching: everything else is ids.
+    expect(line({ type: 'text', part: { type: 'text', text: '[{"i":0,"t":"Kaydet"}' } })).toBe(
+      '» [{"i":0,"t":"Kaydet"}',
+    );
+  });
+
+  it('collapses whitespace so one answer stays one line', () => {
+    expect(line({ type: 'text', part: { type: 'text', text: 'a\n\n  b' } })).toBe('» a b');
+  });
+
+  it('says when a request went out and when it came back', () => {
+    expect(line({ type: 'step_start', part: { type: 'step-start' } })).toMatch(/gönderildi/);
+    expect(line({ type: 'step_finish', part: { type: 'step-finish' } })).toMatch(/tamamladı/);
+  });
+
+  it('surfaces an error rather than swallowing it', () => {
+    expect(line({ error: { name: 'ProviderAuthError' } })).toContain('ProviderAuthError');
+  });
+
+  it('says nothing about events with nothing to say', () => {
+    expect(line({ type: 'snapshot', part: { id: 'prt_1', snapshot: 'abc' } })).toBeNull();
+  });
+
+  it('passes through anything that is not an event', () => {
+    // opencode's own chatter, which is exactly what matters when it will not run.
+    expect(describeEvent('opencode: command not found')).toBe('opencode: command not found');
   });
 });

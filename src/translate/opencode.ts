@@ -84,20 +84,23 @@ export class OpencodeProvider implements TranslationProvider {
       child.stdout.setEncoding('utf-8');
       child.stderr.setEncoding('utf-8');
 
-      // Reported a line at a time as it arrives. A stalled request looks
-      // identical to a slow one from the outside; its output is the difference.
+      // Reported as it arrives. A stalled request looks identical to a slow one
+      // from the outside; its output is the difference.
       const watch = this.options.onLine;
-      const feed = (where: 'out' | 'err'): ((chunk: string) => void) => {
+      const feed = (render: (line: string) => string | null): ((chunk: string) => void) => {
         let rest = '';
         return (chunk: string) => {
           if (!watch) return;
           const lines = (rest + chunk).split('\n');
           rest = lines.pop() ?? '';
-          for (const line of lines) if (line.trim()) watch(`${where} ${line}`);
+          for (const line of lines) {
+            const shown = line.trim() ? render(line) : null;
+            if (shown) watch(shown);
+          }
         };
       };
-      const toOut = feed('out');
-      const toErr = feed('err');
+      const toOut = feed(describeEvent);
+      const toErr = feed((line) => `hata: ${line.trim()}`);
 
       child.stdout.on('data', (chunk: string) => { stdout += chunk; toOut(chunk); });
       child.stderr.on('data', (chunk: string) => { stderr += chunk; toErr(chunk); });
@@ -114,6 +117,42 @@ export class OpencodeProvider implements TranslationProvider {
         else reject(new Error(`opencode exited with ${code}: ${stderr.trim().slice(0, 400)}`));
       });
     });
+  }
+}
+
+/**
+ * Turn one line of opencode's event stream into something a person can read.
+ *
+ * The raw events are JSON objects full of ids and snapshots; what matters while
+ * a run goes is the text the model is producing and whether anything is
+ * arriving at all. Returns null for events with nothing to say.
+ */
+export function describeEvent(line: string): string | null {
+  let event: { type?: string; part?: { type?: string; text?: string }; error?: unknown };
+  try {
+    event = JSON.parse(line) as typeof event;
+  } catch {
+    // Not an event: opencode's own chatter, worth showing as it is.
+    return line.trim().slice(0, 200);
+  }
+
+  if (event.error) return `hata: ${JSON.stringify(event.error).slice(0, 200)}`;
+
+  const text = event.part?.text;
+  if (typeof text === 'string' && text.trim()) {
+    return `» ${text.replace(/\s+/g, ' ').trim()}`;
+  }
+
+  const kind = event.part?.type ?? event.type;
+  switch (kind) {
+    case 'step-start':
+    case 'step_start':
+      return '· istek gönderildi, model düşünüyor…';
+    case 'step-finish':
+    case 'step_finish':
+      return '· model yanıtı tamamladı';
+    default:
+      return null;
   }
 }
 
