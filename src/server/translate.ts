@@ -9,11 +9,15 @@ import { styleGuideFor } from './tags.ts';
 const ATTEMPTS = 2;
 
 /**
- * Strings per request. The response is the binding constraint, not the request,
- * and a truncated reply is worse than a refused one because it reads as a
- * result — so this stays well inside the output caps free models tend to have.
+ * Strings per request.
+ *
+ * The response is the binding constraint, not the request, and its cost grows
+ * faster than the count: halving the batch roughly quarters the time it takes,
+ * so a whole project finishes sooner in small batches than in large ones. Small
+ * also means a failed batch costs less and each request sits well inside the
+ * timeout.
  */
-const DEFAULT_CHUNK = 50;
+const DEFAULT_CHUNK = 25;
 
 export interface TranslateProgress {
   running: boolean;
