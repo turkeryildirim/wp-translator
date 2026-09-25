@@ -48,6 +48,13 @@ describe('the review table', () => {
     expect(script).toContain("setDraft(unit, 'many', unit.msgidPlural)");
   });
 
+  it('does not gate approval on the stored translation’s failures', () => {
+    // `unit.failures` describes what is saved, not what is in the box, so
+    // gating on it refuses the very edit that fixes a blocked string.
+    const template = read('ReviewTable.vue').split('<template>')[1] ?? '';
+    expect(template).not.toMatch(/:disabled="[^"]*failures[^"]*"/);
+  });
+
   it('keeps the editor out of the rows', () => {
     // Editing belongs in the detail panel, which is the only place a sentence
     // fits and the only one that can grow without moving anything else.

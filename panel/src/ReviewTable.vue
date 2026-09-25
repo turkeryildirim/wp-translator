@@ -114,30 +114,30 @@ async function reject(): Promise<void> {
   advance();
 }
 
+/**
+ * Save what is in the box and settle the row.
+ *
+ * The checks run on the server against what is actually saved, never against
+ * `unit.failures` — that describes the stored translation, so an edit that
+ * fixes a blocked string would be refused on the strength of the string it
+ * replaced. A refused save answers 200 with the failures, so the outcome is in
+ * the body, and the cursor stays put for the owner to try again.
+ */
 async function approve(withEdit: boolean): Promise<void> {
   const unit = current.value;
   if (!unit) return;
 
-  // Say what is wrong and what the two ways out are, rather than doing nothing.
-  if (unit.failures.length > 0) {
-    notify(
-      'error',
-      `${unit.failures[0]!.message} — düzeltmek için "e", kuralı atlamak için sağdaki düğme.`,
-    );
+  const { unit: saved, blocked } = await saveUnit(unit.id, withEdit ? editOf(unit) : {});
+  emit('changed', saved);
+
+  if (blocked?.length) {
+    notify('error', `Onaylanmadı: ${blocked[0]!.message}`);
     return;
   }
 
-  const { unit: saved, blocked } = await saveUnit(unit.id, withEdit ? editOf(unit) : {});
-
-  // A refused save answers 200 with the failures, so the outcome is in the
-  // body, not the status.
-  if (blocked?.length)
-    notify('error', `Kaydedilmedi, kalite kontrolü engelledi: ${blocked[0]!.rule}`);
-  else notify('ok', 'Onaylandı');
-
+  notify('ok', 'Onaylandı');
   clearDraft(unit);
   editing.value = false;
-  emit('changed', saved);
   advance();
 }
 
@@ -362,9 +362,9 @@ watch(
         <button :title="'Kaynağı çeviri alanına kopyala'" @click="copySource">
           Orijinali kopyala
         </button>
-        <button class="primary" :disabled="current.failures.length > 0" @click="approve(true)">
-          Kaydet ve onayla
-        </button>
+        <!-- Never disabled by `failures`: those describe the stored
+             translation, not what is in the box. -->
+        <button class="primary" @click="approve(true)">Kaydet ve onayla</button>
         <button @click="saveOnly">Kaydet</button>
         <button @click="reject">Reddet</button>
         <span class="muted"><kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
