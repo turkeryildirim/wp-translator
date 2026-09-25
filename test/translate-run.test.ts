@@ -107,11 +107,29 @@ describe('running a translation', () => {
     ).toBe('Düzenle');
   });
 
-  it('leaves a failed chunk untranslated so a re-run covers it', async () => {
-    let attempt = 0;
+  it('retries a chunk before giving up on it', async () => {
+    // A stalled request is the common failure and it costs the whole chunk, so
+    // one retry turns fifty lost strings into a delay.
+    let tries = 0;
     const provider = stub((request) => {
-      attempt += 1;
-      if (attempt === 1) throw new Error('the model refused');
+      tries += 1;
+      if (tries === 1) throw new Error('the model stalled');
+      return request.items.map((item) => ({ i: item.i, t: 'ok' }));
+    });
+
+    startTranslation(db, projectId, { provider, chunkSize: 2 });
+    await settled();
+
+    expect(translateProgress().errors).toHaveLength(0);
+    expect(states()).toEqual({ review: 4 });
+  });
+
+  it('leaves a failed chunk untranslated so a re-run covers it', async () => {
+    let tries = 0;
+    const provider = stub((request) => {
+      tries += 1;
+      // Both attempts at the first chunk fail; the second chunk answers.
+      if (tries <= 2) throw new Error('the model refused');
       return request.items.map((item) => ({ i: item.i, t: 'ok' }));
     });
 

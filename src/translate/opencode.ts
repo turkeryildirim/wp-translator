@@ -25,6 +25,15 @@ export interface OpencodeOptions {
   timeoutMs?: number;
 }
 
+/**
+ * How long a single request may take before it is killed.
+ *
+ * A batch this size answers in about a minute when it answers at all; past that
+ * the request has stalled rather than slowed, and waiting longer only delays
+ * the retry.
+ */
+const DEFAULT_TIMEOUT_MS = 120_000;
+
 export class OpencodeProvider implements TranslationProvider {
   readonly name = 'opencode';
 
@@ -58,7 +67,7 @@ export class OpencodeProvider implements TranslationProvider {
     if (this.options.agent) args.push('--agent', this.options.agent);
     args.push(prompt);
 
-    const timeoutMs = this.options.timeoutMs ?? 300_000;
+    const timeoutMs = this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
     return new Promise<string>((resolve, reject) => {
       const child = spawn(this.options.binary ?? 'opencode', args, {

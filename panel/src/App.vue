@@ -380,9 +380,18 @@ watch([selected, page], load);
             : 'AI ile çevir'
         }}
       </button>
-      <span v-if="translating && !translating.running && translating.finishedAt" class="muted">
+      <!-- Failures are shown while the run is going, not only at the end: a
+           stalled chunk costs minutes, and the owner has to know it is
+           happening to decide whether to let it continue. -->
+      <span v-if="translating?.running && translating.errors.length" class="failure-inline">
+        {{ translating.errors.length }} küme başarısız —
+        {{ translating.errors[translating.errors.length - 1]!.message }}
+      </span>
+      <span v-else-if="translating && !translating.running && translating.finishedAt" class="muted">
         Son çeviri: {{ translating.translated }} dizge<span v-if="translating.flagged">
           , {{ translating.flagged }} tanesi işaretli</span
+        ><span v-if="translating.errors.length">
+          , {{ translating.errors.length }} küme başarısız</span
         >.
       </span>
     </div>

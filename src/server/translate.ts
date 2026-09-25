@@ -5,6 +5,9 @@ import { OpencodeProvider } from '../translate/opencode.ts';
 import type { RequestItem, TranslationProvider } from '../translate/types.ts';
 import { styleGuideFor } from './tags.ts';
 
+/** How many times a chunk is sent before it is given up on. */
+const ATTEMPTS = 2;
+
 /**
  * Strings per request. The response is the binding constraint, not the request,
  * and a truncated reply is worse than a refused one because it reads as a
@@ -130,18 +133,22 @@ export function startTranslation(
 
       try {
         const terms = collectTerms(db, projectId, items.map((item) => item.s));
-        const answers = await provider.translate({
-          items,
-          context: {
-            styleGuide,
-            terms,
-            project: {
-              ...(project.name ? { name: project.name } : {}),
-              ...(project.description ? { description: project.description } : {}),
-              ...(project.readme ? { readme: project.readme } : {}),
+        // A stalled request is the common failure, and it costs the chunk. One
+        // retry turns that into a delay rather than fifty lost strings.
+        const answers = await attempt(ATTEMPTS, () =>
+          provider.translate({
+            items,
+            context: {
+              styleGuide,
+              terms,
+              project: {
+                ...(project.name ? { name: project.name } : {}),
+                ...(project.description ? { description: project.description } : {}),
+                ...(project.readme ? { readme: project.readme } : {}),
+              },
             },
-          },
-        });
+          }),
+        );
 
         db.transaction(() => {
           for (const [index, answer] of answers.entries()) {
@@ -178,6 +185,19 @@ export function startTranslation(
   })();
 
   return progress;
+}
+
+/** Run `work` until it succeeds or the attempts run out, reporting the last error. */
+async function attempt<T>(times: number, work: () => Promise<T>): Promise<T> {
+  let last: unknown;
+  for (let n = 0; n < times; n += 1) {
+    try {
+      return await work();
+    } catch (error) {
+      last = error;
+    }
+  }
+  throw last;
 }
 
 /** The `WHERE` a scope stands for. `all` needs none. */
