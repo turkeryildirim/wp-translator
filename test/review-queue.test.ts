@@ -139,6 +139,37 @@ describe('a doubtful upstream translation', () => {
   });
 });
 
+describe('saving without approving', () => {
+  beforeEach(() => {
+    projectId = add([{ msgid: 'Save' }]);
+  });
+
+  it('leaves the unit waiting', () => {
+    // Passing the checks is not the same as being approved: an edit saved
+    // while the owner is still thinking must not settle itself.
+    const unitId = listUnits(db, projectId).rows[0]!.id;
+
+    saveUnit(db, unitId, { msgstr: 'Kaydet' });
+
+    expect(listUnits(db, projectId, { view: 'waiting' }).total).toBe(1);
+    expect(listUnits(db, projectId, { view: 'translated' }).total).toBe(0);
+  });
+
+  it('settles it when asked to', () => {
+    const unitId = listUnits(db, projectId).rows[0]!.id;
+
+    saveUnit(db, unitId, { msgstr: 'Kaydet' }, true);
+
+    expect(listUnits(db, projectId, { view: 'translated' }).total).toBe(1);
+  });
+
+  it('keeps the translation either way', () => {
+    const unitId = listUnits(db, projectId).rows[0]!.id;
+
+    expect(saveUnit(db, unitId, { msgstr: 'Kaydet' }).unit.msgstr).toBe('Kaydet');
+  });
+});
+
 describe('the blocked column', () => {
   it('follows an edit rather than being recomputed per row', () => {
     // The queue filters and pages on it in SQL, so it cannot be recomputed.

@@ -127,7 +127,7 @@ async function approve(withEdit: boolean): Promise<void> {
   const unit = current.value;
   if (!unit) return;
 
-  const { unit: saved, blocked } = await saveUnit(unit.id, withEdit ? editOf(unit) : {});
+  const { unit: saved, blocked } = await saveUnit(unit.id, withEdit ? editOf(unit) : {}, true);
   emit('changed', saved);
 
   if (blocked?.length) {

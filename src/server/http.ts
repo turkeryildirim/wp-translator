@@ -137,8 +137,13 @@ async function api(
 
   const save = /^\/api\/units\/(\d+)$/.exec(route);
   if (method === 'POST' && save) {
-    const body = await readJson(request);
-    return send(response, 200, saveUnit(db, Number(save[1]), body));
+    const body = (await readJson(request)) as {
+      msgstr?: string;
+      msgstrPlural?: string;
+      approve?: boolean;
+    };
+    const { approve, ...edit } = body;
+    return send(response, 200, saveUnit(db, Number(save[1]), edit, approve === true));
   }
 
   const override = /^\/api\/units\/(\d+)\/override$/.exec(route);

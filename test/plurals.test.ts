@@ -36,17 +36,19 @@ describe('a string with singular and plural forms', () => {
   });
 
   it('settles once both forms are given', () => {
-    const { blocked } = saveUnit(db, unitId, {
-      msgstr: 'Konuşmacı',
-      msgstrPlural: 'Konuşmacılar',
-    });
+    const { blocked } = saveUnit(
+      db,
+      unitId,
+      { msgstr: 'Konuşmacı', msgstrPlural: 'Konuşmacılar' },
+      true,
+    );
 
     expect(blocked).toBeUndefined();
     expect(listUnits(db, projectId, { view: 'translated' }).total).toBe(1);
   });
 
   it('carries both forms out to the PO', () => {
-    saveUnit(db, unitId, { msgstr: 'Konuşmacı', msgstrPlural: 'Konuşmacılar' });
+    saveUnit(db, unitId, { msgstr: 'Konuşmacı', msgstrPlural: 'Konuşmacılar' }, true);
     const unit = parsePo(exportProject(db, projectId).po).units[0]!;
 
     expect(unit.msgidPlural).toBe('Speakers');
@@ -59,7 +61,7 @@ describe('emptying a translation', () => {
   it('sends the unit back to untranslated rather than leaving it settled', () => {
     // Rejecting is a save of an empty string; an empty translation is not a
     // translation, so it exports nothing and the next run picks it up.
-    saveUnit(db, unitId, { msgstr: 'Konuşmacı', msgstrPlural: 'Konuşmacılar' });
+    saveUnit(db, unitId, { msgstr: 'Konuşmacı', msgstrPlural: 'Konuşmacılar' }, true);
     expect(listUnits(db, projectId, { view: 'translated' }).total).toBe(1);
 
     const { unit } = saveUnit(db, unitId, { msgstr: '', msgstrPlural: '' });

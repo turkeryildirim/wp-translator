@@ -52,7 +52,7 @@ describe('a project never writes to the glossary', () => {
     const before = glossarySize();
     const unitId = listUnits(db, projectId, { view: 'untranslated' }).rows[0]!.id;
 
-    saveUnit(db, unitId, { msgstr: 'Sil' });
+    saveUnit(db, unitId, { msgstr: 'Sil' }, true);
     expect(listUnits(db, projectId, { view: 'translated' }).total).toBe(1);
     expect(glossarySize()).toBe(before);
   });

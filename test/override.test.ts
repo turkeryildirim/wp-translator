@@ -33,7 +33,7 @@ describe('getting past a blocked string', () => {
   });
 
   it('clears when the translation is fixed', () => {
-    const { blocked } = saveUnit(db, unitId, { msgstr: 'Hem %1$s hem %2$s kullan' });
+    const { blocked } = saveUnit(db, unitId, { msgstr: 'Hem %1$s hem %2$s kullan' }, true);
 
     expect(blocked).toBeUndefined();
     expect(listUnits(db, projectId, { view: 'blocked' }).total).toBe(0);

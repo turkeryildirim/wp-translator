@@ -143,13 +143,18 @@ export const unitDetail = (unitId: number) => json<UnitDetail>(`/api/units/${uni
 export const overrideCheck = (unitId: number, rule: string, reason: string) =>
   post<{ ok: true }>(`/api/units/${unitId}/override`, { rule, reason }, 'Kural atlandı');
 
-export const saveUnit = (unitId: number, edit: { msgstr?: string; msgstrPlural?: string }) =>
+/** @param approve settle the unit as well; saving alone leaves it waiting. */
+export const saveUnit = (
+  unitId: number,
+  edit: { msgstr?: string; msgstrPlural?: string },
+  approve = false,
+) =>
   json<{ unit: Unit; blocked?: CheckFailure[] }>(
     `/api/units/${unitId}`,
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(edit),
+      body: JSON.stringify({ ...edit, approve }),
     },
     // Unlabelled: a refused save still answers 200, carrying `blocked`, so the
     // outcome is in the body and ReviewTable reports it.

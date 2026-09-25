@@ -294,15 +294,20 @@ export interface SaveResult {
 }
 
 /**
- * Approve a unit, optionally replacing its translation first.
+ * Store a translation, and settle the unit only if asked to.
  *
  * A failing translation is stored so the work is not lost, but the unit stays in
  * `review` until it passes the checks or the owner records an exception.
+ *
+ * @param approve `false` keeps the unit waiting, which is what saving an edit
+ * without deciding on it means. Passing the checks is not the same as being
+ * approved.
  */
 export function saveUnit(
   db: Db,
   unitId: number,
   edit: { msgstr?: string; msgstrPlural?: string } = {},
+  approve = false,
 ): SaveResult {
   const current = db
     .prepare(
@@ -356,7 +361,7 @@ export function saveUnit(
   ).run(
     msgstr,
     msgstrPlural ?? null,
-    blocking.length === 0 ? 'ok' : 'review',
+    blocking.length === 0 && approve ? 'ok' : 'review',
     blocking.length === 0 ? 0 : 1,
     edit.msgstr !== undefined ? 1 : 0,
     unitId,
