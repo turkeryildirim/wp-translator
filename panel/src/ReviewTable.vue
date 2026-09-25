@@ -22,18 +22,33 @@ function setPicked(id: number, on: boolean): void {
 
 const cursor = ref(0);
 const editing = ref(false);
+/** Both halves of a translation; `many` is unused unless the source has a plural. */
+interface Draft {
+  one: string;
+  many: string;
+}
+
 // Keyed by unit id rather than by row index, so a draft survives the list being
 // reloaded under it.
-const drafts = ref(new Map<number, string>());
+const drafts = ref(new Map<number, Draft>());
 const editor = ref<HTMLTextAreaElement | null>(null);
 const rowEls = ref<HTMLElement[]>([]);
 
 const current = computed(() => props.units[cursor.value]);
 
-const draftOf = (unit: Unit): string => drafts.value.get(unit.id) ?? unit.msgstr ?? '';
+const draftOf = (unit: Unit): Draft =>
+  drafts.value.get(unit.id) ?? { one: unit.msgstr ?? '', many: unit.msgstrPlural ?? '' };
 
-function setDraft(unit: Unit, value: string): void {
-  drafts.value = new Map(drafts.value).set(unit.id, value);
+function setDraft(unit: Unit, part: keyof Draft, value: string): void {
+  drafts.value = new Map(drafts.value).set(unit.id, { ...draftOf(unit), [part]: value });
+}
+
+/** What a save sends: the plural half only where the source has one. */
+function editOf(unit: Unit): { msgstr: string; msgstrPlural?: string } {
+  const draft = draftOf(unit);
+  return unit.msgidPlural === null
+    ? { msgstr: draft.one }
+    : { msgstr: draft.one, msgstrPlural: draft.many };
 }
 
 function clearDraft(unit: Unit): void {
@@ -91,7 +106,7 @@ async function reject(): Promise<void> {
   const unit = current.value;
   if (!unit) return;
 
-  const { unit: saved } = await saveUnit(unit.id, { msgstr: '' });
+  const { unit: saved } = await saveUnit(unit.id, { msgstr: '', msgstrPlural: '' });
   notify('ok', 'Reddedildi');
   clearDraft(unit);
   editing.value = false;
@@ -112,10 +127,7 @@ async function approve(withEdit: boolean): Promise<void> {
     return;
   }
 
-  const { unit: saved, blocked } = await saveUnit(
-    unit.id,
-    withEdit ? { msgstr: draftOf(unit) } : {},
-  );
+  const { unit: saved, blocked } = await saveUnit(unit.id, withEdit ? editOf(unit) : {});
 
   // A refused save answers 200 with the failures, so the outcome is in the
   // body, not the status.
@@ -132,7 +144,7 @@ async function approve(withEdit: boolean): Promise<void> {
 function chooseCandidate(position: number): void {
   const unit = current.value;
   const candidate = unit?.candidates[position];
-  if (unit && candidate) setDraft(unit, candidate.translation);
+  if (unit && candidate) setDraft(unit, 'one', candidate.translation);
 }
 
 function togglePick(): void {
@@ -158,10 +170,12 @@ async function skipCheck(unit: Unit, rule: string): Promise<void> {
   emit('changed', saved);
 }
 
-/** Put the source into the translation box, invisible characters and all. */
+/** Put the source into the translation boxes, invisible characters and all. */
 function copySource(): void {
   const unit = current.value;
-  if (unit) setDraft(unit, unit.msgid);
+  if (!unit) return;
+  setDraft(unit, 'one', unit.msgid);
+  if (unit.msgidPlural !== null) setDraft(unit, 'many', unit.msgidPlural);
 }
 
 /** Keep the edit without settling the row — the string stays where it is. */
@@ -169,7 +183,7 @@ async function saveOnly(): Promise<void> {
   const unit = current.value;
   if (!unit) return;
 
-  const { unit: saved, blocked } = await saveUnit(unit.id, { msgstr: draftOf(unit) });
+  const { unit: saved, blocked } = await saveUnit(unit.id, editOf(unit));
   if (blocked?.length) notify('error', `Kaydedildi ama onaylanmadı: ${blocked[0]!.rule}`);
   else notify('ok', 'Kaydedildi');
   clearDraft(unit);
@@ -303,7 +317,7 @@ watch(
                   <em>{{ candidate.tag }}</em>
                 </span>
               </div>
-              <div v-else class="clamp"><Reveal :value="draftOf(unit)" /></div>
+              <div v-else class="clamp"><Reveal :value="draftOf(unit).one" /></div>
             </td>
           </tr>
         </tbody>
@@ -313,23 +327,35 @@ watch(
     <aside v-if="current" class="detail">
       <h4>Kaynak</h4>
       <p class="stored"><Reveal :value="current.msgid" /></p>
-      <p v-if="current.msgidPlural" class="stored">
-        çoğul: <Reveal :value="current.msgidPlural" />
-      </p>
 
       <label>
-        Çeviri
+        {{ current.msgidPlural ? 'Çeviri — tekil' : 'Çeviri' }}
         <!-- The one place a translation is edited; a row cannot hold a
              sentence. -->
         <textarea
           ref="editor"
-          :value="draftOf(current)"
+          :value="draftOf(current).one"
           rows="3"
           @focus="editing = true"
           @blur="editing = false"
-          @input="setDraft(current!, ($event.target as HTMLTextAreaElement).value)"
+          @input="setDraft(current!, 'one', ($event.target as HTMLTextAreaElement).value)"
         />
       </label>
+
+      <!-- A source with a plural needs both halves, or the checks refuse it. -->
+      <template v-if="current.msgidPlural">
+        <p class="stored"><Reveal :value="current.msgidPlural" /></p>
+        <label>
+          Çeviri — çoğul
+          <textarea
+            :value="draftOf(current).many"
+            rows="3"
+            @focus="editing = true"
+            @blur="editing = false"
+            @input="setDraft(current!, 'many', ($event.target as HTMLTextAreaElement).value)"
+          />
+        </label>
+      </template>
       <div class="editor-actions">
         <!-- Reproducing a source's whitespace and directional marks by hand is
              guesswork; this copies them exactly. -->

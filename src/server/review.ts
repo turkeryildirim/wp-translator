@@ -331,6 +331,20 @@ export function saveUnit(
   );
   const blocking = failures.filter((failure) => !overridden.has(failure.rule));
 
+  // An empty translation is not a translation: the unit goes back to
+  // untranslated, so it exports nothing and the next run picks it up. This is
+  // what rejecting a string does.
+  if (msgstr === '') {
+    db.prepare(
+      `UPDATE translation_units
+          SET msgstr = NULL, msgstr_plural = NULL, state = 'untranslated',
+              provenance = NULL, glossary_entry_id = NULL, blocked = 0,
+              updated_at = datetime('now')
+        WHERE id = ?`,
+    ).run(unitId);
+    return { unit: getUnit(db, current.projectId, unitId) };
+  }
+
   db.prepare(
     `UPDATE translation_units
         SET msgstr = ?, msgstr_plural = ?, state = ?, blocked = ?,

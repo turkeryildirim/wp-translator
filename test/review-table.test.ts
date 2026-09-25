@@ -44,7 +44,8 @@ describe('the review table', () => {
     // Reproducing a source's whitespace and directional marks by hand is
     // guesswork, and those are exactly the characters that break an import.
     const script = read('ReviewTable.vue').split('<template>')[0] ?? '';
-    expect(script).toContain('setDraft(unit, unit.msgid)');
+    expect(script).toContain("setDraft(unit, 'one', unit.msgid)");
+    expect(script).toContain("setDraft(unit, 'many', unit.msgidPlural)");
   });
 
   it('keeps the editor out of the rows', () => {
