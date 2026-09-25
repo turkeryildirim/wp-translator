@@ -310,6 +310,8 @@ export interface TranslateProgress {
   translated: number;
   flagged: number;
   errors: { chunk: number; message: string }[];
+  /** The tail of what opencode wrote, newest last. */
+  log: string[];
   finishedAt: string | null;
 }
 

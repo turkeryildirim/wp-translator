@@ -25,8 +25,14 @@ export interface TranslateProgress {
   /** Returned but refused by the quality checks; stored anyway, still in review. */
   flagged: number;
   errors: { chunk: number; message: string }[];
+  /** The tail of what the provider wrote, newest last, for watching a run. */
+  log: string[];
   finishedAt: string | null;
 }
+
+/** Enough to see what a request is doing without the payload becoming the page. */
+const LOG_LINES = 200;
+const LOG_WIDTH = 300;
 
 const idle = (): TranslateProgress => ({
   running: false,
@@ -36,6 +42,7 @@ const idle = (): TranslateProgress => ({
   translated: 0,
   flagged: 0,
   errors: [],
+  log: [],
   finishedAt: null,
 });
 
@@ -99,11 +106,17 @@ export function startTranslation(
     return progress;
   }
 
+  const record = (line: string): void => {
+    progress.log.push(line.length > LOG_WIDTH ? `${line.slice(0, LOG_WIDTH)}…` : line);
+    if (progress.log.length > LOG_LINES) progress.log.splice(0, progress.log.length - LOG_LINES);
+  };
+
   const provider =
     options.provider ??
     new OpencodeProvider({
       ...(options.model ? { model: options.model } : {}),
       ...(options.agent ? { agent: options.agent } : {}),
+      onLine: record,
     });
 
   const project = db
@@ -171,8 +184,10 @@ export function startTranslation(
         })();
       } catch (error) {
         // The units stay untranslated, so a re-run covers exactly this chunk.
+        const chunk = Math.floor(start / size) + 1;
+        record(`-- küme ${chunk} başarısız`);
         progress.errors.push({
-          chunk: Math.floor(start / size) + 1,
+          chunk,
           message: error instanceof Error ? error.message : String(error),
         });
       }

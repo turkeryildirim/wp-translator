@@ -180,3 +180,28 @@ describe('running a translation', () => {
     await settled();
   });
 });
+
+describe('watching a run', () => {
+  it('keeps the tail of what the provider wrote', async () => {
+    // A stalled request and a slow one look identical from outside; the
+    // provider's own output is the difference.
+    const provider = stub((request) => request.items.map((item) => ({ i: item.i, t: 'ok' })));
+
+    startTranslation(db, projectId, { provider, chunkSize: 4 });
+    await settled();
+
+    expect(translateProgress().log).toEqual([]);
+  });
+
+  it('notes which chunk failed, in order', async () => {
+    const provider = stub(() => {
+      throw new Error('the model refused');
+    });
+
+    startTranslation(db, projectId, { provider, chunkSize: 4 });
+    await settled();
+
+    expect(translateProgress().log).toContain('-- küme 1 başarısız');
+    expect(translateProgress().errors).toHaveLength(1);
+  });
+});

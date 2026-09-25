@@ -23,6 +23,8 @@ export interface OpencodeOptions {
   agent?: string;
   binary?: string;
   timeoutMs?: number;
+  /** Called with each line opencode writes, so a run can be watched. */
+  onLine?: (line: string) => void;
 }
 
 /**
@@ -81,8 +83,24 @@ export class OpencodeProvider implements TranslationProvider {
       let stderr = '';
       child.stdout.setEncoding('utf-8');
       child.stderr.setEncoding('utf-8');
-      child.stdout.on('data', (chunk: string) => { stdout += chunk; });
-      child.stderr.on('data', (chunk: string) => { stderr += chunk; });
+
+      // Reported a line at a time as it arrives. A stalled request looks
+      // identical to a slow one from the outside; its output is the difference.
+      const watch = this.options.onLine;
+      const feed = (where: 'out' | 'err'): ((chunk: string) => void) => {
+        let rest = '';
+        return (chunk: string) => {
+          if (!watch) return;
+          const lines = (rest + chunk).split('\n');
+          rest = lines.pop() ?? '';
+          for (const line of lines) if (line.trim()) watch(`${where} ${line}`);
+        };
+      };
+      const toOut = feed('out');
+      const toErr = feed('err');
+
+      child.stdout.on('data', (chunk: string) => { stdout += chunk; toOut(chunk); });
+      child.stderr.on('data', (chunk: string) => { stderr += chunk; toErr(chunk); });
 
       const timer = setTimeout(() => {
         child.kill('SIGKILL');

@@ -66,6 +66,7 @@ const VIEWS: { view: QueueView; label: string; hint: string }[] = [
 ];
 
 const translateScope = ref<TranslateScope>('untranslated');
+const showLog = ref(false);
 
 async function translate(): Promise<void> {
   if (selected.value === null) return;
@@ -359,6 +360,9 @@ watch([selected, page], load);
         @click="exportPo">
         PO indir
       </button>
+      <button v-if="translating?.log.length" @click="showLog = !showLog">
+        {{ showLog ? 'Çıktıyı gizle' : 'opencode çıktısı' }}
+      </button>
       <span v-if="project" class="progress">{{ project.ok }} / {{ project.total }} tamam</span>
     </div>
 
@@ -395,6 +399,12 @@ watch([selected, page], load);
         >.
       </span>
     </div>
+
+    <!-- What opencode is actually writing. A stalled request and a slow one
+         look identical from outside; this is the difference. -->
+    <pre v-if="showLog && translating?.log.length" class="runlog">{{
+      translating.log.join('\n')
+    }}</pre>
 
     <div class="toolbar">
       <nav>
