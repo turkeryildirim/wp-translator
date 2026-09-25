@@ -47,8 +47,21 @@ const idle = (): TranslateProgress => ({
 });
 
 let progress: TranslateProgress = idle();
+let running: AbortController | null = null;
 
 export const translateProgress = (): TranslateProgress => progress;
+
+/**
+ * Stop the run after the request in flight.
+ *
+ * Aborting kills the provider's process, so the chunk it was on is lost and
+ * stays untranslated — which is what a failed chunk already does, and is why a
+ * later run picks up exactly what is left.
+ */
+export function stopTranslation(): TranslateProgress {
+  running?.abort();
+  return progress;
+}
 
 /**
  * Which units to send. `waiting` re-translates what nobody has approved, which
@@ -100,6 +113,9 @@ export function startTranslation(
           }[]);
 
   progress = { ...idle(), running: true, projectId, total: pending.length };
+  running = new AbortController();
+  const { signal } = running;
+
   if (pending.length === 0) {
     progress.running = false;
     progress.finishedAt = new Date().toISOString();
@@ -135,6 +151,7 @@ export function startTranslation(
 
   void (async () => {
     for (let start = 0; start < pending.length; start += size) {
+      if (signal.aborted) break;
       const slice = pending.slice(start, start + size);
       const items: RequestItem[] = slice.map((unit, index) => ({
         i: index,
@@ -149,18 +166,21 @@ export function startTranslation(
         // A stalled request is the common failure, and it costs the chunk. One
         // retry turns that into a delay rather than fifty lost strings.
         const answers = await attempt(ATTEMPTS, () =>
-          provider.translate({
-            items,
-            context: {
-              styleGuide,
-              terms,
-              project: {
-                ...(project.name ? { name: project.name } : {}),
-                ...(project.description ? { description: project.description } : {}),
-                ...(project.readme ? { readme: project.readme } : {}),
+          provider.translate(
+            {
+              items,
+              context: {
+                styleGuide,
+                terms,
+                project: {
+                  ...(project.name ? { name: project.name } : {}),
+                  ...(project.description ? { description: project.description } : {}),
+                  ...(project.readme ? { readme: project.readme } : {}),
+                },
               },
             },
-          }),
+            signal,
+          ),
         );
 
         db.transaction(() => {
@@ -184,6 +204,11 @@ export function startTranslation(
         })();
       } catch (error) {
         // The units stay untranslated, so a re-run covers exactly this chunk.
+        // Stopping lands here too, and is not a failure to report.
+        if (signal.aborted) {
+          record('-- durduruldu');
+          break;
+        }
         const chunk = Math.floor(start / size) + 1;
         record(`-- küme ${chunk} başarısız`);
         progress.errors.push({
@@ -195,6 +220,7 @@ export function startTranslation(
       progress.done = Math.min(start + size, pending.length);
     }
 
+    running = null;
     progress.running = false;
     progress.finishedAt = new Date().toISOString();
   })();
@@ -210,6 +236,8 @@ async function attempt<T>(times: number, work: () => Promise<T>): Promise<T> {
       return await work();
     } catch (error) {
       last = error;
+      // Retrying an aborted call would restart what the owner just stopped.
+      if (error instanceof Error && error.name === 'AbortError') break;
     }
   }
   throw last;

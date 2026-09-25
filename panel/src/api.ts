@@ -326,6 +326,13 @@ export const startTranslation = (
 export const translateProgress = (projectId: number) =>
   json<TranslateProgress>(`/api/projects/${projectId}/translate`);
 
+export const stopTranslation = (projectId: number) =>
+  json<TranslateProgress>(
+    `/api/projects/${projectId}/translate`,
+    { method: 'DELETE' },
+    'Çeviri durduruldu',
+  );
+
 export const setSourceTags = (id: number, tagIds: number[]) =>
   post<{ ok: true }>(`/api/sources/${id}/tags`, { tagIds }, 'Etiketler kaydedildi');
 

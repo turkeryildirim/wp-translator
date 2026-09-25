@@ -5,6 +5,7 @@ import {
   listProjects,
   listUnits,
   reloadCost,
+  stopTranslation,
   reloadProject,
   removeProject,
   startTranslation,
@@ -22,6 +23,7 @@ import ReviewTable from './ReviewTable.vue';
 import TrustedSources from './TrustedSources.vue';
 import GlossaryBrowser from './GlossaryBrowser.vue';
 import Toasts from './Toasts.vue';
+import TranslateModal from './TranslateModal.vue';
 import { notify } from './notify.ts';
 import TagsAndStyle from './TagsAndStyle.vue';
 import AddProject from './AddProject.vue';
@@ -66,7 +68,6 @@ const VIEWS: { view: QueueView; label: string; hint: string }[] = [
 ];
 
 const translateScope = ref<TranslateScope>('untranslated');
-const showLog = ref(false);
 
 async function translate(): Promise<void> {
   if (selected.value === null) return;
@@ -82,6 +83,11 @@ async function translate(): Promise<void> {
     ...(translateScope.value === 'selected' ? { ids: picked.value } : {}),
   });
   pollTranslation();
+}
+
+async function stopRun(): Promise<void> {
+  if (selected.value === null) return;
+  translating.value = await stopTranslation(selected.value);
 }
 
 function pollTranslation(): void {
@@ -360,9 +366,6 @@ watch([selected, page], load);
         @click="exportPo">
         PO indir
       </button>
-      <button v-if="translating?.log.length" @click="showLog = !showLog">
-        {{ showLog ? 'Çıktıyı gizle' : 'opencode çıktısı' }}
-      </button>
       <span v-if="project" class="progress">{{ project.ok }} / {{ project.total }} tamam</span>
     </div>
 
@@ -399,12 +402,6 @@ watch([selected, page], load);
         >.
       </span>
     </div>
-
-    <!-- What opencode is actually writing. A stalled request and a slow one
-         look identical from outside; this is the difference. -->
-    <pre v-if="showLog && translating?.log.length" class="runlog">{{
-      translating.log.join('\n')
-    }}</pre>
 
     <div class="toolbar">
       <nav>
@@ -469,6 +466,11 @@ watch([selected, page], load);
     <Pager :page="page" :total="total" :page-size="PAGE" :busy="loading" @go="goTo" />
     </template>
 
+    <TranslateModal
+      v-if="translating?.running"
+      :progress="translating"
+      @stop="stopRun"
+    />
     <Toasts />
   </div>
 </template>

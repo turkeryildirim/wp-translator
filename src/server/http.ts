@@ -24,7 +24,12 @@ import {
   type UnitFilter,
 } from './review.ts';
 import { addProject, bulkApprove, ownWork, reloadProject, removeProject } from './projects.ts';
-import { startTranslation, translateProgress, type TranslateScope } from './translate.ts';
+import {
+  startTranslation,
+  stopTranslation,
+  translateProgress,
+  type TranslateScope,
+} from './translate.ts';
 import {
   createTag,
   listStyleRules,
@@ -279,6 +284,7 @@ async function api(
       return send(response, 200, startTranslation(db, Number(translate[1]), body));
     }
     if (method === 'GET') return send(response, 200, translateProgress());
+    if (method === 'DELETE') return send(response, 200, stopTranslation());
   }
 
   const reload = /^\/api\/projects\/(\d+)\/reload$/.exec(route);

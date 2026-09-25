@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDb, type Db } from '../src/db/open.ts';
 import { importProject, setProjectTags } from '../src/project/import.ts';
-import { startTranslation, translateProgress } from '../src/server/translate.ts';
+import { startTranslation, stopTranslation, translateProgress } from '../src/server/translate.ts';
 import { saveStyleRule } from '../src/server/tags.ts';
 import type { Catalogue, TranslationUnit } from '../src/po/types.ts';
 import type { TranslationProvider, TranslationRequest } from '../src/translate/types.ts';
@@ -203,5 +203,35 @@ describe('watching a run', () => {
 
     expect(translateProgress().log).toContain('-- küme 1 başarısız');
     expect(translateProgress().errors).toHaveLength(1);
+  });
+});
+
+describe('stopping a run', () => {
+  it('stops after the request in flight and leaves the rest untranslated', async () => {
+    // The chunk it was on is lost, exactly as a failed one is, so a later run
+    // picks up what is left.
+    const provider = stub((request) => {
+      stopTranslation();
+      return request.items.map((item) => ({ i: item.i, t: 'ok' }));
+    });
+
+    startTranslation(db, projectId, { provider, chunkSize: 2 });
+    await settled();
+
+    expect(translateProgress().running).toBe(false);
+    expect(states().untranslated).toBeGreaterThan(0);
+  });
+
+  it('does not report stopping as a failed chunk', async () => {
+    const provider = stub(() => {
+      stopTranslation();
+      throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+    });
+
+    startTranslation(db, projectId, { provider, chunkSize: 2 });
+    await settled();
+
+    expect(translateProgress().errors).toEqual([]);
+    expect(translateProgress().log).toContain('-- durduruldu');
   });
 });
