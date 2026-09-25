@@ -254,16 +254,17 @@ tr.dropinto td { box-shadow: inset 0 2px 0 currentColor; }
 .pager button:disabled { cursor: default; opacity: .45; }
 
 /* Stand-ins for characters that have no appearance.
-   --color-primary cannot be the ink: at 1.96:1 against the background it is
-   not text. Mixed 70 % toward --color-text it clears 4.5:1 on every row state
-   including the cursor's primary fill (5.02:1, the lowest). The wash is mixed
-   from the ink rather than the palette for the same reason — on the cursor a
-   primary tint would vanish into the fill. */
+   Opaque and fixed, not derived from whatever the row is doing: a tint read
+   differently on every row state, which is what made them hard to pick out. The
+   box clears 5:1 against every row background and its ink clears 9.8:1 against
+   the box, so it reads the same wherever it lands. */
 .reveal { white-space: pre-wrap; }
-.ghost { font-style: normal;
-  color: color-mix(in oklab, var(--color-text) 70%, var(--color-primary));
-  background: color-mix(in oklab, currentColor 18%, transparent);
-  border-radius: 2px; padding: 0 1px; }
+.ghost { font-style: normal; font-size: .85em; line-height: 1;
+  color: var(--color-background);
+  background: color-mix(in oklab, var(--color-primary) 30%, var(--color-text));
+  border: 1px solid color-mix(in oklab, var(--color-primary) 65%, var(--color-text));
+  border-radius: 3px; padding: 0 2px; margin: 0 1px;
+  display: inline-block; vertical-align: baseline; }
 .stored { font: 12px/1.5 ui-monospace, monospace; }
 
 /* Sits between the pager and the table, so the markers below it are read with

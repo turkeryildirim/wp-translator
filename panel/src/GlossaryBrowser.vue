@@ -215,7 +215,12 @@ watch(page, load);
           <!-- Enter inserts a newline; a translation can legitimately hold one. -->
           <textarea v-model="draft" rows="3" @keydown.ctrl.enter.prevent="save" />
         </label>
-        <button class="primary" @click="save">Kaydet</button>
+        <div class="editor-actions">
+          <button class="primary" @click="save">Kaydet</button>
+          <button title="Kaynağı çeviri alanına kopyala" @click="draft = selected.sourceText">
+            Orijinali kopyala
+          </button>
+        </div>
         <p v-if="notice" class="notice">{{ notice }}</p>
 
         <template v-if="vouchers.length">

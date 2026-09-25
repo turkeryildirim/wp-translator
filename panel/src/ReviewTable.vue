@@ -158,6 +158,12 @@ async function skipCheck(unit: Unit, rule: string): Promise<void> {
   emit('changed', saved);
 }
 
+/** Put the source into the translation box, invisible characters and all. */
+function copySource(): void {
+  const unit = current.value;
+  if (unit) setDraft(unit, unit.msgid);
+}
+
 /** Keep the edit without settling the row — the string stays where it is. */
 async function saveOnly(): Promise<void> {
   const unit = current.value;
@@ -325,6 +331,11 @@ watch(
         />
       </label>
       <div class="editor-actions">
+        <!-- Reproducing a source's whitespace and directional marks by hand is
+             guesswork; this copies them exactly. -->
+        <button :title="'Kaynağı çeviri alanına kopyala'" @click="copySource">
+          Orijinali kopyala
+        </button>
         <button class="primary" :disabled="current.failures.length > 0" @click="approve(true)">
           Kaydet ve onayla
         </button>

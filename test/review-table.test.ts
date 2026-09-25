@@ -40,6 +40,13 @@ describe('the review table', () => {
     expect(app).toMatch(/watch\(\[[^\]]*\bpage\b[^\]]*\], load\)/);
   });
 
+  it('offers a way to copy the source verbatim', () => {
+    // Reproducing a source's whitespace and directional marks by hand is
+    // guesswork, and those are exactly the characters that break an import.
+    const script = read('ReviewTable.vue').split('<template>')[0] ?? '';
+    expect(script).toContain('setDraft(unit, unit.msgid)');
+  });
+
   it('keeps the editor out of the rows', () => {
     // Editing belongs in the detail panel, which is the only place a sentence
     // fits and the only one that can grow without moving anything else.
