@@ -317,7 +317,6 @@ watch(
              sentence. -->
         <textarea
           ref="editor"
-          class="target-editor"
           :value="draftOf(current)"
           rows="3"
           @focus="editing = true"

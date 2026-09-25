@@ -161,12 +161,15 @@ h4 { margin: 12px 0 4px; font-size: 12px; color: var(--muted); }
   overflow-wrap: anywhere;
   position: sticky; top: 0; max-height: var(--dock-max, 100dvh); overflow: auto; }
 .glossary .detail h3 { margin: 0 0 6px; font-size: 14px; }
-.glossary .detail label { display: block; color: var(--muted); margin: 8px 0 4px; }
-.glossary .detail input, .glossary .detail textarea { width: 100%; font: inherit;
+/* Both detail panels edit the same way, so the fields are styled once. */
+.detail label { display: block; color: var(--muted); margin: 8px 0 4px; }
+.detail input, .detail textarea { width: 100%; font: inherit;
   padding: 4px 6px; border: 1px solid var(--control-line); border-radius: 4px;
   background: var(--bg); color: inherit; }
 /* Grows with the text, since a translation is sometimes a whole sentence. */
-.glossary .detail textarea { resize: vertical; min-height: 3lh; line-height: 1.4; }
+.detail textarea { resize: vertical; min-height: 3lh; line-height: 1.4; }
+.editor-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  margin: 8px 0; }
 .note { color: var(--muted); font-size: 12px; margin: 0 0 6px; }
 .notice { color: var(--muted); font-size: 12px; }
 .vouchers { margin: 4px 0 0; padding-inline-start: 16px; font-size: 12px; }
