@@ -31,6 +31,7 @@ export interface Project {
   id: number;
   name: string | null;
   projectPath: string;
+  translateUrl: string;
   total: number;
   ok: number;
   review: number;

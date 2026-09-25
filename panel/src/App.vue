@@ -366,6 +366,16 @@ watch([selected, page], load);
         @click="exportPo">
         PO indir
       </button>
+      <a
+        v-if="project"
+        class="button"
+        :href="project.translateUrl"
+        target="_blank"
+        rel="noreferrer"
+        :title="project.translateUrl"
+      >
+        wp.org’da aç
+      </a>
       <span v-if="project" class="progress">{{ project.ok }} / {{ project.total }} tamam</span>
     </div>
 

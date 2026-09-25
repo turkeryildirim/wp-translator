@@ -63,6 +63,8 @@ export interface ProjectSummary {
   id: number;
   name: string | null;
   projectPath: string;
+  /** The project's page on translate.wordpress.org, as the owner gave it. */
+  translateUrl: string;
   total: number;
   ok: number;
   review: number;
@@ -74,7 +76,7 @@ const STRUCTURE = /%(?:\d+\$)?(?:ll|l|z|h)?[@sdifuxXgGc]|%%|<\/?[a-zA-Z][^<>]*>|
 export function listProjects(db: Db): ProjectSummary[] {
   return db
     .prepare(
-      `SELECT p.id, p.name, p.project_path AS projectPath,
+      `SELECT p.id, p.name, p.project_path AS projectPath, p.translate_url AS translateUrl,
               count(u.id) AS total,
               sum(u.state = 'ok') AS ok,
               sum(u.state = 'review') AS review,
