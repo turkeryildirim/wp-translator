@@ -30,9 +30,9 @@ export interface OpencodeOptions {
 /**
  * How long a single request may take before it is killed.
  *
- * A batch this size answers in about a minute when it answers at all; past that
- * the request has stalled rather than slowed, and waiting longer only delays
- * the retry.
+ * Measured over repeated batches, a healthy answer arrives well inside this and
+ * a stalled one never arrives at all, so the margin is for the provider's own
+ * variance rather than for a slow reply.
  */
 export const DEFAULT_TIMEOUT_MS = 120_000;
 

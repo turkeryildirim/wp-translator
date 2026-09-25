@@ -11,13 +11,13 @@ const ATTEMPTS = 2;
 /**
  * Strings per request.
  *
- * The response is the binding constraint, not the request, and its cost grows
- * faster than the count: halving the batch roughly quarters the time it takes,
- * so a whole project finishes sooner in small batches than in large ones. Small
- * also means a failed batch costs less and each request sits well inside the
- * timeout.
+ * The response is the binding constraint, not the request, and the provider's
+ * timing varies far more than the count does — the same batch size can answer
+ * in seconds or stall past any timeout. Small batches do not make that go away;
+ * they make it cheap, because a batch that stalls costs only the strings it
+ * held and the run keeps moving.
  */
-const DEFAULT_CHUNK = 25;
+const DEFAULT_CHUNK = 10;
 
 export interface TranslateProgress {
   running: boolean;
