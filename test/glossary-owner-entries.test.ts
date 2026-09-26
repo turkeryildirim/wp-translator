@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDb, type Db } from '../src/db/open.ts';
-import { createEntry, deleteEntry, searchGlossary } from '../src/server/glossary.ts';
+import { createEntry, deleteEntry, searchGlossary, updateEntry } from '../src/server/glossary.ts';
 import { sourceHash } from '../src/glossary/key.ts';
 
 let db: Db;
@@ -108,29 +108,45 @@ describe('entries the owner writes', () => {
 });
 
 describe('removing an entry', () => {
-  it('takes the owner’s own away for good', () => {
+  it('takes the owner’s own away', () => {
     const entry = createEntry(db, { sourceText: 'Save', translation: 'Kaydet', tagId });
 
-    expect(deleteEntry(db, entry.id).returnsOnSync).toBe(false);
+    deleteEntry(db, entry.id);
     expect(searchGlossary(db, { search: 'Save' }).total).toBe(0);
   });
 
-  it('says so when a trusted source will write it back', () => {
-    // Otherwise the entry reappears at the next update and the owner learns it
-    // by finding it there again.
+  it('refuses one a trusted source carries, and leaves it there', () => {
+    // A removal the next update undoes is not a removal. The source is what has
+    // to go instead, so this says no rather than appearing to work.
     const entryId = vouched('Save', 'Kaydet');
 
-    expect(deleteEntry(db, entryId).returnsOnSync).toBe(true);
+    expect(() => deleteEntry(db, entryId)).toThrow(/kaynak/i);
+    expect(searchGlossary(db, { search: 'Save' }).total).toBe(1);
   });
 
-  it('takes the source links with it rather than orphaning them', () => {
+  it('refuses one a source still carries after the owner reworded it', () => {
+    // `updateEntry` makes an edited row the owner's, so origin alone does not
+    // say whether anything upstream will write it back.
     const entryId = vouched('Save', 'Kaydet');
-    deleteEntry(db, entryId);
+    updateEntry(db, entryId, 'Sakla');
 
-    const left = db
-      .prepare(`SELECT count(*) AS n FROM glossary_entry_sources WHERE entry_id = ?`)
-      .get(entryId) as { n: number };
-    expect(left.n).toBe(0);
+    expect(() => deleteEntry(db, entryId)).toThrow(/kaynak/i);
+  });
+
+  it('refuses a term from the official glossary', () => {
+    // Those are stored as the owner's only so the sweep spares them; they still
+    // come from upstream and reappear on the next update.
+    const termId = Number(
+      db
+        .prepare(
+          `INSERT INTO glossary_entries
+             (source_hash, source_text, msgctxt, pos, tag_id, translation, origin)
+           VALUES (?, 'archive', NULL, 'noun', ?, 'arşiv', 'owner')`,
+        )
+        .run(sourceHash('archive', undefined), tagId).lastInsertRowid,
+    );
+
+    expect(() => deleteEntry(db, termId)).toThrow(/resmî/i);
   });
 
   it('fails on an id that is not there', () => {

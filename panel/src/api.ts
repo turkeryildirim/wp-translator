@@ -258,9 +258,16 @@ export interface NewEntry {
 export const createEntry = (entry: NewEntry) =>
   post<GlossaryEntry>('/api/glossary', entry, 'Sözlük girdisi eklendi');
 
-/** `returnsOnSync` is true when a trusted source will write the entry back. */
+/** Refused for anything upstream still carries; the server says why. */
 export const deleteEntry = (id: number) =>
-  json<{ returnsOnSync: boolean }>(`/api/glossary/${id}`, { method: 'DELETE' }, 'Sözlük girdisi silindi');
+  json<{ removed: number }>(`/api/glossary/${id}`, { method: 'DELETE' }, 'Sözlük girdisi silindi');
+
+/**
+ * Whether this entry is the owner's own to remove. Mirrors `isOwnEntry` on the
+ * server, so the button is disabled rather than refused after the click.
+ */
+export const isOwnEntry = (entry: GlossaryEntry): boolean =>
+  entry.origin === 'owner' && entry.pos === null && entry.sources === 0;
 export const updateEntry = (
   id: number,
   translation: string,

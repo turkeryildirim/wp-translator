@@ -290,27 +290,35 @@ export function createEntry(db: Db, input: NewEntry): GlossaryRow {
   }
 }
 
-export interface EntryRemoval {
-  /**
-   * True when a trusted source still carries this entry, so the next update of
-   * that source writes it back. Removing it for good means removing the source.
-   */
-  returnsOnSync: boolean;
-}
+/**
+ * Whether an entry is the owner's own to remove.
+ *
+ * Everything else came from upstream — a trusted source's row, a row a source
+ * still vouches for even after the owner reworded it, or a term from the official
+ * WordPress glossary, which is stored as the owner's only so the sweep spares it.
+ * Removing any of those cannot stick: the next update writes it back.
+ */
+export const isOwnEntry = (entry: GlossaryRow): boolean =>
+  entry.origin === 'owner' && entry.pos === null && entry.sources === 0;
 
 /**
- * Remove an entry. Its source links and context notes go with it.
+ * Remove one of the owner's own entries. Its context notes go with it.
  *
- * An entry of the owner's own is gone for good. One a trusted source vouches for
- * is not: the sync adds what the source carries, so it reappears. The caller is
- * told which happened rather than being left to find out at the next update.
+ * An entry that came from upstream is refused rather than removed and restored
+ * behind the owner's back. To be rid of one of those, remove its source.
  */
-export function deleteEntry(db: Db, entryId: number): EntryRemoval {
-  const before = db
-    .prepare(`SELECT sources FROM (${ENTRY_SELECT.trim()})`)
-    .get(entryId) as { sources: number } | undefined;
-  if (!before) throw new Error(`No glossary entry with id ${entryId}.`);
+export function deleteEntry(db: Db, entryId: number): { removed: number } {
+  const entry = db.prepare(ENTRY_SELECT).get(entryId) as GlossaryRow | undefined;
+  if (!entry) throw new Error(`No glossary entry with id ${entryId}.`);
+
+  if (!isOwnEntry(entry)) {
+    throw new Error(
+      entry.pos !== null
+        ? 'Bu, resmî WordPress sözlüğünden gelen bir terim. Silinemez.'
+        : 'Bu girdiyi güvenilir bir kaynak taşıyor. Silinemez; kalıcı olarak çıkarmak için kaynağı listeden çıkarın.',
+    );
+  }
 
   db.prepare(`DELETE FROM glossary_entries WHERE id = ?`).run(entryId);
-  return { returnsOnSync: before.sources > 0 };
+  return { removed: entryId };
 }

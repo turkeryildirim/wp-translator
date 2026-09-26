@@ -131,7 +131,8 @@ h4 { margin: 12px 0 4px; font-size: 12px; color: var(--muted); }
 /* A destructive action is named by its edge and its text. The row it sits in is
    otherwise neutral, and a filled red block there reads as the primary one. */
 .detail button.danger { border-color: var(--blocked-fg); color: var(--blocked-fg); }
-.detail button.danger:hover { background: var(--blocked); color: var(--fg); }
+.detail button.danger:hover:not(:disabled) { background: var(--blocked); color: var(--fg); }
+.detail button:disabled { border-color: var(--line); color: var(--muted); cursor: not-allowed; }
 .check { display: flex; gap: 4px; align-items: center; color: var(--muted); }
 
 .grid { width: 100%; border-collapse: collapse; }

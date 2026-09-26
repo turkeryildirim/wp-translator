@@ -53,10 +53,11 @@ To get a project's work in, add it as a trusted source once it has been approved
 on translate.wordpress.org.
 
 You can also write entries by hand on the glossary screen, and remove them.
-Yours are marked as yours and a source update never deletes them. Removing one a
-trusted source still carries only removes it until that source is next updated,
-and the screen says so when that is what happened; to be rid of it for good,
-drop the source.
+Yours are marked as yours and a source update never deletes them. Only yours can
+be removed: an entry a trusted source still carries, or a term from the official
+WordPress glossary, would be written back at the next update, so removal is
+refused rather than undone behind you. To be rid of one of those, drop its
+source.
 
 ## Running
 

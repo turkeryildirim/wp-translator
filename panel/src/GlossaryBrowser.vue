@@ -4,6 +4,7 @@ import {
   createEntry,
   deleteEntry,
   entryDetail,
+  isOwnEntry,
   listTags,
   searchGlossary,
   updateEntry,
@@ -152,13 +153,10 @@ async function remove(): Promise<void> {
   if (!entry) return;
   if (!confirm(`"${entry.sourceText}" → "${entry.translation}" girdisi silinsin mi?`)) return;
 
-  const { returnsOnSync } = await deleteEntry(entry.id);
+  await deleteEntry(entry.id);
   selected.value = null;
   await load();
-
-  notice.value = returnsOnSync
-    ? 'Silindi. Bu girdiyi bir güvenilir kaynak taşıyor, bu yüzden o kaynağın sonraki güncellemesinde geri gelecek. Kalıcı olarak çıkarmak için kaynağı listeden çıkarın.'
-    : 'Silindi.';
+  notice.value = 'Silindi.';
 }
 
 const screenEl = ref<HTMLElement | null>(null);
@@ -337,11 +335,18 @@ watch(page, load);
           <button title="Kaynağı çeviri alanına kopyala" @click="draft = selected.sourceText">
             Orijinali kopyala
           </button>
+          <!-- Only the owner's own: anything upstream carries would be written
+               back by the next update, so it is refused rather than removed. -->
           <button
             class="danger"
-            :title="selected.sources > 0
-              ? 'Bu girdiyi bir güvenilir kaynak taşıyor; sonraki güncellemede geri gelir'
-              : 'Bu girdiyi kalıcı olarak sil'"
+            :disabled="!isOwnEntry(selected)"
+            :title="
+              isOwnEntry(selected)
+                ? 'Bu girdiyi kalıcı olarak sil'
+                : selected.pos !== null
+                  ? 'Resmî WordPress sözlüğünden gelen terim; silinemez'
+                  : 'Bu girdiyi güvenilir bir kaynak taşıyor; silinemez. Kalıcı olarak çıkarmak için kaynağı listeden çıkarın.'
+            "
             @click="remove"
           >
             Sil
