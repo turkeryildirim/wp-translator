@@ -139,6 +139,13 @@ or that the model objects to is annotated with the reason and the wording the
 model would have used; rejecting stays yours to do, because in GlotPress it
 notifies the contributor.
 
+Where that wording passes the quality checks it is a **button**: clicking it
+writes it into the row's translation field and saves it. Only a single wording is
+ever offered — not a list of the glossary's alternatives, and not a plural string,
+where one form cannot fill the others. Saving as a GTE makes it the current
+translation, which marks the submission it replaces `old` rather than `rejected`:
+the contributor is not notified. Reject first if you want them to be.
+
 The local server must be running. The script reaches it through
 `GM_xmlhttpRequest`, so the server needs no CORS of its own and nothing else on
 the page can talk to it.

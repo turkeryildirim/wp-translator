@@ -29,6 +29,31 @@ export interface Judgement {
   reason: string;
   /** The wording the glossary or the model would have used, where it differs. */
   expected?: string;
+  /**
+   * One wording the owner can apply to the row unchanged, where there is one.
+   * Separate from `expected`, which is for reading and may name several.
+   */
+  proposal?: string;
+}
+
+/**
+ * A wording safe to offer for a single click, or nothing.
+ *
+ * Whatever is applied to a row this way has never been reviewed, so it passes
+ * the same checks as a translation of the tool's own. A plural source needs
+ * every form and one wording is not — `checkTranslation` reports that too.
+ */
+export function proposalFor(submission: Submission, wording: string): string | undefined {
+  if (!wording.trim()) return undefined;
+
+  const failures = checkTranslation({
+    ordinal: 0,
+    msgid: submission.source,
+    ...(submission.sourcePlural ? { msgidPlural: submission.sourcePlural } : {}),
+    msgstr: wording,
+  });
+
+  return failures.length === 0 ? wording : undefined;
 }
 
 /**
@@ -66,14 +91,19 @@ export function judgeLocally(
     (entry) => entry.translation === submission.translation && (entry.plural ?? '') === plural,
   );
 
-  return matches
-    ? { id: submission.id, verdict: 'exact', reason: 'Sözlükteki karşılığın aynısı.' }
-    : {
-        id: submission.id,
-        verdict: 'flagged',
-        reason: 'Sözlük bu kaynağı başka türlü çeviriyor.',
-        expected: known.map((entry) => entry.translation).join(' / '),
-      };
+  if (matches) return { id: submission.id, verdict: 'exact', reason: 'Sözlükteki karşılığın aynısı.' };
+
+  // Offered for one click only when the glossary is unambiguous: a list of
+  // wordings is not a wording.
+  const proposal = known.length === 1 ? proposalFor(submission, known[0]!.translation) : undefined;
+
+  return {
+    id: submission.id,
+    verdict: 'flagged',
+    reason: 'Sözlük bu kaynağı başka türlü çeviriyor.',
+    expected: known.map((entry) => entry.translation).join(' / '),
+    ...(proposal ? { proposal } : {}),
+  };
 }
 
 /** Every translation the glossary holds for this source, under these tags. */

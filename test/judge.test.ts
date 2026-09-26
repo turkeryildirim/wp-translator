@@ -102,8 +102,36 @@ describe('reading the model’s opinions', () => {
 
     expect(out).toEqual([
       { id: 10, verdict: 'agreed', reason: 'Kurallara uygun.' },
-      { id: 20, verdict: 'flagged', reason: 'Anlam yanlış.', expected: 'İkinci' },
+      {
+        id: 20,
+        verdict: 'flagged',
+        reason: 'Anlam yanlış.',
+        expected: 'İkinci',
+        proposal: 'İkinci',
+      },
     ]);
+  });
+
+  it('offers no proposal for a wording that fails the checks', () => {
+    // A proposal is applied to a live row on one click. Anything the checks
+    // refuse must stay readable and stay unclickable.
+    const out = readOpinions(
+      [{ id: 30, source: 'Use %1$s and %2$s', translation: 'Yalnızca %s' }],
+      [{ i: 0, ok: false, why: 'Yer tutucu eksik.', mine: 'Sadece %s kullan' }],
+    );
+
+    expect(out[0]!.expected).toBe('Sadece %s kullan');
+    expect(out[0]).not.toHaveProperty('proposal');
+  });
+
+  it('offers no proposal for a plural source, which needs every form', () => {
+    const out = readOpinions(
+      [{ id: 40, source: '%s item', sourcePlural: '%s items', translation: '%s öge' }],
+      [{ i: 0, ok: false, why: 'Başka karşılık.', mine: '%s ürün' }],
+    );
+
+    expect(out[0]!.expected).toBe('%s ürün');
+    expect(out[0]).not.toHaveProperty('proposal');
   });
 
   it('treats silence as unknown, never as agreement', () => {

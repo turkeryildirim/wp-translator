@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         wp-translator · bekleyen çevirileri değerlendir
 // @namespace    https://github.com/turker/wp-translator
-// @version      1.0.2
+// @version      1.1.0
 // @description  Bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları işaretler.
 // @match        https://translate.wordpress.org/projects/*
 // @grant        GM_xmlhttpRequest
@@ -24,7 +24,7 @@ const BATCH = 10;
 /** GlotPress pages at fifteen and ignores per_page, so pages are walked. */
 const PAGE_SIZE = 15;
 
-const state = { counted: 0, approved: 0, ticked: 0, unticked: 0, flagged: 0, unknown: 0, busy: false };
+const state = { counted: 0, approved: 0, refused: 0, ticked: 0, unticked: 0, flagged: 0, unknown: 0, busy: false };
 
 function ask(path, body) {
   return new Promise((resolve, reject) => {
@@ -58,35 +58,54 @@ function projectPath() {
   return match ? match[1] : '';
 }
 
-/** Every pending row on a document: its ids, its nonce, and the two strings. */
+/**
+ * Every pending row on a document: its ids, its nonce, and the two strings.
+ *
+ * GlotPress renders two `<tr row="…">` per string, the preview and the editor,
+ * so the preview is selected by class and the editor is read for the nonce.
+ */
 function readRows(root) {
   const rows = [];
-  for (const preview of root.querySelectorAll('tr[row]')) {
+  for (const preview of root.querySelectorAll('tr.preview[row]')) {
     const row = preview.getAttribute('row');
     const translationId = Number(row.split('-')[1]);
     if (!Number.isFinite(translationId) || translationId === 0) continue;
 
-    const source = preview.querySelector('.original-raw, .original-text');
+    const source = preview.querySelector('.original-text');
     const translation = preview.querySelector('.translation-text');
     if (!source || !translation) continue;
 
-    // The nonce is per row, so each one carries its own.
-    const nonce =
-      root.querySelector(`#editor-${row} [name="_gp_route_nonce"]`)?.value ??
-      root.querySelector(`#editor-${row} a[href*="_gp_route_nonce="]`)
-        ?.href?.match(/_gp_route_nonce=([^&]+)/)?.[1] ??
-      null;
-
+    const editor = root.querySelector(`#editor-${row}`);
     rows.push({
       row,
       id: translationId,
-      nonce,
+      nonce: statusNonce(editor, 'approve'),
       source: text(source),
       translation: text(translation),
       element: preview,
+      editor,
     });
   }
   return rows;
+}
+
+/**
+ * The nonce for one status change on one row.
+ *
+ * GlotPress mints a separate nonce per row and per target status and puts it on
+ * the button that performs it, which is rendered only for a session allowed to
+ * use it. So a missing nonce means this session may not set that status here.
+ */
+function statusNonce(editor, action) {
+  const button = editor?.querySelector(`button.${action}[data-nonce]`);
+  if (button) return button.dataset.nonce;
+  if (editor) {
+    console.warn(
+      `[wp-translator] ${editor.id} içinde button.${action} bulunamadı:`,
+      editor.outerHTML.slice(0, 1500),
+    );
+  }
+  return null;
 }
 
 /** GlotPress renders these with the entities decoded by the browser already. */
@@ -100,21 +119,48 @@ async function fetchPage(page) {
   return new DOMParser().parseFromString(html, 'text/html');
 }
 
+/**
+ * GlotPress's own editor settings, as `wp_localize_script` leaves them.
+ *
+ * Read out of the inline script rather than off `window`, because a userscript
+ * sandbox does not share the page's globals and a fetched page has none at all.
+ */
+function editorOptions(root) {
+  for (const script of root.querySelectorAll('script:not([src])')) {
+    const found = /var \$gp_editor_options\s*=\s*(\{.*?\});/s.exec(script.textContent ?? '');
+    if (!found) continue;
+    try {
+      return JSON.parse(found[1]);
+    } catch {
+      // Not fatal: every URL this script needs can be derived from the path.
+    }
+  }
+  return {};
+}
+
+const setStatusUrl = () => editorOptions(document).set_status_url ?? `${location.pathname}-set-status/`;
+
 async function setStatus(row, status) {
-  if (!row.nonce) throw new Error('Bu satırın nonce değeri okunamadı.');
+  if (!row.nonce) {
+    throw new Error(
+      `Bu satırda "${status}" için nonce yok — oturumun bu projede onaylama yetkisi görünmüyor.`,
+    );
+  }
 
   const body = new URLSearchParams({
     translation_id: String(row.id),
     status,
     _gp_route_nonce: row.nonce,
   });
-  const reply = await fetch(`${location.pathname}-set-status/`, {
+  const reply = await fetch(setStatusUrl(), {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8' },
     body: body.toString(),
   });
-  if (!reply.ok) throw new Error(`${reply.status} ${reply.statusText}`);
+  if (!reply.ok) {
+    throw new Error(`${reply.status} ${reply.statusText} — ${(await reply.text()).trim().slice(0, 200)}`);
+  }
 }
 
 /** Write the verdict where the owner will read it, without touching GlotPress's own nodes. */
@@ -123,13 +169,82 @@ function annotate(row, judgement) {
   note.className = 'wpt-note';
   note.dataset.verdict = judgement.verdict;
   note.textContent = judgement.reason;
+
   if (judgement.expected) {
-    const alt = document.createElement('div');
-    alt.className = 'wpt-expected';
-    alt.textContent = `önerilen: ${judgement.expected}`;
-    note.append(alt);
+    note.append(
+      judgement.proposal
+        ? applyButton(row, judgement.proposal)
+        : Object.assign(document.createElement('div'), {
+            className: 'wpt-expected',
+            textContent: `önerilen: ${judgement.expected}`,
+          }),
+    );
   }
   row.element.querySelector('.translation-text')?.after(note);
+}
+
+/**
+ * The proposed wording, as a button that writes it into the row and saves it.
+ *
+ * Only a wording the server passed through the quality checks arrives here, and
+ * only ever on a click: it replaces somebody else's pending submission.
+ */
+function applyButton(row, proposal) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'wpt-apply';
+  button.title = 'Bu çeviriyi satıra yaz ve kaydet';
+  button.textContent = `önerilen: ${proposal}`;
+
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      await applyProposal(row, proposal);
+      button.textContent = `kaydedildi: ${proposal}`;
+      button.dataset.done = 'yes';
+    } catch (problem) {
+      button.disabled = false;
+      button.textContent = `kaydedilemedi: ${problem.message}`;
+    }
+  });
+
+  return button;
+}
+
+/**
+ * Save a wording as this row's translation, the way GlotPress's own editor does.
+ *
+ * The textarea is filled first so the wording is in place and visible even if the
+ * request fails, and so the page shows the same thing the request sent.
+ */
+async function applyProposal(row, proposal) {
+  const originalId = row.row.split('-')[0];
+  const nonce = row.editor?.querySelector('button.ok[data-nonce]')?.dataset.nonce;
+  if (!nonce) {
+    throw new Error('bu satırda kaydetme yetkisi görünmüyor');
+  }
+
+  const field = `translation[${originalId}][]`;
+  const areas = row.editor.querySelectorAll(`textarea[name="${CSS.escape(field)}"]`);
+  if (areas.length !== 1) {
+    // One wording cannot fill several plural forms, and the request sends every
+    // one it finds: a partial save would empty the others.
+    throw new Error(`${areas.length} çeviri alanı var, tek karşılık yazılamaz`);
+  }
+  areas[0].value = proposal;
+
+  const body = new URLSearchParams({ original_id: originalId, _gp_route_nonce: nonce });
+  body.append(field, proposal);
+
+  const reply = await fetch(editorOptions(document).url ?? location.pathname, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+    body: body.toString(),
+  });
+  if (!reply.ok) {
+    throw new Error(`${reply.status} ${reply.statusText} — ${(await reply.text()).trim().slice(0, 200)}`);
+  }
 }
 
 /**
@@ -175,8 +290,15 @@ async function run(panel, { approve }) {
           if (!row) continue;
 
           if (judgement.verdict === 'exact' && approve) {
-            await setStatus(row, 'current');
-            state.approved += 1;
+            // One row the session cannot act on must not end a run of dozens of
+            // pages; it is reported where it happened and the walk goes on.
+            try {
+              await setStatus(row, 'current');
+              state.approved += 1;
+            } catch (problem) {
+              state.refused += 1;
+              if (page === 1) annotate(row, { verdict: 'unknown', reason: `onaylanamadı: ${problem.message}` });
+            }
           } else if (judgement.verdict === 'exact' || judgement.verdict === 'agreed') {
             if (page === 1 && !tick(row)) state.unticked += 1;
             state.ticked += 1;
@@ -210,6 +332,7 @@ function report(panel, what) {
   panel.querySelector('.wpt-status').textContent =
     `${what} · ${state.counted} bakıldı · ${state.approved} onaylandı · ` +
     `${state.ticked} seçildi · ${state.flagged} işaretli · ${state.unknown} kararsız` +
+    (state.refused ? ` · ${state.refused} onaylanamadı` : '') +
     (state.unticked ? ` · ${state.unticked} kutucuk bulunamadı` : '');
 }
 
@@ -242,6 +365,11 @@ function mount() {
       .wpt-note[data-verdict="agreed"] { background: #122d40; }
       .wpt-note[data-verdict="flagged"] { background: #361c25; }
       .wpt-expected { color: #b9bec7; }
+      .wpt-apply { display: block; margin-block-start: 4px; max-width: 100%; text-align: start;
+        padding: 3px 6px; border: 1px solid #5a6472; border-radius: 4px; cursor: pointer;
+        background: #1c2430; color: #e7e9ee; font: inherit; white-space: normal; }
+      .wpt-apply:hover:not(:disabled) { border-color: #8ea2bd; }
+      .wpt-apply[data-done="yes"] { border-color: #2f7d4f; cursor: default; }
     </style>
     <b>wp-translator</b>
     <div>

@@ -5,7 +5,7 @@ import type { Db } from '../db/open.ts';
 import { questionKey, recall, remember, rulesKey } from '../ai/memory.ts';
 import { agyItems, invokeAgy, type AgyOptions } from '../translate/agy.ts';
 import { buildJudgePrompt, toJudgeItems, type JudgeContext } from './prompt.ts';
-import type { Judgement, Submission } from './verdict.ts';
+import { proposalFor, type Judgement, type Submission } from './verdict.ts';
 
 /** One verdict as the model returns it. */
 export interface Opinion {
@@ -148,11 +148,13 @@ export function readOpinions(
       return { id: submission.id, verdict: 'unknown', reason: 'Model bu dizge için yanıt vermedi.' };
     }
     const expected = opinion.mine && opinion.mine !== submission.translation ? opinion.mine : undefined;
+    const proposal = expected ? proposalFor(submission, expected) : undefined;
     return {
       id: submission.id,
       verdict: opinion.ok ? 'agreed' : 'flagged',
       reason: opinion.why?.trim() || (opinion.ok ? 'Kurallara uygun.' : 'Model kurallara uymadığını söylüyor.'),
       ...(expected ? { expected } : {}),
+      ...(proposal ? { proposal } : {}),
     };
   });
 }
