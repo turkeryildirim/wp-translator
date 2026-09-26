@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         wp-translator · bekleyen çevirileri değerlendir
 // @namespace    https://github.com/turker/wp-translator
-// @version      1.1.2
+// @version      1.1.3
 // @description  Bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları işaretler.
 // @match        https://translate.wordpress.org/projects/*
 // @grant        GM_xmlhttpRequest
@@ -193,8 +193,6 @@ async function setStatus(row, status) {
   if (!reply.ok) {
     throw new Error(`${reply.status} ${reply.statusText} — ${(await reply.text()).trim().slice(0, 200)}`);
   }
-
-  return savedStatus(await reply.text());
 }
 
 /**
@@ -212,7 +210,7 @@ function savedStatus(body) {
   } catch {
     // Not JSON: fall back to scanning whatever came back.
   }
-  const found = /\bstatus-([a-z]+)\b/.exec(rendered);
+  const found = /<tr[^>]*\bclass="[^"]*\bstatus-([a-z]+)/.exec(rendered);
   return found ? found[1] : 'bilinmiyor';
 }
 
@@ -309,9 +307,10 @@ async function applyProposal(row, proposal) {
     headers: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8' },
     body: body.toString(),
   });
-  if (!reply.ok) {
-    throw new Error(`${reply.status} ${reply.statusText} — ${(await reply.text()).trim().slice(0, 200)}`);
-  }
+  const answer = await reply.text();
+  if (!reply.ok) throw new Error(`${reply.status} ${reply.statusText} — ${answer.trim().slice(0, 200)}`);
+
+  return savedStatus(answer);
 }
 
 /**
