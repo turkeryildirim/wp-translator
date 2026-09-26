@@ -45,7 +45,7 @@ export function listSources(db: Db): TrustedSourceRow[] {
 }
 
 /** Where the official glossary's terms land. The seeded tag, or the first one. */
-function defaultTagId(db: Db): number {
+export function defaultTagId(db: Db): number {
   const row = db
     .prepare(`SELECT id FROM tags ORDER BY name = 'wordpress' DESC, id LIMIT 1`)
     .get() as { id: number } | undefined;

@@ -57,8 +57,8 @@ export async function askModel(
   submissions: readonly Submission[],
   context: JudgeContext,
   options: AgyOptions & { signal?: AbortSignal } = {},
-): Promise<Judgement[]> {
-  if (submissions.length === 0) return [];
+): Promise<{ judgements: Judgement[]; asked: number }> {
+  if (submissions.length === 0) return { judgements: [], asked: 0 };
 
   const rules = rulesKey(context.styleGuide);
   const answers = new Map<number, Judgement>();
@@ -99,14 +99,17 @@ export async function askModel(
     }
   }
 
-  return submissions.map(
-    (submission) =>
-      answers.get(submission.id) ?? {
-        id: submission.id,
-        verdict: 'unknown',
-        reason: 'Model bu dizge için yanıt vermedi.',
-      },
-  );
+  return {
+    judgements: submissions.map(
+      (submission) =>
+        answers.get(submission.id) ?? {
+          id: submission.id,
+          verdict: 'unknown',
+          reason: 'Model bu dizge için yanıt vermedi.',
+        },
+    ),
+    asked: toAsk.length,
+  };
 }
 
 /**

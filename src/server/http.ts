@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import type { Db } from '../db/open.ts';
 import { applyGlossary } from '../glossary/match.ts';
+import { judgeSubmissions, type JudgeRequest } from './judge.ts';
 import { exportProject } from '../project/export.ts';
 import {
   entryContexts,
@@ -204,6 +205,19 @@ async function api(
       return send(response, 200, startSync(db, body?.ids));
     }
     if (method === 'GET') return send(response, 200, syncProgress());
+  }
+
+  if (method === 'POST' && route === '/api/judge') {
+    const body = (await readJson(request)) as unknown as JudgeRequest & { model?: string };
+    if (!Array.isArray(body.items) || body.items.length === 0) {
+      return send(response, 400, { error: 'items is required and must not be empty.' });
+    }
+    const { model, ...judge } = body;
+    return send(
+      response,
+      200,
+      await judgeSubmissions(db, judge, model ? { model } : {}),
+    );
   }
 
   if (method === 'GET' && route === '/api/glossary') {

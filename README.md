@@ -114,6 +114,29 @@ can start returning *"OpenCode's free tier can only be used from within
 OpenCode"*, and another appears in its place. Leave it unset so opencode's own
 default is used.
 
+## Reviewing other people's translations
+
+As a GTE you also approve or reject what other people submit, and the queues run
+to hundreds of strings paged fifteen at a time. `userscript/wp-translator-review.user.js`
+puts this tool's judgement on those pages.
+
+Install it in Tampermonkey or Violentmonkey and open a project with a pending
+filter — `?filters[status]=waiting` or `fuzzy`. A panel appears with two buttons:
+
+- **Yalnızca değerlendir** — decides nothing, writes a verdict beside every row.
+- **Değerlendir ve birebir olanları onayla** — approves the ones the glossary
+  already holds with that exact wording, and ticks the rest for GlotPress's own
+  bulk approve.
+
+Nothing is ever rejected automatically. A translation that fails a quality check
+or that the model objects to is annotated with the reason and the wording the
+model would have used; rejecting stays yours to do, because in GlotPress it
+notifies the contributor.
+
+The local server must be running. The script reaches it through
+`GM_xmlhttpRequest`, so the server needs no CORS of its own and nothing else on
+the page can talk to it.
+
 ## Updating the style guide in an existing database
 
 The guide is seeded once, on first open, so a database created before an edit to
@@ -140,7 +163,10 @@ not, and prints them — that is the signature of a hand edit.
 | `src/wporg/` | translate.wordpress.org and wordpress.org access |
 | `src/server/` | HTTP API and the panel's back end |
 | `panel/` | Vue 3 panel |
+| `src/judge/` | judging somebody else's translation |
+| `src/ai/` | what the model has already been asked |
 | `style-guide/` | the Turkish style guide seeded into new databases |
+| `userscript/` | the review script for translate.wordpress.org |
 
 ## Tests
 
