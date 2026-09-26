@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         wp-translator · bekleyen çevirileri değerlendir
 // @namespace    https://github.com/turker/wp-translator
-// @version      1.3.0
+// @version      1.4.0
 // @description  Açık sayfadaki bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları gerekçesiyle işaretler.
 // @match        https://translate.wordpress.org/projects/*
 // @grant        GM_xmlhttpRequest
@@ -23,13 +23,26 @@ const SERVER = 'http://127.0.0.1:4173';
 /** How many rows go to the server at once. Whatever the page holds is sliced into these. */
 const BATCH = 10;
 
-const state = { counted: 0, approved: 0, refused: 0, ticked: 0, unticked: 0, flagged: 0, unknown: 0, busy: false };
+/** Consecutive batches with nothing but `unknown` before the run gives up. */
+const SILENT_LIMIT = 2;
+
+const state = { counted: 0, approved: 0, refused: 0, ticked: 0, unticked: 0, flagged: 0, unknown: 0, failed: 0, silent: 0, busy: false };
 
 /** Clear the last run, so a second pass over the page neither doubles its counts nor its notes. */
 function reset() {
   for (const key of Object.keys(state)) if (key !== 'busy') state[key] = 0;
   for (const note of document.querySelectorAll('.wpt-note')) note.remove();
 }
+
+/**
+ * Ask the local tool, with a deadline longer than its own.
+ *
+ * A batch the model stalls on is killed server-side and answered with `unknown`
+ * verdicts, which takes as long as that timeout. Without a deadline of our own
+ * the request is abandoned before that answer arrives, and reported as a server
+ * that cannot be reached.
+ */
+const REQUEST_TIMEOUT_MS = 180_000;
 
 function ask(path, body) {
   return new Promise((resolve, reject) => {
@@ -38,6 +51,7 @@ function ask(path, body) {
       url: `${SERVER}${path}`,
       headers: { 'content-type': 'application/json' },
       data: JSON.stringify(body),
+      timeout: REQUEST_TIMEOUT_MS,
       onload: (reply) => {
         if (reply.status !== 200) {
           // The body carries the server's own reason; without it a failure reads
@@ -52,7 +66,8 @@ function ask(path, body) {
         }
       },
       onerror: () => reject(new Error('Yerel sunucuya ulaşılamadı. wp-translator çalışıyor mu?')),
-      ontimeout: () => reject(new Error('Yerel sunucu yanıt vermedi.')),
+      ontimeout: () =>
+        reject(new Error(`Yerel sunucu ${REQUEST_TIMEOUT_MS / 1000} saniyede yanıt vermedi.`)),
     });
   });
 }
@@ -341,17 +356,43 @@ async function run(panel, { approve }) {
       const slice = rows.slice(at, at + BATCH);
       report(panel, `${at + slice.length}/${rows.length} soruluyor…`);
 
-      const { judgements } = await ask('/api/judge', {
-        projectPath: projectPath(),
-        items: slice.map((row) => ({
-          id: row.id,
-          source: row.source,
-          ...(row.sourcePlural ? { sourcePlural: row.sourcePlural } : {}),
-          translation: row.translation,
-          ...(row.translationPlural ? { translationPlural: row.translationPlural } : {}),
-        })),
-      });
+      let judgements;
+      try {
+        ({ judgements } = await ask('/api/judge', {
+          projectPath: projectPath(),
+          items: slice.map((row) => ({
+            id: row.id,
+            source: row.source,
+            ...(row.sourcePlural ? { sourcePlural: row.sourcePlural } : {}),
+            translation: row.translation,
+            ...(row.translationPlural ? { translationPlural: row.translationPlural } : {}),
+          })),
+        }));
+      } catch (problem) {
+        // One batch the tool could not answer is ten rows, not the page. They
+        // are marked with the reason and the rest of the page goes on.
+        state.counted += slice.length;
+        state.unknown += slice.length;
+        state.failed += 1;
+        state.silent += 1;
+        for (const row of slice) annotate(row, { verdict: 'unknown', reason: problem.message });
+        report(panel, `${state.counted}/${rows.length}`);
+        if (state.silent >= SILENT_LIMIT) {
+          report(panel, `sunucuya ulaşılamıyor, kalan ${rows.length - state.counted} satır sorulmadı`);
+          return;
+        }
+        continue;
+      }
       state.counted += slice.length;
+
+      // A provider that is not answering costs the server its whole timeout per
+      // batch and returns nothing, so the page would sit silent for minutes
+      // rediscovering it. Two such batches in a row is enough to stop asking.
+      if (judgements.every((judgement) => judgement.verdict === 'unknown')) {
+        state.silent += 1;
+      } else {
+        state.silent = 0;
+      }
 
       for (const judgement of judgements) {
         const row = slice.find((candidate) => candidate.id === judgement.id);
@@ -379,6 +420,11 @@ async function run(panel, { approve }) {
         annotate(row, judgement);
       }
       report(panel, `${state.counted}/${rows.length}`);
+
+      if (state.silent >= SILENT_LIMIT) {
+        report(panel, `model yanıt vermiyor, kalan ${rows.length - state.counted} satır sorulmadı`);
+        return;
+      }
     }
     report(panel, 'bitti');
   } catch (problem) {
@@ -392,6 +438,7 @@ function report(panel, what) {
   panel.querySelector('.wpt-status').textContent =
     `${what} · ${state.counted} bakıldı · ${state.approved} onaylandı · ` +
     `${state.ticked} seçildi · ${state.flagged} işaretli · ${state.unknown} kararsız` +
+    (state.failed ? ` · ${state.failed} küme sorulamadı` : '') +
     (state.refused ? ` · ${state.refused} onaylanamadı` : '') +
     (state.unticked ? ` · ${state.unticked} kutucuk bulunamadı` : '');
 }
