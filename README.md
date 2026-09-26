@@ -124,8 +124,11 @@ default is used.
 ## Reviewing other people's translations
 
 As a GTE you also approve or reject what other people submit, and the queues run
-to hundreds of strings paged fifteen at a time. `userscript/wp-translator-review.user.js`
-puts this tool's judgement on those pages.
+to hundreds of strings. `userscript/wp-translator-review.user.js` puts this tool's
+judgement on the page you are looking at: it judges the rows GlotPress has
+rendered, in batches, and does nothing with the pages you have not opened. How
+many rows a page holds is your own GlotPress setting and the script does not care
+what it is.
 
 Install it in Tampermonkey or Violentmonkey and open a project with a pending
 filter — `?filters[status]=waiting` or `fuzzy`. A panel appears with two buttons:
@@ -136,15 +139,18 @@ userscripts are never executed and the dashboard reports the script as having
 never run. The script logs `[wp-translator] yüklendi` to the console, which is
 how to tell "did not run" from "ran and had nothing to do".
 
-- **Yalnızca değerlendir** — decides nothing, writes a verdict beside every row.
+- **Bu sayfayı değerlendir** — decides nothing, writes a verdict beside every row.
 - **Değerlendir ve birebir olanları onayla** — approves the ones the glossary
   already holds with that exact wording, and ticks the rest for GlotPress's own
   bulk approve.
 
+Pressing either again re-judges the page and replaces the notes rather than adding
+a second set. A verdict the model has given before is served from `ai_memory`, so
+going back to a page you have already looked at costs nothing.
+
 Nothing is ever rejected automatically. A translation that fails a quality check
 or that the model objects to is annotated with the reason and the wording the
-model would have used; rejecting stays yours to do, because in GlotPress it
-notifies the contributor.
+model would have used. Rejecting is GlotPress's own button, beside the row.
 
 Where that wording passes the quality checks it is a **button**: clicking it
 writes it into the row's translation field and saves it. Only a single wording is

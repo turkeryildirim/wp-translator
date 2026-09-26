@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         wp-translator · bekleyen çevirileri değerlendir
 // @namespace    https://github.com/turker/wp-translator
-// @version      1.2.0
-// @description  Bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları işaretler.
+// @version      1.3.0
+// @description  Açık sayfadaki bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları gerekçesiyle işaretler.
 // @match        https://translate.wordpress.org/projects/*
 // @grant        GM_xmlhttpRequest
 // @connect      127.0.0.1
@@ -20,17 +20,16 @@
  * its own and nothing else on the page can talk to it.
  */
 const SERVER = 'http://127.0.0.1:4173';
+/** How many rows go to the server at once. Whatever the page holds is sliced into these. */
 const BATCH = 10;
-/**
- * A guard on the walk, not an expectation of its length.
- *
- * How many rows a page holds is the reader's own GlotPress preference and can
- * change, so the walk goes until a page comes back empty rather than dividing a
- * total by an assumed page size.
- */
-const PAGE_CAP = 500;
 
 const state = { counted: 0, approved: 0, refused: 0, ticked: 0, unticked: 0, flagged: 0, unknown: 0, busy: false };
+
+/** Clear the last run, so a second pass over the page neither doubles its counts nor its notes. */
+function reset() {
+  for (const key of Object.keys(state)) if (key !== 'busy') state[key] = 0;
+  for (const note of document.querySelectorAll('.wpt-note')) note.remove();
+}
 
 function ask(path, body) {
   return new Promise((resolve, reject) => {
@@ -147,14 +146,6 @@ function actionNonce(editor, action) {
     );
   }
   return null;
-}
-
-async function fetchPage(page) {
-  const url = new URL(location.href);
-  url.searchParams.set('page', String(page));
-  const reply = await fetch(url.toString(), { credentials: 'include' });
-  const html = await reply.text();
-  return new DOMParser().parseFromString(html, 'text/html');
 }
 
 /**
@@ -332,60 +323,62 @@ function tick(row) {
   return true;
 }
 
+/**
+ * Judge the rows on the page in front of the reader, and nothing else.
+ *
+ * Only these rows can be annotated and ticked, so only these are asked about:
+ * paging is the reader's, and a verdict nobody can see is work spent on a screen
+ * that is not there. Whatever the page holds is worked through in batches.
+ */
 async function run(panel, { approve }) {
   if (state.busy) return;
+  reset();
   state.busy = true;
 
   try {
-    for (let page = 1; page <= PAGE_CAP; page += 1) {
-      const document_ = page === 1 ? document : await fetchPage(page);
-      const rows = readRows(document_);
-      if (rows.length === 0) break;
+    const rows = readRows(document);
+    for (let at = 0; at < rows.length; at += BATCH) {
+      const slice = rows.slice(at, at + BATCH);
+      report(panel, `${at + slice.length}/${rows.length} soruluyor…`);
 
-      for (let at = 0; at < rows.length; at += BATCH) {
-        const slice = rows.slice(at, at + BATCH);
-        state.counted += slice.length;
-        report(panel, `sayfa ${page} · soruluyor…`);
+      const { judgements } = await ask('/api/judge', {
+        projectPath: projectPath(),
+        items: slice.map((row) => ({
+          id: row.id,
+          source: row.source,
+          ...(row.sourcePlural ? { sourcePlural: row.sourcePlural } : {}),
+          translation: row.translation,
+          ...(row.translationPlural ? { translationPlural: row.translationPlural } : {}),
+        })),
+      });
+      state.counted += slice.length;
 
-        const { judgements } = await ask('/api/judge', {
-          projectPath: projectPath(),
-          items: slice.map((row) => ({
-            id: row.id,
-            source: row.source,
-            ...(row.sourcePlural ? { sourcePlural: row.sourcePlural } : {}),
-            translation: row.translation,
-            ...(row.translationPlural ? { translationPlural: row.translationPlural } : {}),
-          })),
-        });
+      for (const judgement of judgements) {
+        const row = slice.find((candidate) => candidate.id === judgement.id);
+        if (!row) continue;
 
-        for (const judgement of judgements) {
-          const row = slice.find((candidate) => candidate.id === judgement.id);
-          if (!row) continue;
-
-          if (judgement.verdict === 'exact' && approve) {
-            // One row the session cannot act on must not end a run of dozens of
-            // pages; it is reported where it happened and the walk goes on.
-            try {
-              await setStatus(row, 'current');
-              state.approved += 1;
-            } catch (problem) {
-              state.refused += 1;
-              if (page === 1) annotate(row, { verdict: 'unknown', reason: `onaylanamadı: ${problem.message}` });
-            }
-          } else if (judgement.verdict === 'exact' || judgement.verdict === 'agreed') {
-            if (page === 1 && !tick(row)) state.unticked += 1;
-            state.ticked += 1;
-          } else if (judgement.verdict === 'flagged') {
-            state.flagged += 1;
-          } else {
-            state.unknown += 1;
+        if (judgement.verdict === 'exact' && approve) {
+          // One row the session cannot act on must not end the run; it is
+          // reported where it happened and the rest go on.
+          try {
+            await setStatus(row, 'current');
+            state.approved += 1;
+          } catch (problem) {
+            state.refused += 1;
+            annotate(row, { verdict: 'unknown', reason: `onaylanamadı: ${problem.message}` });
           }
-
-          // Only the page on screen can be annotated; the rest are counted.
-          if (page === 1) annotate(row, judgement);
+        } else if (judgement.verdict === 'exact' || judgement.verdict === 'agreed') {
+          if (!tick(row)) state.unticked += 1;
+          state.ticked += 1;
+        } else if (judgement.verdict === 'flagged') {
+          state.flagged += 1;
+        } else {
+          state.unknown += 1;
         }
-        report(panel, `sayfa ${page}`);
+
+        annotate(row, judgement);
       }
+      report(panel, `${state.counted}/${rows.length}`);
     }
     report(panel, 'bitti');
   } catch (problem) {
@@ -440,8 +433,8 @@ function mount() {
     </style>
     <b>wp-translator</b>
     <div>
-      <button data-act="dry">Yalnızca değerlendir</button>
-      <button data-act="live">Değerlendir ve birebir olanları onayla</button>
+      <button data-act="dry" title="Bu sayfadaki satırları değerlendirir, hiçbir şeyi değiştirmez">Bu sayfayı değerlendir</button>
+      <button data-act="live" title="Bu sayfayı değerlendirir ve sözlükle birebir eşleşenleri onaylar">Değerlendir ve birebir olanları onayla</button>
     </div>
     <span class="wpt-status">hazır</span>
   `;
@@ -459,12 +452,12 @@ function mount() {
     panel.querySelector('.wpt-status').textContent =
       'Satır okunamadı. GTE olarak giriş yapılı mı?';
   } else {
-    panel.querySelector('.wpt-status').textContent = `hazır · ${filter} · ${rows} satır okundu`;
+    panel.querySelector('.wpt-status').textContent = `hazır · ${filter} · bu sayfada ${rows} satır`;
   }
 
   panel.querySelector('[data-act="dry"]').addEventListener('click', () => run(panel, { approve: false }));
   panel.querySelector('[data-act="live"]').addEventListener('click', () => {
-    if (confirm('Sözlükle birebir eşleşenler doğrudan onaylanacak. Devam edilsin mi?')) {
+    if (confirm('Bu sayfada sözlükle birebir eşleşenler doğrudan onaylanacak. Devam edilsin mi?')) {
       void run(panel, { approve: true });
     }
   });
