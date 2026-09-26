@@ -66,7 +66,7 @@ export async function askModel(
 
   for (const submission of submissions) {
     const known = recall<Judgement>(db, 'judgement', judgeKey(submission), rules);
-    if (known) answers.set(submission.id, { ...known.answer, id: submission.id });
+    if (known) answers.set(submission.id, settle(submission, known.answer));
     else toAsk.push(submission);
   }
 
@@ -103,7 +103,7 @@ export async function askModel(
           rulesHash: rules,
           sourceText: submission.source,
           question: { source: submission.source, translation: submission.translation },
-          answer: judgement,
+          answer: forget(judgement),
           model: options.model ?? null,
         });
       }
@@ -117,6 +117,20 @@ export async function askModel(
     ),
     asked: toAsk.length,
   };
+}
+
+/**
+ * A judgement with its proposal worked out for this submission.
+ *
+ * `proposal` is `expected` gated by the quality checks, so it is derived and
+ * never taken from what was stored: a remembered opinion has to be re-gated
+ * against today's checks, and one remembered before proposals existed carries
+ * none at all.
+ */
+function settle(submission: Submission, answer: Judgement): Judgement {
+  const { proposal: _stored, ...rest } = answer;
+  const proposal = rest.expected ? proposalFor(submission, rest.expected) : undefined;
+  return { ...rest, id: submission.id, ...(proposal ? { proposal } : {}) };
 }
 
 /**
@@ -158,3 +172,9 @@ export function readOpinions(
     };
   });
 }
+
+/** The opinion alone, without the proposal derived from it. */
+const forget = (judgement: Judgement): Judgement => {
+  const { proposal: _derived, ...opinion } = judgement;
+  return opinion;
+};

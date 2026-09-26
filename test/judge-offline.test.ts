@@ -61,3 +61,70 @@ describe('judging when the model cannot be reached', () => {
     expect(result.judgements[0]!.verdict).not.toBe('agreed');
   });
 });
+
+describe('a judgement served from memory', () => {
+  const submission = {
+    id: 7,
+    source: 'Secure and integrated',
+    translation: 'Güvenli ve Entegre',
+  };
+
+  it('carries a clickable proposal even when none was stored with it', async () => {
+    const { judgeKey } = await import('../src/judge/ask.ts');
+    const { rulesKey, remember } = await import('../src/ai/memory.ts');
+    const { styleGuideFor } = await import('../src/server/tags.ts');
+
+    remember(db, {
+      kind: 'judgement',
+      keyHash: judgeKey(submission),
+      rulesHash: rulesKey(styleGuideFor(db, 0)),
+      sourceText: submission.source,
+      question: { source: submission.source, translation: submission.translation },
+      answer: {
+        id: 999,
+        verdict: 'flagged',
+        reason: 'Cümle düzeni kullanılmalı.',
+        expected: 'Güvenli ve entegre',
+      },
+    });
+
+    const result = await judgeSubmissions(db, { items: [submission] });
+
+    expect(result.asked).toBe(0);
+    expect(result.judgements[0]).toMatchObject({
+      id: 7,
+      verdict: 'flagged',
+      proposal: 'Güvenli ve entegre',
+    });
+  });
+
+  it('drops a stored proposal that today’s checks refuse', async () => {
+    // The checks are what make a proposal safe to apply on one click, so a
+    // remembered one is re-gated rather than trusted. The submission itself has
+    // to pass, or the checks settle it before memory is ever consulted.
+    const placeholder = { id: 8, source: 'Use %s now', translation: 'Şimdi %s kullan' };
+    const { judgeKey } = await import('../src/judge/ask.ts');
+    const { rulesKey, remember } = await import('../src/ai/memory.ts');
+    const { styleGuideFor } = await import('../src/server/tags.ts');
+
+    remember(db, {
+      kind: 'judgement',
+      keyHash: judgeKey(placeholder),
+      rulesHash: rulesKey(styleGuideFor(db, 0)),
+      sourceText: placeholder.source,
+      question: { source: placeholder.source, translation: placeholder.translation },
+      answer: {
+        id: 8,
+        verdict: 'flagged',
+        reason: 'Başka bir karşılık daha iyi.',
+        expected: 'Şimdi kullan',
+        proposal: 'Şimdi kullan',
+      },
+    });
+
+    const result = await judgeSubmissions(db, { items: [placeholder] });
+
+    expect(result.judgements[0]!.expected).toBe('Şimdi kullan');
+    expect(result.judgements[0]).not.toHaveProperty('proposal');
+  });
+});
