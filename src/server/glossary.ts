@@ -1,4 +1,6 @@
 import type { Db } from '../db/open.ts';
+import { sourceHash } from '../glossary/key.ts';
+import { affixes } from '../text/whitespace.ts';
 
 export interface GlossaryRow {
   id: number;
@@ -225,4 +227,84 @@ export function updateEntry(
 
   const entry = db.prepare(ENTRY_SELECT).get(entryId) as GlossaryRow;
   return { entry, sourceWordingReturns: before.origin === 'trusted' && before.sources > 0 };
+}
+
+/** A translation-memory entry the owner writes themselves. */
+export interface NewEntry {
+  sourceText: string;
+  sourcePlural?: string;
+  translation: string;
+  translationPlural?: string;
+  tagId: number;
+}
+
+/**
+ * Add an entry of the owner's own, as translation memory under one tag.
+ *
+ * Stored the way a sync stores one — the words without their surrounding
+ * whitespace — so a hand-written entry and a fetched one match the same strings.
+ * `msgctxt` is not part of the key and is not asked for.
+ */
+export function createEntry(db: Db, input: NewEntry): GlossaryRow {
+  const source = affixes(input.sourceText).core;
+  const sourcePlural = input.sourcePlural ? affixes(input.sourcePlural).core : undefined;
+  const translation = affixes(input.translation).core;
+  const translationPlural = input.translationPlural
+    ? affixes(input.translationPlural).core
+    : undefined;
+
+  if (!source) throw new Error('Kaynak metin boş olamaz.');
+  if (!translation) throw new Error('Çeviri boş olamaz.');
+  if (translationPlural && !sourcePlural) {
+    throw new Error('Çoğul çeviri için kaynağın çoğul biçimi de gerekir.');
+  }
+
+  try {
+    const written = db
+      .prepare(
+        `INSERT INTO glossary_entries
+           (source_hash, source_text, source_plural, msgctxt, tag_id,
+            translation, translation_plural, pos, origin)
+         VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, 'owner')`,
+      )
+      .run(
+        sourceHash(source, sourcePlural),
+        source,
+        sourcePlural ?? null,
+        input.tagId,
+        translation,
+        translationPlural ?? null,
+      );
+    return db.prepare(ENTRY_SELECT).get(written.lastInsertRowid) as GlossaryRow;
+  } catch (problem) {
+    if (problem instanceof Error && problem.message.includes('UNIQUE')) {
+      throw new Error(`Bu kaynak için "${translation}" çevirisi bu etikette zaten var.`);
+    }
+    throw problem;
+  }
+}
+
+export interface EntryRemoval {
+  /**
+   * True when a trusted source still carries this entry, so the next update of
+   * that source writes it back. Removing it for good means removing the source.
+   */
+  returnsOnSync: boolean;
+}
+
+/**
+ * Remove an entry. Its source links and context notes go with it.
+ *
+ * An entry of the owner's own is gone for good. One a trusted source vouches for
+ * is not: the sync adds what the source carries, so it reappears. The caller is
+ * told which happened rather than being left to find out at the next update.
+ */
+export function deleteEntry(db: Db, entryId: number): EntryRemoval {
+  const before = db
+    .prepare(`SELECT sources FROM (${ENTRY_SELECT.trim()})`)
+    .get(entryId) as { sources: number } | undefined;
+  if (!before) throw new Error(`No glossary entry with id ${entryId}.`);
+
+  db.prepare(`DELETE FROM glossary_entries WHERE id = ?`).run(entryId);
+  return { returnsOnSync: before.sources > 0 };
 }

@@ -6,12 +6,15 @@ import { applyGlossary } from '../glossary/match.ts';
 import { judgeSubmissions, type JudgeRequest } from './judge.ts';
 import { exportProject } from '../project/export.ts';
 import {
+  createEntry,
+  deleteEntry,
   entryContexts,
   entrySources,
   listTags,
   searchGlossary,
   updateEntry,
   type GlossaryQuery,
+  type NewEntry,
 } from './glossary.ts';
 import {
   bulkSetState,
@@ -224,6 +227,10 @@ async function api(
     return send(response, 200, searchGlossary(db, readGlossaryQuery(url)));
   }
 
+  if (method === 'POST' && route === '/api/glossary') {
+    return send(response, 200, createEntry(db, (await readJson(request)) as unknown as NewEntry));
+  }
+
   const entry = /^\/api\/glossary\/(\d+)$/.exec(route);
   if (entry) {
     if (method === 'GET') {
@@ -240,6 +247,9 @@ async function api(
         200,
         updateEntry(db, Number(entry[1]), body.translation, body.translationPlural),
       );
+    }
+    if (method === 'DELETE') {
+      return send(response, 200, deleteEntry(db, Number(entry[1])));
     }
   }
 

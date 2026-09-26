@@ -110,11 +110,12 @@ measurement if one drove it.
   an empty `msgstr` and is simply redone. Do not add a request per status
   without measuring that it buys something.
 - **Nothing in a project writes to the glossary.** Not an approval, not an edit,
-  not the model's output. Three things write to `glossary_entries`:
-  `src/glossary/sync.ts`, `src/glossary/officialGlossary.ts`, and `updateEntry`
-  when the owner edits an entry already there. A glossary match is placed
-  without review precisely because a human approved it upstream; a project's own
-  output has not been through that. `test/glossary-writers.test.ts` asserts it.
+  not the model's output. What writes to `glossary_entries` is
+  `src/glossary/sync.ts`, `src/glossary/officialGlossary.ts`, and the owner's own
+  hand through `createEntry`, `updateEntry` and `deleteEntry`. A glossary match is
+  placed without review precisely because a human approved it upstream; a
+  project's own output has not been through that.
+  `test/glossary-writers.test.ts` asserts it.
 - **Surrounding whitespace is shape, not meaning.** The glossary and the AI
   memory store the words alone, and the shape is restored from whichever string
   is being filled — `src/text/whitespace.ts`. The fold is `\s`, which is

@@ -246,6 +246,21 @@ export interface EntryDetail {
 }
 
 export const entryDetail = (id: number) => json<EntryDetail>(`/api/glossary/${id}`);
+
+export interface NewEntry {
+  sourceText: string;
+  sourcePlural?: string;
+  translation: string;
+  translationPlural?: string;
+  tagId: number;
+}
+
+export const createEntry = (entry: NewEntry) =>
+  post<GlossaryEntry>('/api/glossary', entry, 'Sözlük girdisi eklendi');
+
+/** `returnsOnSync` is true when a trusted source will write the entry back. */
+export const deleteEntry = (id: number) =>
+  json<{ returnsOnSync: boolean }>(`/api/glossary/${id}`, { method: 'DELETE' }, 'Sözlük girdisi silindi');
 export const updateEntry = (
   id: number,
   translation: string,

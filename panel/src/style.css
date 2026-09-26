@@ -128,6 +128,10 @@ h4 { margin: 12px 0 4px; font-size: 12px; color: var(--muted); }
   color: inherit; cursor: pointer; }
 .toolbar .button { text-decoration: none; display: inline-block; }
 .toolbar button.primary, .detail button.primary { background: var(--active); font-weight: 600; }
+/* A destructive action is named by its edge and its text. The row it sits in is
+   otherwise neutral, and a filled red block there reads as the primary one. */
+.detail button.danger { border-color: var(--blocked-fg); color: var(--blocked-fg); }
+.detail button.danger:hover { background: var(--blocked); color: var(--fg); }
 .check { display: flex; gap: 4px; align-items: center; color: var(--muted); }
 
 .grid { width: 100%; border-collapse: collapse; }

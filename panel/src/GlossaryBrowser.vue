@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
+  createEntry,
+  deleteEntry,
   entryDetail,
   listTags,
   searchGlossary,
@@ -33,6 +35,11 @@ const contexts = ref<string[]>([]);
 const draft = ref('');
 const draftPlural = ref('');
 const notice = ref('');
+
+/** The form for an entry of the owner's own, open or not. */
+const adding = ref(false);
+const fresh = ref({ sourceText: '', sourcePlural: '', translation: '', translationPlural: '' });
+const freshTagId = ref('');
 
 /**
  * Which request is the current one, so a reply arriving after a newer request
@@ -73,6 +80,7 @@ function goTo(next: number): void {
 }
 
 async function select(entry: GlossaryEntry): Promise<void> {
+  adding.value = false;
   selected.value = entry;
   draft.value = entry.translation;
   draftPlural.value = entry.translationPlural ?? '';
@@ -107,6 +115,44 @@ async function save(): Promise<void> {
 function applyFilters(): void {
   page.value = 0;
   void load();
+}
+
+function openForm(): void {
+  selected.value = null;
+  notice.value = '';
+  fresh.value = { sourceText: '', sourcePlural: '', translation: '', translationPlural: '' };
+  freshTagId.value = tagId.value || String(tags.value[0]?.id ?? '');
+  adding.value = true;
+}
+
+async function add(): Promise<void> {
+  const entry = await createEntry({
+    sourceText: fresh.value.sourceText,
+    ...(fresh.value.sourcePlural ? { sourcePlural: fresh.value.sourcePlural } : {}),
+    translation: fresh.value.translation,
+    ...(fresh.value.translationPlural ? { translationPlural: fresh.value.translationPlural } : {}),
+    tagId: Number(freshTagId.value),
+  });
+
+  adding.value = false;
+  // Reloaded rather than unshifted: the new entry belongs wherever the current
+  // filters and sort put it, which may be off this page entirely.
+  await load();
+  await select(entry);
+}
+
+async function remove(): Promise<void> {
+  const entry = selected.value;
+  if (!entry) return;
+  if (!confirm(`"${entry.sourceText}" → "${entry.translation}" girdisi silinsin mi?`)) return;
+
+  const { returnsOnSync } = await deleteEntry(entry.id);
+  selected.value = null;
+  await load();
+
+  notice.value = returnsOnSync
+    ? 'Silindi. Bu girdiyi bir güvenilir kaynak taşıyor, bu yüzden o kaynağın sonraki güncellemesinde geri gelecek. Kalıcı olarak çıkarmak için kaynağı listeden çıkarın.'
+    : 'Silindi.';
 }
 
 const screenEl = ref<HTMLElement | null>(null);
@@ -168,10 +214,14 @@ watch(page, load);
         <option value="translation">Yalnızca çeviri</option>
       </select>
       <button @click="applyFilters">Ara</button>
+      <button @click="openForm">Yeni girdi</button>
     </div>
 
     <Pager :page="page" :total="total" :page-size="PAGE" :busy="loading" @go="goTo" />
     <Legend />
+
+    <!-- Shown here because a removal leaves nothing selected to show it beside. -->
+    <p v-if="notice && !selected" class="notice">{{ notice }}</p>
 
     <div class="split">
       <table class="grid">
@@ -206,7 +256,49 @@ watch(page, load);
         </tbody>
       </table>
 
-      <aside v-if="selected" class="detail">
+      <aside v-if="adding" class="detail">
+        <h3>Yeni girdi</h3>
+        <!-- The owner's own entry: translation memory under one tag, no context.
+             `msgctxt` is not part of the key and matching never reads it. -->
+        <label>
+          Kaynak — tekil
+          <textarea v-model="fresh.sourceText" rows="2" />
+        </label>
+        <label>
+          Kaynak — çoğul (varsa)
+          <textarea v-model="fresh.sourcePlural" rows="2" />
+        </label>
+        <label>
+          Çeviri — tekil
+          <textarea v-model="fresh.translation" rows="3" />
+        </label>
+        <label v-if="fresh.sourcePlural">
+          Çeviri — çoğul
+          <textarea v-model="fresh.translationPlural" rows="3" />
+        </label>
+        <label>
+          Etiket
+          <select v-model="freshTagId">
+            <option v-for="tag in tags" :key="tag.id" :value="String(tag.id)">{{ tag.name }}</option>
+          </select>
+        </label>
+        <div class="editor-actions">
+          <button
+            class="primary"
+            :disabled="!fresh.sourceText.trim() || !fresh.translation.trim() || !freshTagId"
+            @click="add"
+          >
+            Ekle
+          </button>
+          <button @click="adding = false">Vazgeç</button>
+        </div>
+        <p class="hint">
+          Sizin girdiniz olarak eklenir: güvenilir kaynak güncellemeleri silmez. Baştaki ve sondaki
+          boşluklar biçim sayılır, saklanmaz.
+        </p>
+      </aside>
+
+      <aside v-else-if="selected" class="detail">
         <h3><Reveal :value="selected.sourceText" /></h3>
         <p v-if="selected.note" class="note">{{ selected.note }}</p>
 
@@ -233,6 +325,15 @@ watch(page, load);
           <button class="primary" @click="save">Kaydet</button>
           <button title="Kaynağı çeviri alanına kopyala" @click="draft = selected.sourceText">
             Orijinali kopyala
+          </button>
+          <button
+            class="danger"
+            :title="selected.sources > 0
+              ? 'Bu girdiyi bir güvenilir kaynak taşıyor; sonraki güncellemede geri gelir'
+              : 'Bu girdiyi kalıcı olarak sil'"
+            @click="remove"
+          >
+            Sil
           </button>
         </div>
         <p v-if="notice" class="notice">{{ notice }}</p>
