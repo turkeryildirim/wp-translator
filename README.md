@@ -148,6 +148,11 @@ Pressing either again re-judges the page and replaces the notes rather than addi
 a second set. A verdict the model has given before is served from `ai_memory`, so
 going back to a page you have already looked at costs nothing.
 
+Three batches are asked about at once, and each row is annotated as its own answer
+arrives, so the page fills in while the rest is still out. If the model stops
+answering, two batches of silence end the run and the panel says how many rows
+were left unasked rather than spending the timeout again on each.
+
 Nothing is ever rejected automatically. A translation that fails a quality check
 or that the model objects to is annotated with the reason and the wording the
 model would have used. Rejecting is GlotPress's own button, beside the row.

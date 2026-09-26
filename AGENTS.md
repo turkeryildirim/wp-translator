@@ -92,6 +92,13 @@ measurement if one drove it.
   and naming a file that is not there is what invites the read. Keep the error
   message in `agyItems` naming the denied tool; read as "ignored the schema" it
   sends you looking at the payload instead of at the model.
+- **Judging runs one model call per request; the concurrency is the script's.**
+  `/api/judge` answers one batch with one `invokeAgy`, and
+  `userscript/wp-translator-review.user.js` keeps three of those requests in
+  flight. It sits there rather than in the server so each answer can be annotated
+  the moment it lands — a page that fills in as it goes, not one that appears at
+  the end. `src/server/translate.ts` owns its own lanes because nothing is
+  watching that one row by row.
 - **A provider failure must not fail a judging batch.** The checks and the
   glossary have already settled rows by then, and the userscript walks dozens of
   pages. `askModel` turns an unreachable model into `unknown` carrying the error

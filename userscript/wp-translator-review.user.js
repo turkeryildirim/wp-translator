@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         wp-translator · bekleyen çevirileri değerlendir
 // @namespace    https://github.com/turker/wp-translator
-// @version      1.4.0
+// @version      1.5.0
 // @description  Açık sayfadaki bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları gerekçesiyle işaretler.
 // @match        https://translate.wordpress.org/projects/*
 // @grant        GM_xmlhttpRequest
@@ -25,12 +25,21 @@ const BATCH = 10;
 
 /** Consecutive batches with nothing but `unknown` before the run gives up. */
 const SILENT_LIMIT = 2;
+/**
+ * How many batches are in flight at once, and how far apart they start.
+ *
+ * One request is one model call, so this is what decides how many of those run
+ * together. The stagger keeps the lanes from arriving in the same instant.
+ */
+const LANES = 3;
+const STAGGER_MS = 2_000;
 
-const state = { counted: 0, approved: 0, refused: 0, ticked: 0, unticked: 0, flagged: 0, unknown: 0, failed: 0, silent: 0, busy: false };
+const state = { counted: 0, approved: 0, refused: 0, ticked: 0, unticked: 0, flagged: 0, unknown: 0, failed: 0, silent: 0, stopped: '', busy: false };
 
 /** Clear the last run, so a second pass over the page neither doubles its counts nor its notes. */
 function reset() {
   for (const key of Object.keys(state)) if (key !== 'busy') state[key] = 0;
+  state.stopped = '';
   for (const note of document.querySelectorAll('.wpt-note')) note.remove();
 }
 
@@ -343,7 +352,8 @@ function tick(row) {
  *
  * Only these rows can be annotated and ticked, so only these are asked about:
  * paging is the reader's, and a verdict nobody can see is work spent on a screen
- * that is not there. Whatever the page holds is worked through in batches.
+ * that is not there. Whatever the page holds is worked through in batches, a few
+ * at a time, each one annotated as its answer lands.
  */
 async function run(panel, { approve }) {
   if (state.busy) return;
@@ -352,87 +362,105 @@ async function run(panel, { approve }) {
 
   try {
     const rows = readRows(document);
-    for (let at = 0; at < rows.length; at += BATCH) {
-      const slice = rows.slice(at, at + BATCH);
-      report(panel, `${at + slice.length}/${rows.length} soruluyor…`);
+    const batches = [];
+    for (let at = 0; at < rows.length; at += BATCH) batches.push(rows.slice(at, at + BATCH));
 
-      let judgements;
-      try {
-        ({ judgements } = await ask('/api/judge', {
-          projectPath: projectPath(),
-          items: slice.map((row) => ({
-            id: row.id,
-            source: row.source,
-            ...(row.sourcePlural ? { sourcePlural: row.sourcePlural } : {}),
-            translation: row.translation,
-            ...(row.translationPlural ? { translationPlural: row.translationPlural } : {}),
-          })),
-        }));
-      } catch (problem) {
-        // One batch the tool could not answer is ten rows, not the page. They
-        // are marked with the reason and the rest of the page goes on.
-        state.counted += slice.length;
-        state.unknown += slice.length;
-        state.failed += 1;
-        state.silent += 1;
-        for (const row of slice) annotate(row, { verdict: 'unknown', reason: problem.message });
-        report(panel, `${state.counted}/${rows.length}`);
-        if (state.silent >= SILENT_LIMIT) {
-          report(panel, `sunucuya ulaşılamıyor, kalan ${rows.length - state.counted} satır sorulmadı`);
-          return;
-        }
-        continue;
+    let next = 0;
+    const lane = async (index) => {
+      // Staggered so the lanes do not all reach the provider in the same instant.
+      await pause(index * STAGGER_MS);
+      while (next < batches.length && state.silent < SILENT_LIMIT) {
+        await judgeBatch(panel, batches[next++], { approve, total: rows.length });
       }
-      state.counted += slice.length;
+    };
 
-      // A provider that is not answering costs the server its whole timeout per
-      // batch and returns nothing, so the page would sit silent for minutes
-      // rediscovering it. Two such batches in a row is enough to stop asking.
-      if (judgements.every((judgement) => judgement.verdict === 'unknown')) {
-        state.silent += 1;
-      } else {
-        state.silent = 0;
-      }
+    await Promise.all(
+      Array.from({ length: Math.min(LANES, batches.length) }, (_, index) => lane(index)),
+    );
 
-      for (const judgement of judgements) {
-        const row = slice.find((candidate) => candidate.id === judgement.id);
-        if (!row) continue;
-
-        if (judgement.verdict === 'exact' && approve) {
-          // One row the session cannot act on must not end the run; it is
-          // reported where it happened and the rest go on.
-          try {
-            await setStatus(row, 'current');
-            state.approved += 1;
-          } catch (problem) {
-            state.refused += 1;
-            annotate(row, { verdict: 'unknown', reason: `onaylanamadı: ${problem.message}` });
-          }
-        } else if (judgement.verdict === 'exact' || judgement.verdict === 'agreed') {
-          if (!tick(row)) state.unticked += 1;
-          state.ticked += 1;
-        } else if (judgement.verdict === 'flagged') {
-          state.flagged += 1;
-        } else {
-          state.unknown += 1;
-        }
-
-        annotate(row, judgement);
-      }
-      report(panel, `${state.counted}/${rows.length}`);
-
-      if (state.silent >= SILENT_LIMIT) {
-        report(panel, `model yanıt vermiyor, kalan ${rows.length - state.counted} satır sorulmadı`);
-        return;
-      }
-    }
-    report(panel, 'bitti');
+    report(
+      panel,
+      state.counted < rows.length
+        ? `${state.stopped} · kalan ${rows.length - state.counted} satır sorulmadı`
+        : 'bitti',
+    );
   } catch (problem) {
     report(panel, `hata: ${problem.message}`);
   } finally {
     state.busy = false;
   }
 }
+
+/** One batch: ask, then act on each row it answered for. */
+async function judgeBatch(panel, slice, { approve, total }) {
+  report(panel, `${state.counted + slice.length}/${total} soruluyor…`);
+
+  let judgements;
+  try {
+    ({ judgements } = await ask('/api/judge', {
+      projectPath: projectPath(),
+      items: slice.map((row) => ({
+        id: row.id,
+        source: row.source,
+        ...(row.sourcePlural ? { sourcePlural: row.sourcePlural } : {}),
+        translation: row.translation,
+        ...(row.translationPlural ? { translationPlural: row.translationPlural } : {}),
+      })),
+    }));
+  } catch (problem) {
+    // One batch the tool could not answer is ten rows, not the page. They are
+    // marked with the reason and the other lanes carry on.
+    state.counted += slice.length;
+    state.unknown += slice.length;
+    state.failed += 1;
+    state.silent += 1;
+    state.stopped = 'sunucuya ulaşılamıyor';
+    for (const row of slice) annotate(row, { verdict: 'unknown', reason: problem.message });
+    report(panel, `${state.counted}/${total}`);
+    return;
+  }
+
+  state.counted += slice.length;
+
+  // A provider that is not answering costs the server its whole timeout per
+  // batch and returns nothing, so the page would sit silent for minutes
+  // rediscovering it. Two such batches in a row is enough to stop asking.
+  if (judgements.every((judgement) => judgement.verdict === 'unknown')) {
+    state.silent += 1;
+    state.stopped = 'model yanıt vermiyor';
+  } else {
+    state.silent = 0;
+  }
+
+  for (const judgement of judgements) {
+    const row = slice.find((candidate) => candidate.id === judgement.id);
+    if (!row) continue;
+
+    if (judgement.verdict === 'exact' && approve) {
+      // One row the session cannot act on must not end the run; it is reported
+      // where it happened and the rest go on.
+      try {
+        await setStatus(row, 'current');
+        state.approved += 1;
+      } catch (problem) {
+        state.refused += 1;
+        annotate(row, { verdict: 'unknown', reason: `onaylanamadı: ${problem.message}` });
+      }
+    } else if (judgement.verdict === 'exact' || judgement.verdict === 'agreed') {
+      if (!tick(row)) state.unticked += 1;
+      state.ticked += 1;
+    } else if (judgement.verdict === 'flagged') {
+      state.flagged += 1;
+    } else {
+      state.unknown += 1;
+    }
+
+    annotate(row, judgement);
+  }
+  report(panel, `${state.counted}/${total}`);
+}
+
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function report(panel, what) {
   panel.querySelector('.wpt-status').textContent =
