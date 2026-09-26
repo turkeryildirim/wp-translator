@@ -18,7 +18,7 @@ export interface AgyOptions {
 export const DEFAULT_TIMEOUT_MS = 120_000;
 
 /**
- * The shape the answer must take.
+ * The shape a translation answer must take.
  *
  * Top-level must be an object: the backing model refuses a bare array. The
  * wrapper is unwrapped again on the way out.
@@ -66,54 +66,57 @@ export class AgyProvider implements TranslationProvider {
       await writeFile(schemaPath, JSON.stringify(SCHEMA), 'utf-8');
       // The payload rides in the prompt: agy takes no attachment flag.
       const prompt = `${buildPrompt(request.context)}\n\nJSON:\n${JSON.stringify(request.items)}`;
-      const stdout = await this.invoke(schemaPath, prompt, signal);
+      const stdout = await invokeAgy({ ...this.options, schemaPath, prompt, signal });
       return reconcile(request, parseAgyResponse(stdout));
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
   }
+}
 
-  private async invoke(
-    schemaPath: string,
-    prompt: string,
-    signal: AbortSignal | undefined,
-  ): Promise<string> {
-    const args = ['--output-format', 'json', '--json-schema', schemaPath];
-    if (this.options.model) args.push('--model', this.options.model);
-    // `-p` must carry its own value or agy reads the next flag as the prompt.
-    args.push(`-p=${prompt}`);
+export interface AgyCall extends AgyOptions {
+  schemaPath: string;
+  prompt: string;
+  signal?: AbortSignal | undefined;
+}
 
-    const timeoutMs = this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+/** Run agy once and hand back its raw stdout. */
+export function invokeAgy(call: AgyCall): Promise<string> {
+  const args = ['--output-format', 'json', '--json-schema', call.schemaPath];
+  if (call.model) args.push('--model', call.model);
+  // `-p` must carry its own value or agy reads the next flag as the prompt.
+  args.push(`-p=${call.prompt}`);
 
-    return new Promise<string>((resolve, reject) => {
-      const child = spawn(this.options.binary ?? 'agy', args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        ...(signal ? { signal } : {}),
-      });
+  const timeoutMs = call.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
-      let stdout = '';
-      let stderr = '';
-      child.stdout.setEncoding('utf-8');
-      child.stderr.setEncoding('utf-8');
-      child.stdout.on('data', (chunk: string) => { stdout += chunk; });
-      child.stderr.on('data', (chunk: string) => {
-        stderr += chunk;
-        for (const line of chunk.split('\n')) if (line.trim()) this.options.onLine?.(line.trim());
-      });
-
-      const timer = setTimeout(() => {
-        child.kill('SIGKILL');
-        reject(new Error(`agy did not answer within ${timeoutMs / 1000}s`));
-      }, timeoutMs);
-
-      child.on('error', (error) => { clearTimeout(timer); reject(error); });
-      child.on('close', (code) => {
-        clearTimeout(timer);
-        if (code === 0) resolve(stdout);
-        else reject(new Error(`agy exited with ${code}: ${stderr.trim().slice(0, 400)}`));
-      });
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(call.binary ?? 'agy', args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      ...(call.signal ? { signal: call.signal } : {}),
     });
-  }
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf-8');
+    child.stderr.setEncoding('utf-8');
+    child.stdout.on('data', (chunk: string) => { stdout += chunk; });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+      for (const line of chunk.split('\n')) if (line.trim()) call.onLine?.(line.trim());
+    });
+
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(`agy did not answer within ${timeoutMs / 1000}s`));
+    }, timeoutMs);
+
+    child.on('error', (error) => { clearTimeout(timer); reject(error); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(stdout);
+      else reject(new Error(`agy exited with ${code}: ${stderr.trim().slice(0, 400)}`));
+    });
+  });
 }
 
 /**
@@ -123,7 +126,7 @@ export class AgyProvider implements TranslationProvider {
  * exits zero and reports itself in `status` and `error`, so those are read
  * rather than assumed.
  */
-export function parseAgyResponse(stdout: string): ResponseItem[] {
+export function agyItems(stdout: string): unknown[] {
   let reply: {
     status?: string;
     error?: string;
@@ -143,8 +146,11 @@ export function parseAgyResponse(stdout: string): ResponseItem[] {
   if (!Array.isArray(items)) {
     throw new Error('agy returned no structured output; the model ignored the schema.');
   }
+  return items;
+}
 
-  return items.map((raw) => {
+export function parseAgyResponse(stdout: string): ResponseItem[] {
+  return agyItems(stdout).map((raw) => {
     const item = raw as { i?: unknown; t?: unknown; tp?: unknown };
     if (typeof item.i !== 'number' || typeof item.t !== 'string') {
       throw new Error(`agy returned an unusable item: ${JSON.stringify(raw).slice(0, 120)}`);

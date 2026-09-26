@@ -1,6 +1,8 @@
 import type { Db } from '../db/open.ts';
 import { collectTerms } from '../glossary/terminology.ts';
 import { checkTranslation } from '../quality/check.ts';
+import { memoryCounts } from '../ai/memory.ts';
+import { rememberTranslations, splitByMemory } from '../ai/translationMemory.ts';
 import { AgyProvider } from '../translate/agy.ts';
 import { DEFAULT_TIMEOUT_MS, OpencodeProvider } from '../translate/opencode.ts';
 import type { RequestItem, TranslationProvider } from '../translate/types.ts';
@@ -52,6 +54,8 @@ export interface TranslateProgress {
   waitingSince: number | null;
   /** How many requests are out right now. */
   inFlight: number;
+  /** Answers served from what the model has already said, rather than bought. */
+  reused: number;
   /** How long one request may take before it is killed. */
   timeoutMs: number;
   finishedAt: string | null;
@@ -72,6 +76,7 @@ const idle = (): TranslateProgress => ({
   log: [],
   waitingSince: null,
   inFlight: 0,
+  reused: 0,
   timeoutMs: 0,
   finishedAt: null,
 });
@@ -210,14 +215,19 @@ export function startTranslation(
     }));
 
     try {
-      const terms = collectTerms(db, projectId, items.map((item) => item.s));
+      // Whatever the model has already answered under these rules is taken out
+      // first: the same string turns up in project after project.
+      const { known, ask } = splitByMemory(db, items, styleGuide);
+      progress.reused += known.size;
+
+      const terms = collectTerms(db, projectId, ask.map((item) => item.s));
       mark(number);
-      const answers = await attempt(ATTEMPTS, () => {
+      const fresh = ask.length === 0 ? [] : await attempt(ATTEMPTS, () => {
         inFlight.set(number, Date.now());
         oldestWait();
         return send.translate(
           {
-            items,
+            items: ask,
             context: {
               styleGuide,
               terms,
@@ -232,8 +242,12 @@ export function startTranslation(
         );
       });
 
+      rememberTranslations(db, ask, fresh, styleGuide, send.name);
+      const answers = items.map((item) => known.get(item.i) ?? fresh.find((a) => a.i === item.i));
+
       db.transaction(() => {
         for (const [index, answer] of answers.entries()) {
+          if (!answer) continue;
           const unit = slice[index]!;
 
           const failures = checkTranslation({

@@ -315,3 +315,24 @@ describe('running several requests at once', () => {
     expect(translateProgress().inFlight).toBe(0);
   });
 });
+
+describe('paying for an answer once', () => {
+  it('serves a repeat from what the model already said', async () => {
+    // The same string turns up in project after project; asking again is waste.
+    const provider = stub((request) => request.items.map((item) => ({ i: item.i, t: 'Kaydet' })));
+
+    startTranslation(db, projectId, { provider, chunkSize: 10, lanes: 1 });
+    await settled();
+    const asked = provider.calls.length;
+    expect(translateProgress().reused).toBe(0);
+
+    // Put them back and run again: nothing should reach the provider.
+    db.prepare(`UPDATE translation_units SET state = 'untranslated', msgstr = NULL`).run();
+    startTranslation(db, projectId, { provider, chunkSize: 10, lanes: 1 });
+    await settled();
+
+    expect(provider.calls.length).toBe(asked);
+    expect(translateProgress().reused).toBeGreaterThan(0);
+    expect(states()).toEqual({ review: 4 });
+  });
+});

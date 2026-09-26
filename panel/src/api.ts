@@ -322,6 +322,8 @@ export interface TranslateProgress {
   waitingSince: number | null;
   /** How many requests are out right now. */
   inFlight: number;
+  /** Answers served from what the model already said, rather than bought again. */
+  reused: number;
   timeoutMs: number;
   finishedAt: string | null;
 }

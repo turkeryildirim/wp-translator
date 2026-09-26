@@ -286,6 +286,38 @@ export const migrations: readonly Migration[] = [
       CREATE INDEX idx_unit_upstream ON translation_units (project_id, upstream);
     `,
   },
+  {
+    version: 11,
+    // What the model has already been asked, so the same question is not paid
+    // for twice. A string like `Theme Description` turns up in project after
+    // project; without this, each one buys the same answer again.
+    //
+    // The key is the exact bytes of the question, whitespace included. Folding
+    // it would make a cached answer apply to a string it was never asked about,
+    // and a trailing space is precisely the defect this tool hunts.
+    //
+    // `rules_hash` is the style guide the answer was given under, so editing the
+    // guide retires the answers rather than reusing opinions formed under rules
+    // that no longer hold.
+    sql: `
+      CREATE TABLE ai_memory (
+        id          INTEGER PRIMARY KEY,
+        kind        TEXT NOT NULL CHECK (kind IN ('translation','judgement')),
+        key_hash    TEXT NOT NULL,
+        rules_hash  TEXT NOT NULL,
+        source_text TEXT NOT NULL,              -- verbatim, so the panel can read it
+        question    TEXT NOT NULL,              -- JSON: exactly what was asked
+        answer      TEXT NOT NULL,              -- JSON: exactly what came back
+        model       TEXT,
+        uses        INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+        used_at     TEXT
+      ) STRICT;
+
+      CREATE UNIQUE INDEX idx_ai_memory_key ON ai_memory (kind, key_hash, rules_hash);
+      CREATE INDEX idx_ai_memory_source ON ai_memory (source_text);
+    `,
+  },
 ];
 
 export const latestVersion = migrations[migrations.length - 1]!.version;

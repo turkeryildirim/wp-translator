@@ -57,7 +57,9 @@ function stop(): void {
         <b>{{ progress.done.toLocaleString('tr') }}</b> /
         {{ progress.total.toLocaleString('tr') }} dizge
         <span class="muted">
-          · {{ progress.translated }} çevrildi<span v-if="progress.flagged">
+          · {{ progress.translated }} çevrildi<span v-if="progress.reused">
+            · {{ progress.reused }} hafızadan</span
+          ><span v-if="progress.flagged">
             · {{ progress.flagged }} işaretli</span
           ><span v-if="progress.errors.length"> · {{ progress.errors.length }} küme başarısız</span>
         </span>
