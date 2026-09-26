@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { collectText, parseResponse, reconcile, describeEvent } from '../src/translate/opencode.ts';
-import { buildPrompt } from '../src/translate/prompt.ts';
+import { NO_TOOLS, buildPrompt } from '../src/translate/prompt.ts';
+import { buildJudgePrompt } from '../src/judge/prompt.ts';
 import type { TranslationRequest } from '../src/translate/types.ts';
 
 const event = (type: string, text?: string) =>
@@ -126,6 +127,22 @@ describe('the prompt', () => {
     expect(prompt).toContain('title, alt, aria-label, placeholder');
     expect(prompt).toContain('href');
     expect(prompt).toMatch(/Özniteliği silme/);
+  });
+
+  it('forbids tool use, in both prompts', () => {
+    // Measured against agy: without this line the model answers a batch by
+    // trying to run a shell command, the request is denied, and the turn ends
+    // with an empty response. Both providers are coding agents, so the rule
+    // belongs to both prompts.
+    expect(buildPrompt({ styleGuide: '', terms: [] })).toContain(NO_TOOLS);
+    expect(buildJudgePrompt({ styleGuide: '', terms: [] })).toContain(NO_TOOLS);
+    expect(NO_TOOLS).toMatch(/araç/);
+  });
+
+  it('does not tell the model the payload is an attached file', () => {
+    // Only opencode attaches it; agy carries it inline, and describing a file
+    // that is not there is an invitation to go and read one.
+    expect(buildPrompt({ styleGuide: '', terms: [] })).not.toMatch(/Ekteki/);
   });
 
   it('tells the model it may reorder placeholders and tags', () => {

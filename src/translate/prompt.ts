@@ -1,16 +1,28 @@
 import type { TranslationContext } from './types.ts';
 
 /**
+ * Both providers are coding agents whose models can reach for a shell or a file
+ * read instead of answering, which spends the turn and returns nothing. Measured
+ * against agy, this line is what stops it.
+ */
+export const NO_TOOLS =
+  'Bu bir metin görevidir. Hiçbir araç, komut ya da dosya okuma kullanma; ' +
+  'yalnızca istenen JSON yapısını döndür.';
+
+/**
  * Build the instruction that accompanies the JSON payload.
  *
- * The payload is attached as a file; this is the prose around it. The
- * terminology block is the part that does the real work: exact matching settles
- * about a tenth of a project, and consistency across the rest comes from telling
- * the model how each known term has already been translated.
+ * Where the payload itself sits differs per provider — opencode attaches it as a
+ * file, agy carries it inline — so this says only that there is one. The
+ * terminology block is the part that does the real work: consistency across the
+ * strings nobody has translated before comes from telling the model how each
+ * known term has already been translated.
  */
 export function buildPrompt(context: TranslationContext): string {
   const sections = [
-    'Ekteki JSON dosyası, bir WordPress projesinden İngilizce arayüz metinlerinin listesidir.',
+    NO_TOOLS,
+    '',
+    'Sana verilen JSON, bir WordPress projesinden İngilizce arayüz metinlerinin listesidir.',
     'Her öğenin "s" değerini Türkçeye (tr_TR) çevir. "p" varsa İngilizce çoğul biçimdir, onu da çevir.',
     '',
     'ÇIKTI BİÇİMİ — buna harfiyen uy:',

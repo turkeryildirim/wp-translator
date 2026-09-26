@@ -123,14 +123,15 @@ export function invokeAgy(call: AgyCall): Promise<string> {
  * Read the translations out of agy's reply.
  *
  * `structured_output` is the schema-checked answer. A run that failed still
- * exits zero and reports itself in `status` and `error`, so those are read
- * rather than assumed.
+ * exits zero and reports itself in `status`, `error` and `denied_actions`, so
+ * those are read rather than assumed.
  */
 export function agyItems(stdout: string): unknown[] {
   let reply: {
     status?: string;
     error?: string;
     structured_output?: { items?: unknown };
+    denied_actions?: { display_name?: string; action?: string }[];
   };
   try {
     reply = JSON.parse(stdout.trim()) as typeof reply;
@@ -143,10 +144,20 @@ export function agyItems(stdout: string): unknown[] {
   }
 
   const items = reply.structured_output?.items;
-  if (!Array.isArray(items)) {
-    throw new Error('agy returned no structured output; the model ignored the schema.');
+  if (Array.isArray(items)) return items;
+
+  // A denied tool call is the common way to get here, and it looks like SUCCESS
+  // with an empty response. Naming the tool separates it from a model that
+  // answered in the wrong shape.
+  const denied = (reply.denied_actions ?? [])
+    .map((entry) => entry.display_name ?? entry.action ?? 'bilinmeyen')
+    .join(', ');
+  if (denied) {
+    throw new Error(
+      `agy did not answer: the model spent its turn on a tool call (${denied}), which was denied.`,
+    );
   }
-  return items;
+  throw new Error('agy returned no structured output; the model ignored the schema.');
 }
 
 export function parseAgyResponse(stdout: string): ResponseItem[] {

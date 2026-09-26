@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parseAgyResponse } from '../src/translate/agy.ts';
+import { agyItems, parseAgyResponse } from '../src/translate/agy.ts';
 
 const reply = (extra: Record<string, unknown>): string =>
   JSON.stringify({ status: 'SUCCESS', ...extra });
@@ -33,6 +34,17 @@ describe('reading agy’s reply', () => {
     expect(() =>
       parseAgyResponse(JSON.stringify({ status: 'ERROR', error: 'INVALID_ARGUMENT' })),
     ).toThrow(/ERROR.*INVALID_ARGUMENT/);
+  });
+
+  it('names the tool when the model spent its turn on a denied tool call', () => {
+    // The real reply this asserts against: agy exits zero, reports SUCCESS with
+    // an empty response and no structured output, and the only trace is
+    // `denied_actions`. Reported as "ignored the schema" it sends you looking at
+    // the payload instead of at the model reaching for a shell.
+    const denied = readFileSync('test/fixtures/agy-denied-tool.json', 'utf-8');
+
+    expect(() => agyItems(denied)).toThrow(/RunCommand/);
+    expect(() => agyItems(denied)).toThrow(/tool call/);
   });
 
   it('fails when the model ignored the schema', () => {

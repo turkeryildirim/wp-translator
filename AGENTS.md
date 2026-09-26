@@ -84,6 +84,18 @@ measurement if one drove it.
 - **`opencode run --format json` hangs unless stdin is closed.** Undocumented.
   Symptom is zero bytes and no error. This is why `src/translate/opencode.ts`
   uses `spawn` with `stdio: ['ignore', …]` rather than `execFile`.
+- **A model can answer a batch by reaching for a shell.** agy exits zero, reports
+  `SUCCESS` with an empty `response`, no `structured_output`, and the only trace
+  is `denied_actions: [RunCommand]` — the turn was spent on a tool call that was
+  refused. Both prompts carry `NO_TOOLS` (`src/translate/prompt.ts`) to stop it,
+  and never describe the payload as an attached file: only opencode attaches it,
+  and naming a file that is not there is what invites the read. Keep the error
+  message in `agyItems` naming the denied tool; read as "ignored the schema" it
+  sends you looking at the payload instead of at the model.
+- **A provider failure must not fail a judging batch.** The checks and the
+  glossary have already settled rows by then, and the userscript walks dozens of
+  pages. `askModel` turns an unreachable model into `unknown` carrying the error
+  as its reason, and rethrows only when the run was aborted.
 - **Never pin an opencode model.** The free roster rotates; a model that answered
   yesterday starts returning "the free tier can only be used from within
   OpenCode". Leave it unset so opencode's default is used.

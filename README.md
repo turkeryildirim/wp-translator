@@ -143,6 +143,11 @@ The local server must be running. The script reaches it through
 `GM_xmlhttpRequest`, so the server needs no CORS of its own and nothing else on
 the page can talk to it.
 
+Judging goes through **agy** rather than opencode: it needs a verdict per row and
+agy's `--json-schema` is what makes that reliable. A row the model cannot be
+asked about is annotated with the reason and left alone, so a configuration
+problem shows up on the page instead of stopping the run.
+
 ## Updating the style guide in an existing database
 
 The guide is seeded once, on first open, so a database created before an edit to

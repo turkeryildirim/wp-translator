@@ -70,43 +70,50 @@ export async function askModel(
     else toAsk.push(submission);
   }
 
+  let silence = 'Model bu dizge için yanıt vermedi.';
+
   if (toAsk.length > 0) {
     const directory = await mkdtemp(join(tmpdir(), 'wp-translator-judge-'));
     const schemaPath = join(directory, 'schema.json');
+    let opinions: unknown[] | undefined;
+
     try {
       await writeFile(schemaPath, JSON.stringify(SCHEMA), 'utf-8');
       const prompt = `${buildJudgePrompt(context)}\n\nJSON:\n${JSON.stringify(toJudgeItems(toAsk))}`;
-      const stdout = await invokeAgy({ ...options, schemaPath, prompt });
-
-      for (const judgement of readOpinions(toAsk, agyItems(stdout))) {
-        answers.set(judgement.id, judgement);
-        const submission = toAsk.find((candidate) => candidate.id === judgement.id);
-        // An unknown is not an answer; keeping it would cache a silence.
-        if (submission && judgement.verdict !== 'unknown') {
-          remember(db, {
-            kind: 'judgement',
-            keyHash: judgeKey(submission),
-            rulesHash: rules,
-            sourceText: submission.source,
-            question: { source: submission.source, translation: submission.translation },
-            answer: judgement,
-            model: options.model ?? null,
-          });
-        }
-      }
+      opinions = agyItems(await invokeAgy({ ...options, schemaPath, prompt }));
+    } catch (problem) {
+      // A model that cannot be reached or cannot be read leaves these rows
+      // undecided instead of failing the batch: the verdicts the checks and the
+      // glossary already settled are worth keeping, and nothing is ever approved
+      // on an `unknown`. The reason carries the error so it reaches the row.
+      if (options.signal?.aborted) throw problem;
+      silence = `Model yanıt vermedi: ${problem instanceof Error ? problem.message : String(problem)}`;
     } finally {
       await rm(directory, { recursive: true, force: true });
+    }
+
+    for (const judgement of opinions ? readOpinions(toAsk, opinions) : []) {
+      answers.set(judgement.id, judgement);
+      const submission = toAsk.find((candidate) => candidate.id === judgement.id);
+      // An unknown is not an answer; keeping it would cache a silence.
+      if (submission && judgement.verdict !== 'unknown') {
+        remember(db, {
+          kind: 'judgement',
+          keyHash: judgeKey(submission),
+          rulesHash: rules,
+          sourceText: submission.source,
+          question: { source: submission.source, translation: submission.translation },
+          answer: judgement,
+          model: options.model ?? null,
+        });
+      }
     }
   }
 
   return {
     judgements: submissions.map(
       (submission) =>
-        answers.get(submission.id) ?? {
-          id: submission.id,
-          verdict: 'unknown',
-          reason: 'Model bu dizge için yanıt vermedi.',
-        },
+        answers.get(submission.id) ?? { id: submission.id, verdict: 'unknown', reason: silence },
     ),
     asked: toAsk.length,
   };

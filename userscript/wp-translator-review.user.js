@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         wp-translator · bekleyen çevirileri değerlendir
 // @namespace    https://github.com/turker/wp-translator
-// @version      1.0.1
+// @version      1.0.2
 // @description  Bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları işaretler.
 // @match        https://translate.wordpress.org/projects/*
 // @grant        GM_xmlhttpRequest
@@ -34,7 +34,12 @@ function ask(path, body) {
       headers: { 'content-type': 'application/json' },
       data: JSON.stringify(body),
       onload: (reply) => {
-        if (reply.status !== 200) return reject(new Error(`${reply.status} ${reply.statusText}`));
+        if (reply.status !== 200) {
+          // The body carries the server's own reason; without it a failure reads
+          // only as "500" and says nothing about what to fix.
+          const detail = (reply.responseText || '').trim().slice(0, 300);
+          return reject(new Error(`${reply.status} ${reply.statusText}${detail ? ` — ${detail}` : ''}`));
+        }
         try {
           resolve(JSON.parse(reply.responseText));
         } catch (problem) {

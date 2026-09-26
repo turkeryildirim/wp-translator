@@ -1,3 +1,4 @@
+import { NO_TOOLS } from '../translate/prompt.ts';
 import type { Term } from '../glossary/terminology.ts';
 import type { Submission } from './verdict.ts';
 
@@ -25,6 +26,8 @@ export interface JudgeItem {
  */
 export function buildJudgePrompt(context: JudgeContext): string {
   const sections = [
+    NO_TOOLS,
+    '',
     'Aşağıdaki JSON, bir WordPress projesine BAŞKA çevirmenler tarafından gönderilmiş',
     've henüz onaylanmamış çevirilerdir. Her öğede "s" İngilizce kaynak, "t" gönderilen',
     'Türkçe çeviridir. "p" varsa İngilizce çoğul, "tp" gönderilen çoğul çeviridir.',
