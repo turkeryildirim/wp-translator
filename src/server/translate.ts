@@ -1,6 +1,7 @@
 import type { Db } from '../db/open.ts';
 import { collectTerms } from '../glossary/terminology.ts';
 import { checkTranslation } from '../quality/check.ts';
+import { AgyProvider } from '../translate/agy.ts';
 import { DEFAULT_TIMEOUT_MS, OpencodeProvider } from '../translate/opencode.ts';
 import type { RequestItem, TranslationProvider } from '../translate/types.ts';
 import { styleGuideFor } from './tags.ts';
@@ -99,6 +100,9 @@ export function stopTranslation(): TranslateProgress {
  */
 export type TranslateScope = 'untranslated' | 'waiting' | 'selected' | 'all';
 
+/** Which CLI does the translating. */
+export type Engine = 'opencode' | 'agy';
+
 export interface TranslateOptions {
   chunkSize?: number;
   timeoutMs?: number;
@@ -106,6 +110,8 @@ export interface TranslateOptions {
   lanes?: number;
   /** Gap between lanes starting. */
   staggerMs?: number;
+  /** Which CLI to translate through. */
+  engine?: Engine;
   model?: string;
   agent?: string;
   provider?: TranslationProvider;
@@ -274,14 +280,21 @@ export function startTranslation(
       await pause(lane * (options.staggerMs ?? STAGGER_MS), signal);
 
       const current = { chunk: 0 };
+      const watch = (line: string): void => record(`#${current.chunk} ${line}`);
       const send =
         options.provider ??
-        new OpencodeProvider({
-          ...(options.model ? { model: options.model } : {}),
-          ...(options.agent ? { agent: options.agent } : {}),
-          ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
-          onLine: (line) => record(`#${current.chunk} ${line}`),
-        });
+        (options.engine === 'agy'
+          ? new AgyProvider({
+              ...(options.model ? { model: options.model } : {}),
+              ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+              onLine: watch,
+            })
+          : new OpencodeProvider({
+              ...(options.model ? { model: options.model } : {}),
+              ...(options.agent ? { agent: options.agent } : {}),
+              ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+              onLine: watch,
+            }));
 
       while (!signal.aborted) {
         const mine = next;

@@ -11,6 +11,7 @@ import {
   startTranslation,
   translateProgress,
   type BulkAction,
+  type Engine,
   type Project,
   type QueueView,
   type TranslateProgress,
@@ -68,6 +69,13 @@ const VIEWS: { view: QueueView; label: string; hint: string }[] = [
 ];
 
 const translateScope = ref<TranslateScope>('untranslated');
+const engine = ref<Engine>('agy');
+
+/** Each CLI is configured its own way, so the agent only means anything to one. */
+const ENGINE_ARGS: Record<Engine, { agent?: string; model?: string }> = {
+  opencode: { agent: 'wp-translator' },
+  agy: { model: 'gemini-3.8-flash-low' },
+};
 
 async function translate(): Promise<void> {
   if (selected.value === null) return;
@@ -78,7 +86,8 @@ async function translate(): Promise<void> {
     return;
 
   translating.value = await startTranslation(selected.value, {
-    agent: 'wp-translator',
+    engine: engine.value,
+    ...ENGINE_ARGS[engine.value],
     scope: translateScope.value,
     ...(translateScope.value === 'selected' ? { ids: picked.value } : {}),
   });
@@ -187,7 +196,8 @@ async function runBulk(): Promise<void> {
   if (action === 'translate') {
     const ids = wholeFilter.value ? undefined : picked.value;
     translating.value = await startTranslation(selected.value, {
-      agent: 'wp-translator',
+      engine: engine.value,
+      ...ENGINE_ARGS[engine.value],
       scope: ids ? 'selected' : filter.value === 'waiting' ? 'waiting' : 'untranslated',
       ...(ids ? { ids } : {}),
     });
@@ -389,6 +399,10 @@ watch(page, load);
     </div>
 
     <div class="toolbar">
+      <select v-model="engine" aria-label="Hangi CLI" :disabled="translating?.running">
+        <option value="agy">agy · Gemini Flash</option>
+        <option value="opencode">opencode</option>
+      </select>
       <select v-model="translateScope" aria-label="Neler çevrilsin" :disabled="translating?.running">
         <option value="untranslated">Çevrilmemişler ({{ counts.untranslated }})</option>
         <option value="waiting">Bekleyenler ({{ counts.waiting }})</option>

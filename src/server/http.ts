@@ -28,6 +28,7 @@ import {
   startTranslation,
   stopTranslation,
   translateProgress,
+  type Engine,
   type TranslateScope,
 } from './translate.ts';
 import {
@@ -285,6 +286,7 @@ async function api(
         agent?: string;
         scope?: TranslateScope;
         ids?: number[];
+        engine?: Engine;
       };
       return send(response, 200, startTranslation(db, Number(translate[1]), body));
     }

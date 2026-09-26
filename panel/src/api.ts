@@ -328,9 +328,18 @@ export interface TranslateProgress {
 
 export type TranslateScope = 'untranslated' | 'waiting' | 'selected' | 'all';
 
+/** Which CLI does the translating. */
+export type Engine = 'opencode' | 'agy';
+
 export const startTranslation = (
   projectId: number,
-  options: { agent?: string; model?: string; scope?: TranslateScope; ids?: number[] } = {},
+  options: {
+    agent?: string;
+    model?: string;
+    scope?: TranslateScope;
+    ids?: number[];
+    engine?: Engine;
+  } = {},
 ) =>
   post<TranslateProgress>(`/api/projects/${projectId}/translate`, options, 'Çeviri başlatıldı');
 
