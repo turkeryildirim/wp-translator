@@ -116,10 +116,16 @@ opencode run --agent wp-translator "List the files here using your tools."
 `opencode api agent.list` returns an empty array even when the agent loads; the
 run header (`> wp-translator · <model>`) is what confirms it.
 
-**Do not pin a model.** The free roster rotates: a model that answered yesterday
-can start returning *"OpenCode's free tier can only be used from within
-OpenCode"*, and another appears in its place. Leave it unset so opencode's own
-default is used.
+**Do not rely on a free model.** The roster rotates and they refuse CLI requests
+without warning — *"OpenCode's free tier can only be used from within
+OpenCode"*, HTTP 403. opencode's own default is one of them, so leaving the model
+unset is exactly what breaks. Name a model from a plan you have; the panel asks
+for `zai-coding-plan/glm-5.3-flash`. `opencode models` lists what is available.
+
+The refusal arrives as an error event on opencode's **stdout** with stderr empty,
+so the exit code alone says nothing. The tool reads it out and reports the
+sentence; the run modal names the CLI and model it is using, so a run's output
+can be told from the engine you picked.
 
 ## Reviewing other people's translations
 

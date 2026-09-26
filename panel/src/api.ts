@@ -347,6 +347,9 @@ export interface TranslateProgress {
   /** Answers served from what the model already said, rather than bought again. */
   reused: number;
   timeoutMs: number;
+  /** Which CLI and model the run actually chose. */
+  engine: 'opencode' | 'agy';
+  model: string | null;
   finishedAt: string | null;
 }
 

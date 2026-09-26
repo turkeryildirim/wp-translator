@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { collectText, parseResponse, reconcile, describeEvent } from '../src/translate/opencode.ts';
+import {
+  collectText,
+  describeEvent,
+  parseResponse,
+  providerError,
+  reconcile,
+} from '../src/translate/opencode.ts';
 import { NO_TOOLS, buildPrompt } from '../src/translate/prompt.ts';
 import { buildJudgePrompt } from '../src/judge/prompt.ts';
 import type { TranslationRequest } from '../src/translate/types.ts';
@@ -187,5 +193,36 @@ describe('reading opencode’s event stream', () => {
   it('passes through anything that is not an event', () => {
     // opencode's own chatter, which is exactly what matters when it will not run.
     expect(describeEvent('opencode: command not found')).toBe('opencode: command not found');
+  });
+});
+
+describe('what opencode says when it refuses', () => {
+  // The real event, verbatim: opencode's free roster rotates and a model that
+  // answered yesterday starts refusing CLI requests. It arrives on stdout, stderr
+  // stays empty, so "exited with 1:" is all the run would otherwise report.
+  const refusal = JSON.stringify({
+    error: {
+      type: 'provider.auth',
+      message: "Error from provider (Console): OpenCode's free tier can only be used from within OpenCode",
+      status: 403,
+    },
+  });
+
+  it('names the provider’s reason rather than the exit code', () => {
+    expect(providerError(refusal)).toMatch(/free tier can only be used from within OpenCode/);
+  });
+
+  it('finds it among the ordinary events of a stream', () => {
+    const stream = [event('step-start'), refusal, event('step-finish')].join('\n');
+
+    expect(providerError(stream)).toMatch(/free tier/);
+  });
+
+  it('says nothing when the stream carried no error', () => {
+    expect(providerError([event('step-start'), event('text', 'merhaba')].join('\n'))).toBeNull();
+  });
+
+  it('falls back to the type when there is no message', () => {
+    expect(providerError(JSON.stringify({ error: { type: 'provider.auth' } }))).toBe('provider.auth');
   });
 });

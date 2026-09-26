@@ -53,7 +53,16 @@ export class OpencodeProvider implements TranslationProvider {
     try {
       await writeFile(payloadPath, JSON.stringify(request.items), 'utf-8');
       const stdout = await this.invoke(payloadPath, buildPrompt(request.context), signal);
-      return reconcile(request, parseResponse(collectText(stdout)));
+
+      // A refused request can still exit zero, leaving no text and no clue in the
+      // exit code. The stream's own error is the only thing that names the cause.
+      const text = collectText(stdout);
+      if (!text.trim()) {
+        const reported = providerError(stdout);
+        if (reported) throw new Error(`opencode: ${reported}`);
+      }
+
+      return reconcile(request, parseResponse(text));
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -113,11 +122,46 @@ export class OpencodeProvider implements TranslationProvider {
       child.on('error', (error) => { clearTimeout(timer); reject(error); });
       child.on('close', (code) => {
         clearTimeout(timer);
-        if (code === 0) resolve(stdout);
-        else reject(new Error(`opencode exited with ${code}: ${stderr.trim().slice(0, 400)}`));
+        if (code === 0) return resolve(stdout);
+
+        const reported = providerError(stdout);
+        reject(
+          new Error(
+            reported
+              ? `opencode: ${reported}`
+              : `opencode exited with ${code}: ${stderr.trim().slice(0, 400) || '(hiçbir şey yazmadı)'}`,
+          ),
+        );
       });
     });
   }
+}
+
+/**
+ * The provider's own complaint, where the stream carried one.
+ *
+ * opencode reports a refused request as an `error` event on stdout and leaves
+ * stderr empty, so neither the exit code nor stderr says anything. The usual
+ * cause is the free roster: a model stops accepting requests from the CLI and
+ * every chunk then fails identically.
+ */
+export function providerError(ndjson: string): string | null {
+  for (const line of ndjson.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    let event: { error?: { message?: string; type?: string } };
+    try {
+      event = JSON.parse(trimmed) as typeof event;
+    } catch {
+      continue;
+    }
+
+    const error = event.error;
+    if (!error) continue;
+    return error.message ?? error.type ?? JSON.stringify(error).slice(0, 200);
+  }
+  return null;
 }
 
 /**

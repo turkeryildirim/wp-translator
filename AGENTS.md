@@ -103,9 +103,16 @@ measurement if one drove it.
   glossary have already settled rows by then, and the userscript walks dozens of
   pages. `askModel` turns an unreachable model into `unknown` carrying the error
   as its reason, and rethrows only when the run was aborted.
-- **Never pin an opencode model.** The free roster rotates; a model that answered
-  yesterday starts returning "the free tier can only be used from within
-  OpenCode". Leave it unset so opencode's default is used.
+- **Do not rely on an opencode free model.** The roster rotates and they refuse
+  CLI requests without warning: `{"type":"provider.auth","status":403,"message":
+  "OpenCode's free tier can only be used from within OpenCode"}`. opencode's own
+  default is one of them, so leaving the model unset is what breaks. Name a model
+  from a plan instead — `panel/src/App.vue` asks for the owner's z.ai one. The
+  error arrives as an `error` event on **stdout** with stderr empty, so the exit
+  code says nothing; `providerError` is what turns it into a sentence.
+- **agy has no effort flag worth passing.** Its models carry the effort in the id
+  (`gemini-3.8-flash-low`), and `--effort` on one of those exits 1 with "not
+  supported for the current model". Choose the model, not a flag.
 - **translate.wordpress.org rate-limits a tight loop.** No `Retry-After`, no
   headers — a run of sequential requests eventually returns 429 and the same URL
   succeeds seconds later. `src/wporg/fetch.ts` paces and retries; keep it.

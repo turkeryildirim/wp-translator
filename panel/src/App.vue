@@ -69,11 +69,17 @@ const VIEWS: { view: QueueView; label: string; hint: string }[] = [
 ];
 
 const translateScope = ref<TranslateScope>('untranslated');
-const engine = ref<Engine>('agy');
+const engine = ref<Engine>('opencode');
 
 /** Each CLI is configured its own way, so the agent only means anything to one. */
+/**
+ * Which CLI is asked, and with what.
+ *
+ * opencode's own default is one of its free models, and those refuse CLI requests
+ * without warning — the owner's z.ai plan is asked for by name instead.
+ */
 const ENGINE_ARGS: Record<Engine, { agent?: string; model?: string }> = {
-  opencode: { agent: 'wp-translator' },
+  opencode: { agent: 'wp-translator', model: 'zai-coding-plan/glm-5.3-flash' },
   agy: { model: 'gemini-3.8-flash-low' },
 };
 
@@ -400,8 +406,8 @@ watch(page, load);
 
     <div class="toolbar">
       <select v-model="engine" aria-label="Hangi CLI" :disabled="translating?.running">
-        <option value="agy">agy · Gemini Flash</option>
-        <option value="opencode">opencode</option>
+        <option value="opencode">opencode · GLM 5.3 Flash</option>
+        <option value="agy">agy · Gemini 3.8 Flash (low)</option>
       </select>
       <select v-model="translateScope" aria-label="Neler çevrilsin" :disabled="translating?.running">
         <option value="untranslated">Çevrilmemişler ({{ counts.untranslated }})</option>

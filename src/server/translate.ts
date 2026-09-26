@@ -58,6 +58,15 @@ export interface TranslateProgress {
   reused: number;
   /** How long one request may take before it is killed. */
   timeoutMs: number;
+  /**
+   * Which CLI and model this run is actually using.
+   *
+   * Reported because a run's log is not obviously one CLI's rather than the
+   * other's, and "it translated with the engine I did not pick" is otherwise
+   * impossible to tell from "that engine's output looks like this".
+   */
+  engine: Engine;
+  model: string | null;
   finishedAt: string | null;
 }
 
@@ -78,6 +87,8 @@ const idle = (): TranslateProgress => ({
   inFlight: 0,
   reused: 0,
   timeoutMs: 0,
+  engine: 'opencode',
+  model: null,
   finishedAt: null,
 });
 
@@ -130,6 +141,33 @@ export interface TranslateOptions {
  * fill. Runs in the background and the panel polls it. A chunk is the retry
  * unit: one that fails leaves its units untranslated, so a re-run resumes.
  */
+/**
+ * The CLI a run will use.
+ *
+ * Separate and exported so which engine a request selects is a thing a test can
+ * assert: constructing a provider starts no process, and the alternative is
+ * finding out by watching a run's log.
+ */
+export function providerFor(
+  options: TranslateOptions,
+  onLine: (line: string) => void,
+): TranslationProvider {
+  if (options.engine === 'agy') {
+    return new AgyProvider({
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+      onLine,
+    });
+  }
+
+  return new OpencodeProvider({
+    ...(options.model ? { model: options.model } : {}),
+    ...(options.agent ? { agent: options.agent } : {}),
+    ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+    onLine,
+  });
+}
+
 export function startTranslation(
   db: Db,
   projectId: number,
@@ -163,6 +201,8 @@ export function startTranslation(
     projectId,
     total: pending.length,
     timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    engine: options.engine ?? 'opencode',
+    model: options.model ?? null,
   };
   running = new AbortController();
   const { signal } = running;
@@ -297,20 +337,7 @@ export function startTranslation(
 
       const current = { chunk: 0 };
       const watch = (line: string): void => record(`#${current.chunk} ${line}`);
-      const send =
-        options.provider ??
-        (options.engine === 'agy'
-          ? new AgyProvider({
-              ...(options.model ? { model: options.model } : {}),
-              ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
-              onLine: watch,
-            })
-          : new OpencodeProvider({
-              ...(options.model ? { model: options.model } : {}),
-              ...(options.agent ? { agent: options.agent } : {}),
-              ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
-              onLine: watch,
-            }));
+      const send = options.provider ?? providerFor(options, watch);
 
       while (!signal.aborted) {
         const mine = next;

@@ -15,6 +15,7 @@ export interface AgyOptions {
   onLine?: (line: string) => void;
 }
 
+
 export const DEFAULT_TIMEOUT_MS = 120_000;
 
 /**
@@ -83,6 +84,8 @@ export interface AgyCall extends AgyOptions {
 /** Run agy once and hand back its raw stdout. */
 export function invokeAgy(call: AgyCall): Promise<string> {
   const args = ['--output-format', 'json', '--json-schema', call.schemaPath];
+  // No `--effort`: agy's models carry it in their id, and the flag is an error for
+  // those that do. `gemini-3.8-flash-low` *is* the low-effort model.
   if (call.model) args.push('--model', call.model);
   // `-p` must carry its own value or agy reads the next flag as the prompt.
   args.push(`-p=${call.prompt}`);

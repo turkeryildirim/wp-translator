@@ -51,7 +51,12 @@ function stop(): void {
        behind it; there is one run at a time and it owns the window. -->
   <div class="backdrop" role="dialog" aria-modal="true" aria-label="AI çevirisi">
     <div class="modal">
-      <h3>AI ile çevriliyor</h3>
+      <!-- Named because a run's log does not say which CLI produced it, and
+           "it used the engine I did not pick" is otherwise unanswerable. -->
+      <h3>
+        AI ile çevriliyor
+        <span class="engine">{{ progress.engine }}<span v-if="progress.model"> · {{ progress.model }}</span></span>
+      </h3>
 
       <p class="progress-line">
         <b>{{ progress.done.toLocaleString('tr') }}</b> /
@@ -72,8 +77,8 @@ function stop(): void {
           <b>{{ progress.inFlight }}</b> istek havada, en eskisi
           <b>{{ waited }}</b> / {{ limit }} sn
           <span class="muted">
-            · opencode yanıtı parça parça değil tek seferde verir, bu yüzden bir istek
-            cevaplanana kadar ondan başka işaret gelmez.
+            · yanıt parça parça değil tek seferde gelir, bu yüzden bir istek
+            cevaplanana kadar ondan başka işaret olmaz.
           </span>
         </template>
       </p>
@@ -82,7 +87,7 @@ function stop(): void {
         {{ progress.errors[progress.errors.length - 1]!.message }}
       </p>
 
-      <pre ref="logEl" class="runlog">{{ progress.log.join('\n') || 'opencode bekleniyor…' }}</pre>
+      <pre ref="logEl" class="runlog">{{ progress.log.join('\n') || `${progress.engine} bekleniyor…` }}</pre>
 
       <div class="editor-actions">
         <button :disabled="stopping" @click="stop">
