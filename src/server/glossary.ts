@@ -258,6 +258,12 @@ export function createEntry(db: Db, input: NewEntry): GlossaryRow {
   if (translationPlural && !sourcePlural) {
     throw new Error('Çoğul çeviri için kaynağın çoğul biçimi de gerekir.');
   }
+  // Both halves or neither: an entry with a plural source and no plural
+  // translation fills a unit's singular and leaves its plural empty, which the
+  // checks then refuse on every string it matches.
+  if (sourcePlural && !translationPlural) {
+    throw new Error('Çoğul kaynak için çoğul çeviri de gerekir.');
+  }
 
   try {
     const written = db

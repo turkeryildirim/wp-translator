@@ -82,7 +82,28 @@ describe('entries the owner writes', () => {
   it('refuses a plural translation with no plural source to attach it to', () => {
     expect(() =>
       createEntry(db, { sourceText: 'Item', translation: 'Öge', translationPlural: 'Ögeler', tagId }),
-    ).toThrow(/çoğul/);
+    ).toThrow(/çoğul/i);
+  });
+
+  it('refuses a plural source with no plural translation', () => {
+    // Such an entry fills a unit's singular and leaves its plural empty, which
+    // the checks refuse on every string it matches.
+    expect(() =>
+      createEntry(db, { sourceText: '%s item', sourcePlural: '%s items', translation: '%s öge', tagId }),
+    ).toThrow(/çoğul/i);
+  });
+
+  it('takes both halves of a plural entry', () => {
+    const entry = createEntry(db, {
+      sourceText: '%s item',
+      sourcePlural: '%s items',
+      translation: '%s öge',
+      translationPlural: '%s öge',
+      tagId,
+    });
+
+    expect(entry.sourcePlural).toBe('%s items');
+    expect(entry.translationPlural).toBe('%s öge');
   });
 });
 

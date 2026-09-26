@@ -126,11 +126,17 @@ function openForm(): void {
 }
 
 async function add(): Promise<void> {
+  // The plural half only travels when the source has one: its field is hidden
+  // when the plural source is cleared, and sending what is not on screen is what
+  // produces a complaint about a field the owner cannot see.
+  const plural = fresh.value.sourcePlural.trim();
+
   const entry = await createEntry({
     sourceText: fresh.value.sourceText,
-    ...(fresh.value.sourcePlural ? { sourcePlural: fresh.value.sourcePlural } : {}),
+    ...(plural
+      ? { sourcePlural: plural, translationPlural: fresh.value.translationPlural }
+      : {}),
     translation: fresh.value.translation,
-    ...(fresh.value.translationPlural ? { translationPlural: fresh.value.translationPlural } : {}),
     tagId: Number(freshTagId.value),
   });
 
@@ -285,7 +291,12 @@ watch(page, load);
         <div class="editor-actions">
           <button
             class="primary"
-            :disabled="!fresh.sourceText.trim() || !fresh.translation.trim() || !freshTagId"
+            :disabled="
+              !fresh.sourceText.trim() ||
+              !fresh.translation.trim() ||
+              !freshTagId ||
+              (!!fresh.sourcePlural.trim() && !fresh.translationPlural.trim())
+            "
             @click="add"
           >
             Ekle

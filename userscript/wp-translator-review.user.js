@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         wp-translator · bekleyen çevirileri değerlendir
 // @namespace    https://github.com/turker/wp-translator
-// @version      1.1.0
+// @version      1.1.1
 // @description  Bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları işaretler.
 // @match        https://translate.wordpress.org/projects/*
 // @grant        GM_xmlhttpRequest
@@ -71,22 +71,41 @@ function readRows(root) {
     const translationId = Number(row.split('-')[1]);
     if (!Number.isFinite(translationId) || translationId === 0) continue;
 
-    const source = preview.querySelector('.original-text');
-    const translation = preview.querySelector('.translation-text');
-    if (!source || !translation) continue;
+    const source = forms(preview, 'td.original', '.original-text');
+    const translation = forms(preview, 'td.translation', '.translation-text');
+    if (!source[0] || !translation.some((form) => form !== null)) continue;
 
     const editor = root.querySelector(`#editor-${row}`);
     rows.push({
       row,
       id: translationId,
       nonce: statusNonce(editor, 'approve'),
-      source: text(source),
-      translation: text(translation),
+      source: source[0],
+      ...(source[1] ? { sourcePlural: source[1] } : {}),
+      translation: translation[0] ?? '',
+      ...(translation[1] ? { translationPlural: translation[1] } : {}),
       element: preview,
       editor,
     });
   }
   return rows;
+}
+
+/**
+ * The forms in one cell, in order, with a missing one as null.
+ *
+ * A plural string is a `<ul>` of one `<li>` per form, and a form nobody filled
+ * carries `.missing` instead of the text span — so position matters and the spans
+ * alone cannot be counted. Judging a plural row on its singular half is how an
+ * untranslated plural gets approved.
+ */
+function forms(preview, cell, span) {
+  const container = preview.querySelector(cell);
+  const items = container?.querySelectorAll(':scope > ul > li') ?? [];
+  if (items.length > 0) {
+    return [...items].map((item) => item.querySelector(span)?.textContent ?? null);
+  }
+  return [container?.querySelector(span)?.textContent ?? null];
 }
 
 /**
@@ -107,9 +126,6 @@ function statusNonce(editor, action) {
   }
   return null;
 }
-
-/** GlotPress renders these with the entities decoded by the browser already. */
-const text = (element) => element.textContent ?? '';
 
 async function fetchPage(page) {
   const url = new URL(location.href);
@@ -161,6 +177,35 @@ async function setStatus(row, status) {
   if (!reply.ok) {
     throw new Error(`${reply.status} ${reply.statusText} — ${(await reply.text()).trim().slice(0, 200)}`);
   }
+
+  return savedStatus(await reply.text());
+}
+
+/**
+ * The status a save landed on, read out of the row GlotPress sends back.
+ *
+ * A translation that trips GlotPress's own warnings is stored as `waiting` even
+ * for a user who may approve, and the request still succeeds — so "saved" on its
+ * own would be a claim the reply does not make. The answer is keyed by original
+ * id and carries the re-rendered row.
+ */
+function savedStatus(body) {
+  let rendered = body;
+  try {
+    rendered = Object.values(JSON.parse(body)).join('');
+  } catch {
+    // Not JSON: fall back to scanning whatever came back.
+  }
+  const found = /\bstatus-([a-z]+)\b/.exec(rendered);
+  return found ? found[1] : 'bilinmiyor';
+}
+
+/** Clear the row's bulk-approve tick. True when one was set. */
+function untick(row) {
+  const box = row.element.querySelector('input[type="checkbox"]');
+  if (!box?.checked) return false;
+  box.click();
+  return true;
 }
 
 /** Write the verdict where the owner will read it, without touching GlotPress's own nodes. */
@@ -199,9 +244,15 @@ function applyButton(row, proposal) {
   button.addEventListener('click', async () => {
     button.disabled = true;
     try {
-      await applyProposal(row, proposal);
-      button.textContent = `kaydedildi: ${proposal}`;
+      const status = await applyProposal(row, proposal);
+      // GlotPress restores an older translation by making it current again, so a
+      // row left ticked would have this wording undone by its own bulk approve.
+      if (untick(row)) state.ticked -= 1;
       button.dataset.done = 'yes';
+      button.textContent =
+        status === 'current'
+          ? `kaydedildi: ${proposal}`
+          : `kaydedildi ama durumu "${status}" — elle onaylamak gerekiyor: ${proposal}`;
     } catch (problem) {
       button.disabled = false;
       button.textContent = `kaydedilemedi: ${problem.message}`;
@@ -215,7 +266,8 @@ function applyButton(row, proposal) {
  * Save a wording as this row's translation, the way GlotPress's own editor does.
  *
  * The textarea is filled first so the wording is in place and visible even if the
- * request fails, and so the page shows the same thing the request sent.
+ * request fails, and so the page shows the same thing the request sent. Returns
+ * the status the save actually produced, which is not always `current`.
  */
 async function applyProposal(row, proposal) {
   const originalId = row.row.split('-')[0];
@@ -281,7 +333,9 @@ async function run(panel, { approve }) {
           items: slice.map((row) => ({
             id: row.id,
             source: row.source,
+            ...(row.sourcePlural ? { sourcePlural: row.sourcePlural } : {}),
             translation: row.translation,
+            ...(row.translationPlural ? { translationPlural: row.translationPlural } : {}),
           })),
         });
 
