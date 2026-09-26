@@ -123,6 +123,12 @@ puts this tool's judgement on those pages.
 Install it in Tampermonkey or Violentmonkey and open a project with a pending
 filter — `?filters[status]=waiting` or `fuzzy`. A panel appears with two buttons:
 
+**In Edge and Chrome the extension needs developer mode.** Turn it on at
+`edge://extensions` (or `chrome://extensions`) and reload the page; without it
+userscripts are never executed and the dashboard reports the script as having
+never run. The script logs `[wp-translator] yüklendi` to the console, which is
+how to tell "did not run" from "ran and had nothing to do".
+
 - **Yalnızca değerlendir** — decides nothing, writes a verdict beside every row.
 - **Değerlendir ve birebir olanları onayla** — approves the ones the glossary
   already holds with that exact wording, and ticks the rest for GlotPress's own

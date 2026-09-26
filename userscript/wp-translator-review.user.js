@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         wp-translator · bekleyen çevirileri değerlendir
 // @namespace    https://github.com/turker/wp-translator
-// @version      1.0.0
+// @version      1.0.1
 // @description  Bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları işaretler.
 // @match        https://translate.wordpress.org/projects/*
 // @grant        GM_xmlhttpRequest
 // @connect      127.0.0.1
+// @connect      localhost
 // @run-at       document-idle
+// @noframes
 // ==/UserScript==
 
 'use strict';
@@ -22,7 +24,7 @@ const BATCH = 10;
 /** GlotPress pages at fifteen and ignores per_page, so pages are walked. */
 const PAGE_SIZE = 15;
 
-const state = { counted: 0, approved: 0, ticked: 0, flagged: 0, unknown: 0, busy: false };
+const state = { counted: 0, approved: 0, ticked: 0, unticked: 0, flagged: 0, unknown: 0, busy: false };
 
 function ask(path, body) {
   return new Promise((resolve, reject) => {
@@ -125,9 +127,17 @@ function annotate(row, judgement) {
   row.element.querySelector('.translation-text')?.after(note);
 }
 
+/**
+ * Tick the row for GlotPress's own bulk approve.
+ *
+ * The checkbox only exists for a user who may approve, so a missing one is
+ * reported rather than ignored: it means the session cannot act here.
+ */
 function tick(row) {
-  const box = row.element.querySelector('input[type="checkbox"][name^="bulk"], .bulk-actions input[type="checkbox"]');
-  if (box && !box.checked) box.click();
+  const box = row.element.querySelector('input[type="checkbox"]');
+  if (!box) return false;
+  if (!box.checked) box.click();
+  return true;
 }
 
 async function run(panel, { approve }) {
@@ -163,7 +173,7 @@ async function run(panel, { approve }) {
             await setStatus(row, 'current');
             state.approved += 1;
           } else if (judgement.verdict === 'exact' || judgement.verdict === 'agreed') {
-            if (page === 1) tick(row);
+            if (page === 1 && !tick(row)) state.unticked += 1;
             state.ticked += 1;
           } else if (judgement.verdict === 'flagged') {
             state.flagged += 1;
@@ -194,7 +204,20 @@ function totalRows() {
 function report(panel, what) {
   panel.querySelector('.wpt-status').textContent =
     `${what} · ${state.counted} bakıldı · ${state.approved} onaylandı · ` +
-    `${state.ticked} seçildi · ${state.flagged} işaretli · ${state.unknown} kararsız`;
+    `${state.ticked} seçildi · ${state.flagged} işaretli · ${state.unknown} kararsız` +
+    (state.unticked ? ` · ${state.unticked} kutucuk bulunamadı` : '');
+}
+
+/**
+ * Whether this page has a queue to work through.
+ *
+ * GlotPress spells the filter `filters[status]`; the panel is shown either way
+ * so that "the script did not run" and "the script had nothing to do" cannot
+ * look the same.
+ */
+function pendingFilter() {
+  const status = new URL(location.href).searchParams.get('filters[status]');
+  return status === 'waiting' || status === 'fuzzy' || status === 'either' ? status : null;
 }
 
 function mount() {
@@ -224,6 +247,21 @@ function mount() {
   `;
   document.body.append(panel);
 
+  const filter = pendingFilter();
+  const rows = readRows(document).length;
+
+  if (!filter) {
+    for (const button of panel.querySelectorAll('button')) button.disabled = true;
+    panel.querySelector('.wpt-status').textContent =
+      'Bu sayfada bekleyen kuyruğu yok. Adrese ?filters[status]=waiting ekleyin.';
+  } else if (rows === 0) {
+    for (const button of panel.querySelectorAll('button')) button.disabled = true;
+    panel.querySelector('.wpt-status').textContent =
+      'Satır okunamadı. GTE olarak giriş yapılı mı?';
+  } else {
+    panel.querySelector('.wpt-status').textContent = `hazır · ${filter} · ${rows} satır okundu`;
+  }
+
   panel.querySelector('[data-act="dry"]').addEventListener('click', () => run(panel, { approve: false }));
   panel.querySelector('[data-act="live"]').addEventListener('click', () => {
     if (confirm('Sözlükle birebir eşleşenler doğrudan onaylanacak. Devam edilsin mi?')) {
@@ -232,6 +270,6 @@ function mount() {
   });
 }
 
-// Only where there is a pending queue to work through.
-const filter = new URL(location.href).searchParams.get('filters[status]');
-if (filter === 'waiting' || filter === 'fuzzy' || filter === 'either') mount();
+// Announced so a page with the script loaded can be told from one without it.
+console.info('[wp-translator] yüklendi', location.pathname, pendingFilter() ?? '(filtresiz)');
+mount();
