@@ -1,4 +1,6 @@
 import type { Db } from '../db/open.ts';
+import { sourceHash } from './key.ts';
+import { affixes, reapply } from '../text/whitespace.ts';
 
 export interface MatchResult {
   /** Filled from the glossary and complete. */
@@ -52,8 +54,10 @@ export function applyGlossary(db: Db, projectId: number, ids?: readonly number[]
                e.id ASC`,
   );
   const scope = ids ? ` AND id IN (${ids.map(() => '?').join(', ')})` : '';
+  // The hash is recomputed from the trimmed source rather than read from the
+  // column: the glossary stores strings without their surrounding whitespace.
   const units = db.prepare(
-    `SELECT id, source_hash AS hash FROM translation_units
+    `SELECT id, msgid, msgid_plural AS msgidPlural FROM translation_units
       WHERE project_id = ? AND state = 'untranslated'${scope}`,
   );
   // A glossary entry is a translation a human approved of this exact source, so
@@ -67,15 +71,28 @@ export function applyGlossary(db: Db, projectId: number, ids?: readonly number[]
   );
 
   return db.transaction((): MatchResult => {
-    for (const row of units.all(projectId, ...(ids ?? [])) as { id: number; hash: string }[]) {
-      const candidates = distinct(candidatesFor.all(row.hash, ...tagIds) as Candidate[]);
+    for (const row of units.all(projectId, ...(ids ?? [])) as UnitRow[]) {
+      const shape = affixes(row.msgid);
+      const pluralShape = row.msgidPlural === null ? null : affixes(row.msgidPlural);
+      const hash = sourceHash(shape.core, pluralShape?.core);
+      const candidates = distinct(candidatesFor.all(hash, ...tagIds) as Candidate[]);
 
       if (candidates.length === 0) {
         result.unmatched += 1;
         continue;
       }
 
-      fill.run({ id: row.id, ...candidates[0]! });
+      // The stored translation carries no shape; the unit's own goes back on.
+      const best = candidates[0]!;
+      fill.run({
+        id: row.id,
+        entryId: best.entryId,
+        translation: reapply(best.translation, shape),
+        translationPlural:
+          best.translationPlural === null || pluralShape === null
+            ? best.translationPlural
+            : reapply(best.translationPlural, pluralShape),
+      });
       result.filled += 1;
       if (candidates.length > 1) result.alternatives += 1;
     }
@@ -93,6 +110,12 @@ function distinct(candidates: readonly Candidate[]): Candidate[] {
     seen.add(key);
     return true;
   });
+}
+
+interface UnitRow {
+  id: number;
+  msgid: string;
+  msgidPlural: string | null;
 }
 
 function countUntranslated(db: Db, projectId: number): number {

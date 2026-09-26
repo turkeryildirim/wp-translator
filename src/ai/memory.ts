@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { Db } from '../db/open.ts';
+import { affixes } from '../text/whitespace.ts';
+
+export { affixes, reapply, type Affixes } from '../text/whitespace.ts';
 
 export type Kind = 'translation' | 'judgement';
 
@@ -8,34 +11,6 @@ const SEPARATOR = '\u001f';
 
 const digest = (parts: readonly string[]): string =>
   createHash('sha256').update(parts.join(SEPARATOR)).digest('hex');
-
-export interface Affixes {
-  lead: string;
-  core: string;
-  trail: string;
-}
-
-/**
- * Split a string into its surrounding whitespace and what it says.
- *
- * `Save` and `Save ` are the same translation problem with a different shape, so
- * they share one answer. Splitting them keeps the store from filling with near
- * duplicates, and the shape goes back on afterwards.
- *
- * Safe because the affixes are mechanical: the rule is to keep the source's, and
- * a translation that fails to is caught by `checkTranslation` before anything is
- * asked of the model.
- */
-export function affixes(text: string): Affixes {
-  const core = text.trim();
-  if (core === '') return { lead: '', core: '', trail: text };
-  const at = text.indexOf(core);
-  return { lead: text.slice(0, at), core, trail: text.slice(at + core.length) };
-}
-
-/** Put a source's surrounding whitespace back onto an answer given for its core. */
-export const reapply = (core: string, shape: Affixes): string =>
-  core === '' ? core : shape.lead + core + shape.trail;
 
 /**
  * The key for one question, over the cores rather than the exact bytes.

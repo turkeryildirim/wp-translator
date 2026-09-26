@@ -87,9 +87,20 @@ describe('glossary matching', () => {
     expect(applyGlossary(db, projectId).unmatched).toBe(1);
   });
 
-  it('does not match on trimmed whitespace', () => {
-    addGlossaryEntry(ecommerce, 'Save ', 'Kaydet ');
-    const projectId = addProject([{ msgid: 'Save' }], [ecommerce]);
+  it('matches a padded source and gives the padding back', () => {
+    // Surrounding whitespace is shape, not meaning: the glossary stores the
+    // words and the unit's own shape goes back on what it is filled with.
+    addGlossaryEntry(ecommerce, 'Save', 'Kaydet');
+    const projectId = addProject([{ msgid: '  Save \n' }], [ecommerce]);
+
+    expect(applyGlossary(db, projectId).filled).toBe(1);
+    expect(unitFor(projectId, '  Save \n')?.msgstr).toBe('  Kaydet \n');
+  });
+
+  it('still keeps strings apart on anything but whitespace', () => {
+    // Punctuation is not shape. `Save.` is a different string.
+    addGlossaryEntry(ecommerce, 'Save', 'Kaydet');
+    const projectId = addProject([{ msgid: 'Save.' }], [ecommerce]);
 
     expect(applyGlossary(db, projectId).unmatched).toBe(1);
   });

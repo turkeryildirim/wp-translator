@@ -184,3 +184,39 @@ describe('trusted-source sync', () => {
     ).toBe(syncRunId);
   });
 });
+
+describe('what a sync stores', () => {
+  it('keeps the words and drops the surrounding whitespace', () => {
+    // Otherwise the glossary fills with rows that say the same thing in a
+    // different shape.
+    syncTrustedSource(
+      db,
+      coreId,
+      catalogue([{ msgid: '  Save \n', msgstr: '\tKaydet ' }]),
+      [tagId],
+    );
+
+    const row = db
+      .prepare(`SELECT source_text, translation FROM glossary_entries`)
+      .get() as { source_text: string; translation: string };
+
+    expect(row).toEqual({ source_text: 'Save', translation: 'Kaydet' });
+  });
+
+  it('meets a differently padded source on one row', () => {
+    syncTrustedSource(db, coreId, catalogue([{ msgid: 'Save ', msgstr: 'Kaydet' }]), [tagId]);
+    syncTrustedSource(db, wooId, catalogue([{ msgid: '\nSave', msgstr: ' Kaydet ' }]), [tagId]);
+
+    expect(translationsOf('Save')).toEqual(['Kaydet']);
+    expect(countLinks('Save')).toBe(2);
+  });
+
+  it('leaves a string that is only whitespace out', () => {
+    // There is nothing to learn from it, and it has no core to key on.
+    syncTrustedSource(db, coreId, catalogue([{ msgid: '   ', msgstr: '   ' }]), [tagId]);
+
+    expect(
+      (db.prepare(`SELECT count(*) AS n FROM glossary_entries`).get() as { n: number }).n,
+    ).toBe(0);
+  });
+});

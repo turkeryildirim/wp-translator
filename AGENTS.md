@@ -103,6 +103,12 @@ measurement if one drove it.
   when the owner edits an entry already there. A glossary match is placed
   without review precisely because a human approved it upstream; a project's own
   output has not been through that. `test/glossary-writers.test.ts` asserts it.
+- **Surrounding whitespace is shape, not meaning.** The glossary and the AI
+  memory store the words alone, and the shape is restored from whichever string
+  is being filled — `src/text/whitespace.ts`. Only plain whitespace is folded,
+  never `trim()`, which also takes the non-breaking space, the BOM and the
+  ideographic space; those are characters the panel deliberately marks as
+  distinct. Punctuation is not shape either: `Hello.` and `Hello` stay apart.
 - **A glossary entry is a source *and a translation*.** `msgctxt` is not part of
   the key and matching never reads it; it lives in `glossary_entry_contexts` as
   a note. Two wordings of one string are two rows, and matching ranks them. Do

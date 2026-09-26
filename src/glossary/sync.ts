@@ -1,6 +1,7 @@
 import type { Db } from '../db/open.ts';
 import type { Catalogue } from '../po/types.ts';
 import { sourceHash } from './key.ts';
+import { affixes } from '../text/whitespace.ts';
 
 export interface SyncResult {
   syncRunId: number;
@@ -31,21 +32,26 @@ export function syncTrustedSource(
     let entriesSeen = 0;
 
     for (const unit of catalogue.units) {
-      const translation = unit.msgstr;
+      // Stored without its surrounding whitespace: that is shape, and keeping it
+      // filled the glossary with rows that say the same thing. Matching strips
+      // the same way and restores the shape from the unit being filled.
+      const translation = affixes(unit.msgstr ?? '').core;
       if (!translation) continue;
 
-      const hash = sourceHash(unit.msgid, unit.msgidPlural);
+      const source = affixes(unit.msgid).core;
+      const sourcePlural = unit.msgidPlural ? affixes(unit.msgidPlural).core : undefined;
+      const hash = sourceHash(source, sourcePlural);
       for (const tagId of tagIds) {
         const key = {
           hash,
           tagId,
           translation,
-          translationPlural: unit.msgstrPlural ?? null,
+          translationPlural: unit.msgstrPlural ? affixes(unit.msgstrPlural).core || null : null,
         };
         statements.insertEntry.run({
           ...key,
-          text: unit.msgid,
-          plural: unit.msgidPlural ?? null,
+          text: source,
+          plural: sourcePlural ?? null,
         });
         statements.linkSource.run({ ...key, trustedSourceId, syncRunId });
         if (unit.msgctxt) statements.recordContext.run({ ...key, msgctxt: unit.msgctxt });
