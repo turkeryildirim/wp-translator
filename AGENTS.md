@@ -105,10 +105,12 @@ measurement if one drove it.
   output has not been through that. `test/glossary-writers.test.ts` asserts it.
 - **Surrounding whitespace is shape, not meaning.** The glossary and the AI
   memory store the words alone, and the shape is restored from whichever string
-  is being filled — `src/text/whitespace.ts`. Only plain whitespace is folded,
-  never `trim()`, which also takes the non-breaking space, the BOM and the
-  ideographic space; those are characters the panel deliberately marks as
-  distinct. Punctuation is not shape either: `Hello.` and `Hello` stay apart.
+  is being filled — `src/text/whitespace.ts`. The fold is `\s`, which is
+  deliberate: it is exactly the set the quality checks compare at a string's
+  edges, so anything folded is still guarded. Zero-width format characters are
+  outside it — `\s` does not match them and neither do the checks, so folding
+  them would hide a difference nothing is watching. Punctuation is outside it
+  because it changes what a string says.
 - **A glossary entry is a source *and a translation*.** `msgctxt` is not part of
   the key and matching never reads it; it lives in `glossary_entry_contexts` as
   a note. Two wordings of one string are two rows, and matching ranks them. Do

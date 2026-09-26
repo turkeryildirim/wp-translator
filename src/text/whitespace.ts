@@ -13,16 +13,20 @@ export interface Affixes {
 }
 
 /**
- * Plain whitespace, and nothing else.
+ * Every kind of whitespace, and only whitespace.
  *
- * Deliberately not `trim()`, which also strips the non-breaking space, the BOM
- * and the ideographic space. Those are characters this tool marks as distinct
- * when it reveals what a string contains, so folding them here would have it
- * contradicting itself. Punctuation is out of scope too: `Hello.` and `Hello`
- * are different strings and stay different questions.
+ * `\s` is deliberate rather than a hand-written list: it is exactly the set the
+ * quality checks compare at a string's edges, so anything folded here is still
+ * guarded there. It covers the non-breaking space, the ideographic space and the
+ * BOM along with the ordinary ones.
+ *
+ * Zero-width format characters are **not** whitespace and stay out: `\s` does
+ * not match U+200B or the directional marks, and neither do the checks, so
+ * folding them would hide a difference nothing else is watching. Punctuation is
+ * out for the plainer reason that it changes what a string says.
  */
-const LEADING = /^[ \t\n\r\v\f]+/;
-const TRAILING = /[ \t\n\r\v\f]+$/;
+const LEADING = /^\s+/;
+const TRAILING = /\s+$/;
 
 /**
  * Split a string into its surrounding whitespace and what it says.
