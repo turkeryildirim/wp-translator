@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         wp-translator · bekleyen çevirileri değerlendir
 // @namespace    https://github.com/turker/wp-translator
-// @version      1.1.3
+// @version      1.2.0
 // @description  Bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları işaretler.
 // @match        https://translate.wordpress.org/projects/*
 // @grant        GM_xmlhttpRequest
@@ -21,8 +21,14 @@
  */
 const SERVER = 'http://127.0.0.1:4173';
 const BATCH = 10;
-/** GlotPress pages at fifteen and ignores per_page, so pages are walked. */
-const PAGE_SIZE = 15;
+/**
+ * A guard on the walk, not an expectation of its length.
+ *
+ * How many rows a page holds is the reader's own GlotPress preference and can
+ * change, so the walk goes until a page comes back empty rather than dividing a
+ * total by an assumed page size.
+ */
+const PAGE_CAP = 500;
 
 const state = { counted: 0, approved: 0, refused: 0, ticked: 0, unticked: 0, flagged: 0, unknown: 0, busy: false };
 
@@ -331,8 +337,7 @@ async function run(panel, { approve }) {
   state.busy = true;
 
   try {
-    const pages = Math.max(1, Math.ceil(totalRows() / PAGE_SIZE));
-    for (let page = 1; page <= pages; page += 1) {
+    for (let page = 1; page <= PAGE_CAP; page += 1) {
       const document_ = page === 1 ? document : await fetchPage(page);
       const rows = readRows(document_);
       if (rows.length === 0) break;
@@ -340,7 +345,7 @@ async function run(panel, { approve }) {
       for (let at = 0; at < rows.length; at += BATCH) {
         const slice = rows.slice(at, at + BATCH);
         state.counted += slice.length;
-        report(panel, `sayfa ${page}/${pages} · soruluyor…`);
+        report(panel, `sayfa ${page} · soruluyor…`);
 
         const { judgements } = await ask('/api/judge', {
           projectPath: projectPath(),
@@ -379,7 +384,7 @@ async function run(panel, { approve }) {
           // Only the page on screen can be annotated; the rest are counted.
           if (page === 1) annotate(row, judgement);
         }
-        report(panel, `sayfa ${page}/${pages}`);
+        report(panel, `sayfa ${page}`);
       }
     }
     report(panel, 'bitti');
@@ -388,12 +393,6 @@ async function run(panel, { approve }) {
   } finally {
     state.busy = false;
   }
-}
-
-/** GlotPress prints the filtered total in the paging line. */
-function totalRows() {
-  const found = document.body.textContent?.match(/([\d.,]+)\s+strings?/i);
-  return found ? Number(found[1].replace(/[.,]/g, '')) : PAGE_SIZE;
 }
 
 function report(panel, what) {
