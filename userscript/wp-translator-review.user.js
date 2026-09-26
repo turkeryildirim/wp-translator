@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         wp-translator · bekleyen çevirileri değerlendir
 // @namespace    https://github.com/turker/wp-translator
-// @version      1.1.1
+// @version      1.1.2
 // @description  Bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları işaretler.
 // @match        https://translate.wordpress.org/projects/*
 // @grant        GM_xmlhttpRequest
@@ -79,7 +79,7 @@ function readRows(root) {
     rows.push({
       row,
       id: translationId,
-      nonce: statusNonce(editor, 'approve'),
+      nonce: actionNonce(editor, 'approve'),
       source: source[0],
       ...(source[1] ? { sourcePlural: source[1] } : {}),
       translation: translation[0] ?? '',
@@ -109,19 +109,35 @@ function forms(preview, cell, span) {
 }
 
 /**
- * The nonce for one status change on one row.
+ * The nonce for one action on one row.
  *
- * GlotPress mints a separate nonce per row and per target status and puts it on
- * the button that performs it, which is rendered only for a session allowed to
- * use it. So a missing nonce means this session may not set that status here.
+ * GlotPress mints a separate nonce per row and per action and puts it on the
+ * button that performs it, which is rendered only for a session allowed to use
+ * it — so a missing nonce means this session may not do that here. Two selectors
+ * per action because translate.wordpress.org replaces the editor row's template
+ * and renames its save button.
  */
-function statusNonce(editor, action) {
-  const button = editor?.querySelector(`button.${action}[data-nonce]`);
+const ACTION_BUTTONS = {
+  approve: ['button.approve'],
+  reject: ['button.reject'],
+  // translate.wordpress.org renames GlotPress's save button; both are accepted.
+  save: ['button.translation-actions__save', 'button.ok'],
+};
+
+function actionNonce(editor, action) {
+  const selectors = ACTION_BUTTONS[action];
+  const button = editor?.querySelector(selectors.map((one) => `${one}[data-nonce]`).join(', '));
   if (button) return button.dataset.nonce;
+
   if (editor) {
+    // "Not there at all" and "there without a nonce" are different problems: the
+    // first is a template that moved, the second a session without the right.
+    const bare = editor.querySelector(selectors.join(', '));
     console.warn(
-      `[wp-translator] ${editor.id} içinde button.${action} bulunamadı:`,
-      editor.outerHTML.slice(0, 1500),
+      bare
+        ? `[wp-translator] ${editor.id}: "${action}" düğmesi var ama data-nonce taşımıyor.`
+        : `[wp-translator] ${editor.id}: "${action}" düğmesi yok (${selectors.join(', ')}).`,
+      editor.outerHTML.slice(0, 2000),
     );
   }
   return null;
@@ -271,13 +287,12 @@ function applyButton(row, proposal) {
  */
 async function applyProposal(row, proposal) {
   const originalId = row.row.split('-')[0];
-  const nonce = row.editor?.querySelector('button.ok[data-nonce]')?.dataset.nonce;
-  if (!nonce) {
-    throw new Error('bu satırda kaydetme yetkisi görünmüyor');
-  }
+  const nonce = actionNonce(row.editor, 'save');
+  if (!nonce) throw new Error('bu satırda kaydetme düğmesi yok — oturumun düzenleme yetkisi görünmüyor');
 
+  // The id is digits, so the name needs no escaping inside the quoted value.
   const field = `translation[${originalId}][]`;
-  const areas = row.editor.querySelectorAll(`textarea[name="${CSS.escape(field)}"]`);
+  const areas = row.editor.querySelectorAll(`textarea[name="${field}"]`);
   if (areas.length !== 1) {
     // One wording cannot fill several plural forms, and the request sends every
     // one it finds: a partial save would empty the others.

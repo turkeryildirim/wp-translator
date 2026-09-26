@@ -104,6 +104,16 @@ measurement if one drove it.
   succeeds seconds later. `src/wporg/fetch.ts` paces and retries; keep it.
 - **A 404 from translate.wordpress.org is a large HTML page.** Check the status
   and content type, never the byte count.
+- **translate.wordpress.org replaces GlotPress's editor row.** Read
+  `wporg-gp-customizations/templates/translation-row-editor.php` in
+  `WordPress/wordpress.org`, not GlotPress core, for anything inside
+  `tr.editor` — the save button is `button.translation-actions__save`, not
+  GlotPress's `button.ok`. The preview row and the status buttons keep their core
+  classes. Nothing in there can be checked without a logged-in session: an
+  anonymous fetch renders no `data-nonce` button at all, so a selector that
+  "matches the template" is not a selector that has been verified.
+  `userscript/wp-translator-review.user.js` accepts both spellings and logs the
+  editor row when it finds neither.
 - **A translation's status is not in the PO.** GlotPress states it through an
   export filter, so one request cannot separate `fuzzy` or `waiting` from
   `current`. It need not: a fuzzy entry comes through the unfiltered export with
