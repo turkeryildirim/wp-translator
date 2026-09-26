@@ -13,7 +13,9 @@ const catalogue = (msgids: string[]): Catalogue => ({
 
 /** Records what it was asked, so the test can assert on the request as well as the result. */
 const stub = (
-  answer: (request: TranslationRequest) => { i: number; t: string }[],
+  answer: (
+    request: TranslationRequest,
+  ) => { i: number; t: string }[] | Promise<{ i: number; t: string }[]>,
 ): TranslationProvider & { calls: TranslationRequest[] } => {
   const calls: TranslationRequest[] = [];
   return {
@@ -57,7 +59,7 @@ describe('running a translation', () => {
   it('translates everything the glossary left and lands it in review', async () => {
     const provider = stub((request) => request.items.map((item) => ({ i: item.i, t: `TR:${item.s}` })));
 
-    startTranslation(db, projectId, { provider, chunkSize: 10 });
+    startTranslation(db, projectId, { provider, chunkSize: 10, lanes: 1 });
     await settled();
 
     expect(translateProgress()).toMatchObject({ total: 4, translated: 4, flagged: 0, errors: [] });
@@ -67,7 +69,7 @@ describe('running a translation', () => {
   it('splits into chunks and asks for each separately', async () => {
     const provider = stub((request) => request.items.map((item) => ({ i: item.i, t: 'x' })));
 
-    startTranslation(db, projectId, { provider, chunkSize: 2 });
+    startTranslation(db, projectId, { provider, chunkSize: 2, lanes: 1 });
     await settled();
 
     expect(provider.calls).toHaveLength(2);
@@ -79,7 +81,7 @@ describe('running a translation', () => {
     // units are recovered by position within the chunk rather than by a global id.
     const provider = stub((request) => request.items.map((item) => ({ i: item.i, t: item.s })));
 
-    startTranslation(db, projectId, { provider, chunkSize: 2 });
+    startTranslation(db, projectId, { provider, chunkSize: 2, lanes: 1 });
     await settled();
 
     expect(provider.calls[1]!.items.map((item) => item.i)).toEqual([0, 1]);
@@ -96,7 +98,7 @@ describe('running a translation', () => {
       request.items.map((item) => ({ i: item.i, t: item.s === 'Edit %s' ? 'Düzenle' : 'ok' })),
     );
 
-    startTranslation(db, projectId, { provider, chunkSize: 10 });
+    startTranslation(db, projectId, { provider, chunkSize: 10, lanes: 1 });
     await settled();
 
     expect(translateProgress()).toMatchObject({ translated: 3, flagged: 1 });
@@ -117,7 +119,7 @@ describe('running a translation', () => {
       return request.items.map((item) => ({ i: item.i, t: 'ok' }));
     });
 
-    startTranslation(db, projectId, { provider, chunkSize: 2 });
+    startTranslation(db, projectId, { provider, chunkSize: 2, lanes: 1 });
     await settled();
 
     expect(translateProgress().errors).toHaveLength(0);
@@ -133,13 +135,13 @@ describe('running a translation', () => {
       return request.items.map((item) => ({ i: item.i, t: 'ok' }));
     });
 
-    startTranslation(db, projectId, { provider, chunkSize: 2 });
+    startTranslation(db, projectId, { provider, chunkSize: 2, lanes: 1 });
     await settled();
 
     expect(translateProgress().errors).toHaveLength(1);
     expect(states()).toEqual({ untranslated: 2, review: 2 });
 
-    startTranslation(db, projectId, { provider, chunkSize: 2 });
+    startTranslation(db, projectId, { provider, chunkSize: 2, lanes: 1 });
     await settled();
 
     expect(states()).toEqual({ review: 4 });
@@ -155,7 +157,7 @@ describe('running a translation', () => {
     ).run(tagId);
 
     const provider = stub((request) => request.items.map((item) => ({ i: item.i, t: 'x' })));
-    startTranslation(db, projectId, { provider, chunkSize: 10 });
+    startTranslation(db, projectId, { provider, chunkSize: 10, lanes: 1 });
     await settled();
 
     expect(provider.calls[0]!.context.styleGuide).toContain('Cümle düzeni kullan.');
@@ -165,7 +167,7 @@ describe('running a translation', () => {
   it('does nothing when there is nothing left', async () => {
     db.prepare(`UPDATE translation_units SET state = 'ok', msgstr = 'x'`).run();
 
-    startTranslation(db, projectId, { provider: stub(() => []), chunkSize: 10 });
+    startTranslation(db, projectId, { provider: stub(() => []), chunkSize: 10, lanes: 1 });
     await settled();
 
     expect(translateProgress()).toMatchObject({ total: 0, translated: 0 });
@@ -173,8 +175,8 @@ describe('running a translation', () => {
 
   it('refuses to start a second run while one is going', async () => {
     const slow = stub((request) => request.items.map((item) => ({ i: item.i, t: 'x' })));
-    const first = startTranslation(db, projectId, { provider: slow, chunkSize: 1 });
-    const second = startTranslation(db, projectId, { provider: slow, chunkSize: 1 });
+    const first = startTranslation(db, projectId, { provider: slow, chunkSize: 1, lanes: 1 });
+    const second = startTranslation(db, projectId, { provider: slow, chunkSize: 1, lanes: 1 });
 
     expect(second).toBe(first);
     await settled();
@@ -191,7 +193,7 @@ describe('watching a run', () => {
       return request.items.map((item) => ({ i: item.i, t: 'ok' }));
     });
 
-    startTranslation(db, projectId, { provider, chunkSize: 4 });
+    startTranslation(db, projectId, { provider, chunkSize: 4, lanes: 1 });
     expect(seen).not.toBeNull();
     await settled();
 
@@ -202,7 +204,7 @@ describe('watching a run', () => {
   it('publishes the timeout, so the wait has a stated bound', async () => {
     const provider = stub((request) => request.items.map((item) => ({ i: item.i, t: 'ok' })));
 
-    startTranslation(db, projectId, { provider, chunkSize: 4, timeoutMs: 90_000 });
+    startTranslation(db, projectId, { provider, chunkSize: 4, timeoutMs: 90_000, lanes: 1 });
     await settled();
 
     expect(translateProgress().timeoutMs).toBe(90_000);
@@ -213,7 +215,7 @@ describe('watching a run', () => {
     // provider's own output is the difference.
     const provider = stub((request) => request.items.map((item) => ({ i: item.i, t: 'ok' })));
 
-    startTranslation(db, projectId, { provider, chunkSize: 4 });
+    startTranslation(db, projectId, { provider, chunkSize: 4, lanes: 1 });
     await settled();
 
     expect(translateProgress().log).toEqual([]);
@@ -224,7 +226,7 @@ describe('watching a run', () => {
       throw new Error('the model refused');
     });
 
-    startTranslation(db, projectId, { provider, chunkSize: 4 });
+    startTranslation(db, projectId, { provider, chunkSize: 4, lanes: 1 });
     await settled();
 
     expect(translateProgress().log).toContain('-- küme 1 başarısız');
@@ -241,7 +243,7 @@ describe('stopping a run', () => {
       return request.items.map((item) => ({ i: item.i, t: 'ok' }));
     });
 
-    startTranslation(db, projectId, { provider, chunkSize: 2 });
+    startTranslation(db, projectId, { provider, chunkSize: 2, lanes: 1 });
     await settled();
 
     expect(translateProgress().running).toBe(false);
@@ -254,10 +256,62 @@ describe('stopping a run', () => {
       throw Object.assign(new Error('aborted'), { name: 'AbortError' });
     });
 
-    startTranslation(db, projectId, { provider, chunkSize: 2 });
+    startTranslation(db, projectId, { provider, chunkSize: 2, lanes: 1 });
     await settled();
 
     expect(translateProgress().errors).toEqual([]);
     expect(translateProgress().log).toContain('-- durduruldu');
+  });
+});
+
+describe('running several requests at once', () => {
+  it('keeps more than one out at a time', async () => {
+    // The provider's timing varies enough that one queue spends most of it
+    // waiting; lanes let the quick answers keep arriving.
+    let peak = 0;
+    let out = 0;
+    const provider = stub(async (request) => {
+      out += 1;
+      peak = Math.max(peak, out);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      out -= 1;
+      return request.items.map((item) => ({ i: item.i, t: 'ok' }));
+    });
+
+    startTranslation(db, projectId, { provider, chunkSize: 1, lanes: 3, staggerMs: 0 });
+    await settled();
+
+    expect(peak).toBeGreaterThan(1);
+    expect(states()).toEqual({ review: 4 });
+  });
+
+  it('translates every batch exactly once, whatever the order', async () => {
+    // Lanes take batches from one queue, so none may be done twice or skipped.
+    const seen: string[] = [];
+    const provider = stub((request) => {
+      for (const item of request.items) seen.push(item.s);
+      return request.items.map((item) => ({ i: item.i, t: `çeviri ${item.s}` }));
+    });
+
+    startTranslation(db, projectId, { provider, chunkSize: 1, lanes: 3, staggerMs: 0 });
+    await settled();
+
+    expect(seen).toHaveLength(4);
+    expect(new Set(seen).size).toBe(4);
+  });
+
+  it('reports how many are out', async () => {
+    let peak = 0;
+    const provider = stub(async (request) => {
+      peak = Math.max(peak, translateProgress().inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return request.items.map((item) => ({ i: item.i, t: 'ok' }));
+    });
+
+    startTranslation(db, projectId, { provider, chunkSize: 1, lanes: 3, staggerMs: 0 });
+    await settled();
+
+    expect(peak).toBeGreaterThan(1);
+    expect(translateProgress().inFlight).toBe(0);
   });
 });

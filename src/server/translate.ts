@@ -5,8 +5,20 @@ import { DEFAULT_TIMEOUT_MS, OpencodeProvider } from '../translate/opencode.ts';
 import type { RequestItem, TranslationProvider } from '../translate/types.ts';
 import { styleGuideFor } from './tags.ts';
 
-/** How many times a chunk is sent before it is given up on. */
+/** How many times a batch is sent before it is given up on. */
 const ATTEMPTS = 2;
+
+/**
+ * How many requests are out at once.
+ *
+ * The provider's timing varies enough that a single queue spends most of its
+ * time waiting; three lanes let the quick answers keep arriving while a slow one
+ * is still out.
+ */
+const DEFAULT_LANES = 3;
+
+/** Gap between lanes starting, so three requests do not arrive together. */
+const STAGGER_MS = 10_000;
 
 /**
  * Strings per request.
@@ -32,11 +44,13 @@ export interface TranslateProgress {
   /** The tail of what the provider wrote, newest last, for watching a run. */
   log: string[];
   /**
-   * When the request in flight went out, as epoch milliseconds, or null between
-   * requests. opencode delivers an answer in one piece rather than streaming
-   * it, so elapsed time is the only sign of life there is.
+   * When the oldest request still out went, as epoch milliseconds, or null when
+   * nothing is out. opencode delivers an answer in one piece rather than
+   * streaming it, so elapsed time is the only sign of life there is.
    */
   waitingSince: number | null;
+  /** How many requests are out right now. */
+  inFlight: number;
   /** How long one request may take before it is killed. */
   timeoutMs: number;
   finishedAt: string | null;
@@ -56,6 +70,7 @@ const idle = (): TranslateProgress => ({
   errors: [],
   log: [],
   waitingSince: null,
+  inFlight: 0,
   timeoutMs: 0,
   finishedAt: null,
 });
@@ -87,6 +102,10 @@ export type TranslateScope = 'untranslated' | 'waiting' | 'selected' | 'all';
 export interface TranslateOptions {
   chunkSize?: number;
   timeoutMs?: number;
+  /** Requests out at once. One makes the run sequential. */
+  lanes?: number;
+  /** Gap between lanes starting. */
+  staggerMs?: number;
   model?: string;
   agent?: string;
   provider?: TranslationProvider;
@@ -143,19 +162,17 @@ export function startTranslation(
     return progress;
   }
 
+  /** Which batches are out, by number, and when each went. */
+  const inFlight = new Map<number, number>();
+  const oldestWait = (): void => {
+    progress.inFlight = inFlight.size;
+    progress.waitingSince = inFlight.size === 0 ? null : Math.min(...inFlight.values());
+  };
+
   const record = (line: string): void => {
     progress.log.push(line.length > LOG_WIDTH ? `${line.slice(0, LOG_WIDTH)}…` : line);
     if (progress.log.length > LOG_LINES) progress.log.splice(0, progress.log.length - LOG_LINES);
   };
-
-  const provider =
-    options.provider ??
-    new OpencodeProvider({
-      ...(options.model ? { model: options.model } : {}),
-      ...(options.agent ? { agent: options.agent } : {}),
-      ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
-      onLine: record,
-    });
 
   const project = db
     .prepare(`SELECT name, description, readme FROM projects WHERE id = ?`)
@@ -171,86 +188,129 @@ export function startTranslation(
       WHERE id = ?`,
   );
 
-  void (async () => {
-    for (let start = 0; start < pending.length; start += size) {
-      if (signal.aborted) break;
-      const slice = pending.slice(start, start + size);
-      const items: RequestItem[] = slice.map((unit, index) => ({
-        i: index,
-        s: unit.msgid,
-        ...(unit.msgctxt ? { c: unit.msgctxt } : {}),
-        ...(unit.msgidPlural ? { p: unit.msgidPlural } : {}),
-        ...(unit.usageSurface ? { u: unit.usageSurface } : {}),
-      }));
+  /** One worker's turn at one batch. Errors are the batch's, not the run's. */
+  const runChunk = async (
+    slice: typeof pending,
+    number: number,
+    send: TranslationProvider,
+    mark: (chunk: number) => void,
+  ): Promise<void> => {
+    const items: RequestItem[] = slice.map((unit, index) => ({
+      i: index,
+      s: unit.msgid,
+      ...(unit.msgctxt ? { c: unit.msgctxt } : {}),
+      ...(unit.msgidPlural ? { p: unit.msgidPlural } : {}),
+      ...(unit.usageSurface ? { u: unit.usageSurface } : {}),
+    }));
 
-      try {
-        const terms = collectTerms(db, projectId, items.map((item) => item.s));
-        // A stalled request is the common failure, and it costs the chunk. One
-        // retry turns that into a delay rather than fifty lost strings.
-        const answers = await attempt(ATTEMPTS, () => {
-          progress.waitingSince = Date.now();
-          return provider.translate(
-            {
-              items,
-              context: {
-                styleGuide,
-                terms,
-                project: {
-                  ...(project.name ? { name: project.name } : {}),
-                  ...(project.description ? { description: project.description } : {}),
-                  ...(project.readme ? { readme: project.readme } : {}),
-                },
+    try {
+      const terms = collectTerms(db, projectId, items.map((item) => item.s));
+      mark(number);
+      const answers = await attempt(ATTEMPTS, () => {
+        inFlight.set(number, Date.now());
+        oldestWait();
+        return send.translate(
+          {
+            items,
+            context: {
+              styleGuide,
+              terms,
+              project: {
+                ...(project.name ? { name: project.name } : {}),
+                ...(project.description ? { description: project.description } : {}),
+                ...(project.readme ? { readme: project.readme } : {}),
               },
             },
-            signal,
-          );
-        });
-        progress.waitingSince = null;
+          },
+          signal,
+        );
+      });
 
-        db.transaction(() => {
-          for (const [index, answer] of answers.entries()) {
-            const unit = slice[index]!;
+      db.transaction(() => {
+        for (const [index, answer] of answers.entries()) {
+          const unit = slice[index]!;
 
-            const failures = checkTranslation({
-              ordinal: 0,
-              msgid: unit.msgid,
-              ...(unit.msgidPlural ? { msgidPlural: unit.msgidPlural } : {}),
-              msgstr: answer.t,
-              ...(answer.tp ? { msgstrPlural: answer.tp } : {}),
-            });
+          const failures = checkTranslation({
+            ordinal: 0,
+            msgid: unit.msgid,
+            ...(unit.msgidPlural ? { msgidPlural: unit.msgidPlural } : {}),
+            msgstr: answer.t,
+            ...(answer.tp ? { msgstrPlural: answer.tp } : {}),
+          });
 
-            // Stored so the review queue can filter and page on it in SQL.
-            store.run(answer.t, answer.tp ?? null, failures.length > 0 ? 1 : 0, provider.name, unit.id);
+          // Stored so the review queue can filter and page on it in SQL.
+          store.run(answer.t, answer.tp ?? null, failures.length > 0 ? 1 : 0, send.name, unit.id);
 
-            if (failures.length > 0) progress.flagged += 1;
-            else progress.translated += 1;
-          }
-        })();
-      } catch (error) {
-        // The units stay untranslated, so a re-run covers exactly this chunk.
-        // Stopping lands here too, and is not a failure to report.
-        if (signal.aborted) {
-          record('-- durduruldu');
-          break;
+          if (failures.length > 0) progress.flagged += 1;
+          else progress.translated += 1;
         }
-        const chunk = Math.floor(start / size) + 1;
-        record(`-- küme ${chunk} başarısız`);
-        progress.errors.push({
-          chunk,
-          message: error instanceof Error ? error.message : String(error),
-        });
+      })();
+    } catch (error) {
+      // The units stay untranslated, so a re-run covers exactly this batch.
+      // Stopping lands here too, and is not a failure to report.
+      if (signal.aborted) {
+        record('-- durduruldu');
+        return;
       }
-
-      progress.waitingSince = null;
-      progress.done = Math.min(start + size, pending.length);
+      record(`-- küme ${number} başarısız`);
+      progress.errors.push({
+        chunk: number,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      inFlight.delete(number);
+      oldestWait();
+      progress.done = Math.min(progress.done + slice.length, pending.length);
     }
+  };
+
+  void (async () => {
+    const batches: (typeof pending)[] = [];
+    for (let at = 0; at < pending.length; at += size) batches.push(pending.slice(at, at + size));
+
+    let next = 0;
+    const worker = async (lane: number): Promise<void> => {
+      // Staggered, so three requests do not arrive in the same instant.
+      await pause(lane * (options.staggerMs ?? STAGGER_MS), signal);
+
+      const current = { chunk: 0 };
+      const send =
+        options.provider ??
+        new OpencodeProvider({
+          ...(options.model ? { model: options.model } : {}),
+          ...(options.agent ? { agent: options.agent } : {}),
+          ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+          onLine: (line) => record(`#${current.chunk} ${line}`),
+        });
+
+      while (!signal.aborted) {
+        const mine = next;
+        next += 1;
+        if (mine >= batches.length) return;
+        await runChunk(batches[mine]!, mine + 1, send, (chunk) => (current.chunk = chunk));
+      }
+    };
+
+    const lanes = Math.max(1, Math.min(options.lanes ?? DEFAULT_LANES, batches.length));
+    await Promise.all(Array.from({ length: lanes }, (_, lane) => worker(lane)));
 
     running = null;
+    progress.inFlight = 0;
+    progress.waitingSince = null;
     progress.running = false;
     progress.finishedAt = new Date().toISOString();
   })();
 
   return progress;
+}
+
+/** Resolve after `ms`, or at once if the run has been stopped. */
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  if (ms <= 0 || signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+  });
 }
 
 /** Run `work` until it succeeds or the attempts run out, reporting the last error. */

@@ -67,10 +67,11 @@ function stop(): void {
       <p class="waiting">
         <template v-if="waited === null">Küme hazırlanıyor…</template>
         <template v-else>
-          Model yanıtı bekleniyor — <b>{{ waited }}</b> / {{ limit }} sn
+          <b>{{ progress.inFlight }}</b> istek havada, en eskisi
+          <b>{{ waited }}</b> / {{ limit }} sn
           <span class="muted">
-            · opencode yanıtı parça parça değil tek seferde verir, bu yüzden bu süre
-            dolana kadar başka bir işaret gelmez.
+            · opencode yanıtı parça parça değil tek seferde verir, bu yüzden bir istek
+            cevaplanana kadar ondan başka işaret gelmez.
           </span>
         </template>
       </p>
