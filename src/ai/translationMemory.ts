@@ -13,7 +13,11 @@ const keyOf = (item: RequestItem): string => questionKey([item.s, item.p ?? ''])
 export interface Split {
   /** Answers the store already had, shaped to the strings that asked for them. */
   known: Map<number, ResponseItem>;
-  /** The rest, worth paying a model for. */
+  /**
+   * The rest, worth paying a model for — with their surrounding whitespace
+   * stripped. The model is asked what the words mean, not what shape they came
+   * in, and `reshape` puts the shape back on the answer.
+   */
   ask: RequestItem[];
 }
 
@@ -36,7 +40,11 @@ export function splitByMemory(
   for (const item of items) {
     const stored = recall<Stored>(db, 'translation', keyOf(item), rules);
     if (!stored) {
-      ask.push(item);
+      ask.push({
+        ...item,
+        s: affixes(item.s).core,
+        ...(item.p ? { p: affixes(item.p).core } : {}),
+      });
       continue;
     }
 
@@ -48,6 +56,29 @@ export function splitByMemory(
   }
 
   return { known, ask };
+}
+
+/**
+ * Put each source's surrounding whitespace back onto the answer given for it.
+ *
+ * The model was asked without it, so the answer comes back without it, and the
+ * shape belongs to the string being translated rather than to the question.
+ */
+export function reshape(
+  original: readonly RequestItem[],
+  answers: readonly ResponseItem[],
+): ResponseItem[] {
+  const byId = new Map(original.map((item) => [item.i, item]));
+
+  return answers.map((answer) => {
+    const item = byId.get(answer.i);
+    if (!item) return answer;
+
+    const shaped: ResponseItem = { i: answer.i, t: reapply(answer.t, affixes(item.s)) };
+    if (answer.tp && item.p) shaped.tp = reapply(answer.tp, affixes(item.p));
+    else if (answer.tp) shaped.tp = answer.tp;
+    return shaped;
+  });
 }
 
 /** Keep what the model just said, stripped of the shape it was asked in. */

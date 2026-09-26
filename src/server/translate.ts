@@ -2,7 +2,7 @@ import type { Db } from '../db/open.ts';
 import { collectTerms } from '../glossary/terminology.ts';
 import { checkTranslation } from '../quality/check.ts';
 import { memoryCounts } from '../ai/memory.ts';
-import { rememberTranslations, splitByMemory } from '../ai/translationMemory.ts';
+import { rememberTranslations, reshape, splitByMemory } from '../ai/translationMemory.ts';
 import { AgyProvider } from '../translate/agy.ts';
 import { DEFAULT_TIMEOUT_MS, OpencodeProvider } from '../translate/opencode.ts';
 import type { RequestItem, TranslationProvider } from '../translate/types.ts';
@@ -243,7 +243,9 @@ export function startTranslation(
       });
 
       rememberTranslations(db, ask, fresh, styleGuide, send.name);
-      const answers = items.map((item) => known.get(item.i) ?? fresh.find((a) => a.i === item.i));
+      // The model answered the trimmed string; the unit's own shape goes back on.
+      const shaped = reshape(items, fresh);
+      const answers = items.map((item) => known.get(item.i) ?? shaped.find((a) => a.i === item.i));
 
       db.transaction(() => {
         for (const [index, answer] of answers.entries()) {

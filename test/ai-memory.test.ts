@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDb, type Db } from '../src/db/open.ts';
 import { affixes, memoryCounts, reapply, questionKey } from '../src/ai/memory.ts';
-import { rememberTranslations, splitByMemory } from '../src/ai/translationMemory.ts';
+import { rememberTranslations, reshape, splitByMemory } from '../src/ai/translationMemory.ts';
 
 let db: Db;
 const GUIDE = 'kurallar';
@@ -28,6 +28,33 @@ describe('factoring a string’s shape out of its meaning', () => {
 
   it('leaves a whitespace-only string alone', () => {
     expect(affixes('   ')).toEqual({ lead: '', core: '', trail: '   ' });
+  });
+});
+
+describe('asking without the shape', () => {
+  it('strips the whitespace before the model sees it', () => {
+    // The model is asked what the words mean, not what shape they came in.
+    const { ask } = splitByMemory(db, [{ i: 0, s: '  Save ', p: ' %s items ' }], GUIDE);
+
+    expect(ask[0]).toEqual({ i: 0, s: 'Save', p: '%s items' });
+  });
+
+  it('puts each source’s own shape back on its answer', () => {
+    const shaped = reshape(
+      [{ i: 0, s: '  Save ' }, { i: 1, s: 'Delete' }],
+      [{ i: 0, t: 'Kaydet' }, { i: 1, t: 'Sil' }],
+    );
+
+    expect(shaped).toEqual([{ i: 0, t: '  Kaydet ' }, { i: 1, t: 'Sil' }]);
+  });
+
+  it('reshapes a plural against the plural source, not the singular', () => {
+    const shaped = reshape(
+      [{ i: 0, s: 'item', p: ' items ' }],
+      [{ i: 0, t: 'ürün', tp: 'ürünler' }],
+    );
+
+    expect(shaped[0]).toEqual({ i: 0, t: 'ürün', tp: ' ürünler ' });
   });
 });
 
