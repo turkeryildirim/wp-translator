@@ -110,6 +110,18 @@ measurement if one drove it.
   from a plan instead — `panel/src/App.vue` asks for the owner's z.ai one. The
   error arrives as an `error` event on **stdout** with stderr empty, so the exit
   code says nothing; `providerError` is what turns it into a sentence.
+- **A chunk is bounded by length, not only by count.** Ten interface labels are a
+  couple of hundred characters of source; ten readme paragraphs are six thousand.
+  `DEFAULT_CHUNK_CHARS` is what bounds the work. It does not bound the *time*: the
+  cost per character is not linear and the variance swamps it, so the request
+  timeout is wide enough to outlast an ordinary answer rather than tight enough to
+  catch a stall promptly. A stall costs one chunk; a killed answer costs every
+  chunk. Do not narrow either without measuring both.
+- **A probe must close stdin or it measures the wrong thing.** `opencode run
+  --format json` from a shell inherits a terminal, hangs, and produces zero bytes
+  with no error — indistinguishable from a stalled model. `< /dev/null` is what the
+  tool's `stdio: ['ignore', …]` does. A probe without it wasted seven minutes here
+  reproducing the documented hang rather than the reported failure.
 - **agy has no effort flag worth passing.** Its models carry the effort in the id
   (`gemini-3.8-flash-low`), and `--effort` on one of those exits 1 with "not
   supported for the current model". Choose the model, not a flag.

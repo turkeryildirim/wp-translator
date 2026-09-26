@@ -30,11 +30,14 @@ export interface OpencodeOptions {
 /**
  * How long a single request may take before it is killed.
  *
- * Measured over repeated batches, a healthy answer arrives well inside this and
- * a stalled one never arrives at all, so the margin is for the provider's own
- * variance rather than for a slow reply.
+ * Wide because the variance is wide and not proportional to the work: measured on
+ * one project, chunks of 800 to 1 800 characters of source came back in 38, 81,
+ * 84 and 125 seconds, and the whole 6 038 in 174. A limit tight enough to catch a
+ * stall promptly is one that kills ordinary answers, which is worse — a stall
+ * costs one chunk, a killed answer costs every chunk. `DEFAULT_CHUNK_CHARS` is
+ * what bounds the work; this only has to outlast it.
  */
-export const DEFAULT_TIMEOUT_MS = 120_000;
+export const DEFAULT_TIMEOUT_MS = 240_000;
 
 export class OpencodeProvider implements TranslationProvider {
   readonly name = 'opencode';

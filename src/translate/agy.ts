@@ -16,7 +16,8 @@ export interface AgyOptions {
 }
 
 
-export const DEFAULT_TIMEOUT_MS = 120_000;
+/** As opencode's, and for the same reason: see its note. */
+export const DEFAULT_TIMEOUT_MS = 240_000;
 
 /**
  * The shape a translation answer must take.

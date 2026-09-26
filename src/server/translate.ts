@@ -24,15 +24,18 @@ const DEFAULT_LANES = 3;
 const STAGGER_MS = 10_000;
 
 /**
- * Strings per request.
+ * What one request may hold: this many strings, or this many characters of
+ * source, whichever comes first.
  *
- * The response is the binding constraint, not the request, and the provider's
- * timing varies far more than the count does — the same batch size can answer
- * in seconds or stall past any timeout. Small batches do not make that go away;
- * they make it cheap, because a batch that stalls costs only the strings it
+ * The response is the binding constraint, and a count alone does not bound it —
+ * ten interface labels are a couple of hundred characters, ten readme paragraphs
+ * are six thousand, and the second takes long enough to pass any timeout the
+ * first would never approach. The provider's timing varies on top of that, which
+ * is why chunks stay small: a batch that stalls then costs only the strings it
  * held and the run keeps moving.
  */
 const DEFAULT_CHUNK = 10;
+const DEFAULT_CHUNK_CHARS = 2_000;
 
 export interface TranslateProgress {
   running: boolean;
@@ -121,6 +124,8 @@ export type Engine = 'opencode' | 'agy';
 
 export interface TranslateOptions {
   chunkSize?: number;
+  /** Characters of source per request, alongside `chunkSize`. */
+  chunkChars?: number;
   timeoutMs?: number;
   /** Requests out at once. One makes the run sequential. */
   lanes?: number;
@@ -148,6 +153,36 @@ export interface TranslateOptions {
  * assert: constructing a provider starts no process, and the alternative is
  * finding out by watching a run's log.
  */
+/**
+ * Split units into requests, bounded by count and by source length.
+ *
+ * A unit longer than the character budget is sent on its own rather than
+ * dropped: it is one string and it has to go somewhere.
+ */
+export function chunk<T extends { msgid: string; msgidPlural?: string | null }>(
+  units: readonly T[],
+  size: number,
+  chars: number,
+): T[][] {
+  const batches: T[][] = [];
+  let batch: T[] = [];
+  let length = 0;
+
+  for (const unit of units) {
+    const cost = unit.msgid.length + (unit.msgidPlural?.length ?? 0);
+    if (batch.length > 0 && (batch.length >= size || length + cost > chars)) {
+      batches.push(batch);
+      batch = [];
+      length = 0;
+    }
+    batch.push(unit);
+    length += cost;
+  }
+
+  if (batch.length > 0) batches.push(batch);
+  return batches;
+}
+
 export function providerFor(
   options: TranslateOptions,
   onLine: (line: string) => void,
@@ -327,8 +362,7 @@ export function startTranslation(
   };
 
   void (async () => {
-    const batches: (typeof pending)[] = [];
-    for (let at = 0; at < pending.length; at += size) batches.push(pending.slice(at, at + size));
+    const batches = chunk(pending, size, options.chunkChars ?? DEFAULT_CHUNK_CHARS);
 
     let next = 0;
     const worker = async (lane: number): Promise<void> => {
