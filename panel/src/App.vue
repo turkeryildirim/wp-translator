@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import {
   bulkSetState,
+  exportPo as fetchExport,
   listProjects,
   listUnits,
   reloadCost,
@@ -286,8 +287,39 @@ async function dropProject(): Promise<void> {
   await load();
 }
 
-function exportPo(): void {
-  if (selected.value !== null) window.location.href = `/api/projects/${selected.value}/export`;
+/**
+ * Download the project's PO, and say what went into it.
+ *
+ * Only approved translations are exported, so a project nobody has approved yet
+ * gives a file with nothing in it — which used to download without a word.
+ */
+async function downloadPo(): Promise<void> {
+  if (selected.value === null) return;
+
+  const { po, exported, withheld } = await fetchExport(selected.value);
+  if (exported === 0) {
+    notify(
+      'error',
+      `Onaylanmış dizge yok, indirilecek bir şey de yok. PO yalnızca onaylananları taşır; ` +
+        `${withheld.toLocaleString('tr')} dizge incelemede bekliyor.`,
+    );
+    return;
+  }
+
+  const url = URL.createObjectURL(po);
+  const link = Object.assign(document.createElement('a'), {
+    href: url,
+    download: `${project.value?.projectPath.replace(/\//g, '-') ?? 'tr'}.po`,
+  });
+  link.click();
+  URL.revokeObjectURL(url);
+
+  notify(
+    'ok',
+    withheld > 0
+      ? `${exported.toLocaleString('tr')} dizge indirildi, ${withheld.toLocaleString('tr')} onaysız olduğu için dışarıda kaldı.`
+      : `${exported.toLocaleString('tr')} dizge indirildi.`,
+  );
 }
 
 function onChanged(saved: Unit): void {
@@ -387,8 +419,17 @@ watch(page, load);
       >
         {{ reloading ? 'Yenileniyor…' : 'Yenile' }}
       </button>
-      <button :disabled="counts.translated === 0" title="Onaylı dizgeleri PO olarak indir"
-        @click="exportPo">
+      <!-- Gated on approved, not on translated: the file carries only approved
+           strings, so a project mid-review would otherwise download empty. -->
+      <button
+        :disabled="!project || project.ok === 0"
+        :title="
+          !project || project.ok === 0
+            ? 'Onaylanmış dizge yok; PO yalnızca onaylananları taşır'
+            : `${project.ok} onaylı dizgeyi PO olarak indir`
+        "
+        @click="downloadPo"
+      >
         PO indir
       </button>
       <a

@@ -72,3 +72,24 @@ describe('the review table', () => {
     expect(rows).not.toContain('<textarea');
   });
 });
+
+describe('the PO download', () => {
+  it('is gated on what the file would carry, not on what is translated', () => {
+    // Only approved strings are exported. Gated on `translated` the button was
+    // enabled through a whole review, and produced a file with nothing in it.
+    const app = read('App.vue');
+
+    expect(app).toMatch(/:disabled="!project \|\| project\.ok === 0"/);
+    expect(app).not.toMatch(/:disabled="counts\.translated === 0"[^]]*PO/s);
+  });
+
+  it('reads the counts the server sends rather than navigating away', () => {
+    // A navigation cannot see `x-exported`, so a download that carried nothing
+    // said nothing. It is fetched, reported, and then saved.
+    const api = read('api.ts');
+
+    expect(api).toContain("headers.get('x-exported')");
+    expect(api).toContain("headers.get('x-withheld')");
+    expect(read('App.vue')).not.toContain('window.location.href = `/api/projects/');
+  });
+});

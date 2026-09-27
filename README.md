@@ -35,7 +35,10 @@ personal glossary, and it cannot run AI translation.
 6. **Review.** A paged queue you filter by what you are looking for. Approve,
    edit and approve, or reject — which empties the string and sends it back to
    be translated again.
-7. **Export.** Only approved strings, as a PO GlotPress will import cleanly.
+7. **Export.** Only approved strings, as a PO GlotPress will import cleanly. The
+   panel says how many went in and how many stayed behind, and will not hand you a
+   file with nothing in it — a project nobody has approved yet exports nothing, by
+   design.
 
 ### What the glossary is actually for
 

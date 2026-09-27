@@ -100,6 +100,34 @@ const describe = (problem: unknown): string =>
 
 export const listProjects = () => json<Project[]>('/api/projects');
 
+export interface Export {
+  po: Blob;
+  /** Entries in the file. */
+  exported: number;
+  /** Entries left out, because only approved translations are exported. */
+  withheld: number;
+}
+
+/**
+ * Fetch a project's PO and the counts the server reports with it.
+ *
+ * Not a plain navigation: the counts ride in headers, and a navigation throws them
+ * away — which is how a file with nothing in it came to download silently.
+ */
+export async function exportPo(projectId: number): Promise<Export> {
+  const response = await fetch(`/api/projects/${projectId}/export`);
+  if (!response.ok) {
+    notify('error', `PO indirilemedi: ${await reason(response)}`);
+    throw new Error(`${response.status} ${response.statusText}`);
+  }
+
+  return {
+    po: await response.blob(),
+    exported: Number(response.headers.get('x-exported') ?? 0),
+    withheld: Number(response.headers.get('x-withheld') ?? 0),
+  };
+}
+
 export type QueueView =
   | 'all'
   | 'untranslated'
