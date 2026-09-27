@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         wp-translator · bekleyen çevirileri değerlendir
 // @namespace    https://github.com/turker/wp-translator
-// @version      1.5.1
+// @version      1.6.0
 // @description  Açık sayfadaki bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları gerekçesiyle işaretler.
 // @match        https://translate.wordpress.org/projects/*
 // @grant        GM_xmlhttpRequest
@@ -488,7 +488,7 @@ function mount() {
   panel.id = 'wpt-panel';
   panel.innerHTML = `
     <style>
-      #wpt-panel { position: fixed; inset-block-end: 12px; inset-inline-end: 12px; z-index: 9999;
+      #wpt-panel { position: fixed; inset-block-end: 12px; inset-inline-end: 12px; z-index: 2147483647;
         max-width: 420px; padding: 10px 12px; border-radius: 8px; font: 13px/1.5 system-ui, sans-serif;
         background: #111827; color: #f9fafb; box-shadow: 0 8px 24px rgb(0 0 0 / .4); }
       #wpt-panel button { font: inherit; margin-inline-end: 6px; padding: 3px 10px; cursor: pointer;
@@ -517,25 +517,53 @@ function mount() {
 
   const filter = pendingFilter();
   const rows = readRows(document).length;
+  const dry = panel.querySelector('[data-act="dry"]');
+  const live = panel.querySelector('[data-act="live"]');
 
   if (!filter) {
-    for (const button of panel.querySelectorAll('button')) button.disabled = true;
-    panel.querySelector('.wpt-status').textContent =
-      'Bu sayfada bekleyen kuyruğu yok. Adrese ?filters[status]=waiting ekleyin.';
-  } else if (rows === 0) {
-    for (const button of panel.querySelectorAll('button')) button.disabled = true;
-    panel.querySelector('.wpt-status').textContent =
-      'Satır okunamadı. GTE olarak giriş yapılı mı?';
-  } else {
-    panel.querySelector('.wpt-status').textContent = `hazır · ${filter} · bu sayfada ${rows} satır`;
+    // Not a dead end: pressing goes to the queue rather than leaving the reader to
+    // edit the address by hand, which is what a disabled button asked of them.
+    dry.textContent = 'Bekleyen kuyruğuna git';
+    live.remove();
+    dry.addEventListener('click', () => {
+      const url = new URL(location.href);
+      url.searchParams.set('filters[status]', 'waiting');
+      location.href = url.toString();
+    });
+    say(panel, 'Bu sayfada bekleyen kuyruğu yok.');
+    return;
   }
 
-  panel.querySelector('[data-act="dry"]').addEventListener('click', () => run(panel, { approve: false }));
-  panel.querySelector('[data-act="live"]').addEventListener('click', () => {
+  if (rows === 0) {
+    for (const button of panel.querySelectorAll('button')) button.disabled = true;
+    say(panel, `Bu sayfada "${filter}" için okunacak satır yok. GTE olarak giriş yapılı mı?`);
+    return;
+  }
+
+  say(panel, `hazır · ${filter} · bu sayfada ${rows} satır`);
+  dry.addEventListener('click', () => void run(panel, { approve: false }));
+  live.addEventListener('click', () => {
     if (confirm('Bu sayfada sözlükle birebir eşleşenler doğrudan onaylanacak. Devam edilsin mi?')) {
       void run(panel, { approve: true });
     }
   });
+
+  // A panel that is there but inert looks the same as one whose clicks are being
+  // swallowed by something above it, so the console says which it is.
+  const box = dry.getBoundingClientRect();
+  const onTop = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+  if (onTop !== dry && !dry.contains(onTop)) {
+    console.warn(
+      '[wp-translator] düğmenin üstünde başka bir öge var, tıklamalar ona gidiyor:',
+      onTop && `${onTop.tagName}.${onTop.className}`,
+    );
+  }
+}
+
+/** The panel's one line of state, also echoed to the console. */
+function say(panel, what) {
+  panel.querySelector('.wpt-status').textContent = what;
+  console.info('[wp-translator]', what);
 }
 
 // Announced so a page with the script loaded can be told from one without it.

@@ -142,10 +142,17 @@ filter — `?filters[status]=waiting` or `fuzzy`. A panel appears with two butto
 **In Edge and Chrome the extension needs developer mode.** Turn it on at
 `edge://extensions` (or `chrome://extensions`) and reload the page; without it
 userscripts are never executed and the dashboard reports the script as having
-never run. The script logs `[wp-translator] yüklendi` to the console, which is
-how to tell "did not run" from "ran and had nothing to do".
+never run. **No panel at all means this**, not a broken script.
+
+Everything the panel puts in its one status line also goes to the console, prefixed
+`[wp-translator]`: whether the script loaded, which filter it found, how many rows
+it read, and why it will not act if it will not. If the panel is there but pressing
+does nothing, that line says why — and if something on the page is sitting over the
+buttons and taking the clicks, the console names the element.
 
 - **Bu sayfayı değerlendir** — decides nothing, writes a verdict beside every row.
+  On a page with no pending filter this reads **Bekleyen kuyruğuna git** and takes
+  you to one instead.
 - **Değerlendir ve birebir olanları onayla** — approves the ones the glossary
   already holds with that exact wording, and ticks the rest for GlotPress's own
   bulk approve.
