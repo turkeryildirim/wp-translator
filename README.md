@@ -137,7 +137,19 @@ many rows a page holds is your own GlotPress setting and the script does not car
 what it is.
 
 Install it in Tampermonkey or Violentmonkey and open a project with a pending
-filter — `?filters[status]=waiting` or `fuzzy`. A panel appears with two buttons:
+filter — `waiting`, `fuzzy`, `untranslated` or `either`. A panel appears with two
+buttons.
+
+What happens to a row depends on what the row has, not on which queue it came
+from, because `fuzzy` and `either` hold both kinds:
+
+- **It carries somebody's wording** — `waiting`, or `fuzzy` with text. The wording
+  is judged: approved, ticked, or annotated with what is wrong with it.
+- **It carries none** — `untranslated`, or `fuzzy` left empty. There is nothing to
+  judge, so the tool translates it instead and offers the wording to apply. The
+  glossary answers first where it holds exactly one translation of that string,
+  then what the model has already been asked, then the model. The note says which,
+  because a glossary answer was approved by a human and a model's was not.
 
 **In Edge and Chrome the extension needs developer mode.** Turn it on at
 `edge://extensions` (or `chrome://extensions`) and reload the page; without it
@@ -170,12 +182,17 @@ Nothing is ever rejected automatically. A translation that fails a quality check
 or that the model objects to is annotated with the reason and the wording the
 model would have used. Rejecting is GlotPress's own button, beside the row.
 
-Where that wording passes the quality checks it is a **button**: clicking it
-writes it into the row's translation field and saves it. Only a single wording is
-ever offered — not a list of the glossary's alternatives, and not a plural string,
-where one form cannot fill the others. Saving as a GTE makes it the current
-translation and marks the submission it replaces `old`, which is what correcting
-a short mistake in place should do. Rejecting is for the ones worth sending back.
+Where a wording passes the quality checks it is a **button**: clicking it writes it
+into the row's translation fields and saves it. A plural string is filled form by
+form, so both go together or neither is offered. A list of the glossary's
+alternatives is never offered as a button, because choosing between them is not
+the script's to do. Saving as a GTE makes it the current translation and marks any
+submission it replaces `old`, which is what correcting a short mistake in place
+should do. Rejecting is for the ones worth sending back.
+
+**Which CLI translates a proposal is a constant at the top of the script** —
+`ENGINE`. Judging goes through whatever the server is set up for; proposing needs a
+translator, and the script names one. Edit it there if the plan or model changes.
 
 The local server must be running. The script reaches it through
 `GM_xmlhttpRequest`, so the server needs no CORS of its own and nothing else on

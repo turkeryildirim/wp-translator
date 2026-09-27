@@ -4,6 +4,7 @@ import { extname, join, normalize } from 'node:path';
 import type { Db } from '../db/open.ts';
 import { applyGlossary } from '../glossary/match.ts';
 import { judgeSubmissions, type JudgeRequest } from './judge.ts';
+import { proposeTranslations, type ProposeRequest } from './propose.ts';
 import { exportProject } from '../project/export.ts';
 import {
   createEntry,
@@ -220,6 +221,27 @@ async function api(
       response,
       200,
       await judgeSubmissions(db, judge, model ? { model } : {}),
+    );
+  }
+
+  if (method === 'POST' && route === '/api/propose') {
+    const body = (await readJson(request)) as unknown as ProposeRequest & {
+      engine?: Engine;
+      model?: string;
+      agent?: string;
+    };
+    if (!Array.isArray(body.items) || body.items.length === 0) {
+      return send(response, 400, { error: 'items is required and must not be empty.' });
+    }
+    const { engine, model, agent, ...propose } = body;
+    return send(
+      response,
+      200,
+      await proposeTranslations(db, propose, {
+        ...(engine ? { engine } : {}),
+        ...(model ? { model } : {}),
+        ...(agent ? { agent } : {}),
+      }),
     );
   }
 

@@ -99,6 +99,12 @@ measurement if one drove it.
   the moment it lands — a page that fills in as it goes, not one that appears at
   the end. `src/server/translate.ts` owns its own lanes because nothing is
   watching that one row by row.
+- **A row with no translation is proposed for, not judged.** `/api/judge` on an
+  empty wording returns `flagged: empty` for every row, which is worse than
+  nothing, so `/api/propose` (`src/server/propose.ts`) translates instead — the
+  glossary where it holds exactly one wording, then `ai_memory`, then the model,
+  and nothing is offered that `checkTranslation` refuses. The script decides per
+  row rather than per queue, because `fuzzy` and `either` hold both kinds.
 - **A provider failure must not fail a judging batch.** The checks and the
   glossary have already settled rows by then, and the userscript walks dozens of
   pages. `askModel` turns an unreachable model into `unknown` carrying the error

@@ -72,7 +72,7 @@ export async function judgeSubmissions(
  * default tag and the general style guide, which is what a first pass over
  * somebody else's queue needs.
  */
-function scopeFor(db: Db, projectPath?: string): { projectId: number; tagIds: number[] } {
+export function scopeFor(db: Db, projectPath?: string): { projectId: number; tagIds: number[] } {
   const project = projectPath
     ? (db
         .prepare(`SELECT id FROM projects WHERE project_path = ?`)

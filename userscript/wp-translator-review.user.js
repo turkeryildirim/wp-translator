@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         wp-translator · bekleyen çevirileri değerlendir
 // @namespace    https://github.com/turker/wp-translator
-// @version      1.6.0
+// @version      1.7.0
 // @description  Açık sayfadaki bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları gerekçesiyle işaretler.
 // @match        https://translate.wordpress.org/projects/*
 // @grant        GM_xmlhttpRequest
@@ -23,6 +23,24 @@ const SERVER = 'http://127.0.0.1:4173';
 /** How many rows go to the server at once. Whatever the page holds is sliced into these. */
 const BATCH = 10;
 
+/**
+ * The queues this script works on.
+ *
+ * `waiting` and `fuzzy` carry somebody's wording, which is judged. `untranslated`
+ * carries none, so there is nothing to judge and the tool proposes one instead —
+ * the decision is per row, not per queue, because `either` and `fuzzy` mix the two.
+ */
+const QUEUES = ['waiting', 'fuzzy', 'untranslated', 'either'];
+
+/**
+ * Which CLI translates a proposal, and with what.
+ *
+ * Judging goes through whatever the server is configured for; proposing needs a
+ * translator, and this is the one combination measured to answer. Edit it here if
+ * the plan or the model changes.
+ */
+const ENGINE = { engine: 'opencode', agent: 'wp-translator', model: 'zai-coding-plan/glm-5.3-flash' };
+
 /** Consecutive batches with nothing but `unknown` before the run gives up. */
 const SILENT_LIMIT = 2;
 /**
@@ -34,7 +52,7 @@ const SILENT_LIMIT = 2;
 const LANES = 3;
 const STAGGER_MS = 2_000;
 
-const state = { counted: 0, approved: 0, refused: 0, ticked: 0, unticked: 0, flagged: 0, unknown: 0, failed: 0, silent: 0, stopped: '', busy: false };
+const state = { counted: 0, approved: 0, refused: 0, ticked: 0, unticked: 0, flagged: 0, proposed: 0, unknown: 0, failed: 0, silent: 0, stopped: '', busy: false };
 
 /** Clear the last run, so a second pass over the page neither doubles its counts nor its notes. */
 function reset() {
@@ -102,7 +120,8 @@ function readRows(root) {
 
     const source = forms(preview, 'td.original', '.original-text');
     const translation = forms(preview, 'td.translation', '.translation-text');
-    if (!source[0] || !translation.some((form) => form !== null)) continue;
+    // A row with no translation at all is kept: it is the one to propose for.
+    if (!source[0]) continue;
 
     const editor = root.querySelector(`#editor-${row}`);
     rows.push({
@@ -253,14 +272,18 @@ function annotate(row, judgement) {
   if (judgement.expected) {
     note.append(
       judgement.proposal
-        ? applyButton(row, judgement.proposal)
+        ? applyButton(row, judgement.proposal, judgement.proposalPlural)
         : Object.assign(document.createElement('div'), {
             className: 'wpt-expected',
             textContent: `önerilen: ${judgement.expected}`,
           }),
     );
   }
-  row.element.querySelector('.translation-text')?.after(note);
+  // An untranslated row has no `.translation-text` to sit under, so the cell takes
+  // the note instead. Without this a proposal is computed and never shown.
+  const last = row.element.querySelectorAll('.translation-text');
+  if (last.length > 0) last[last.length - 1].after(note);
+  else row.element.querySelector('td.translation')?.append(note);
 }
 
 /**
@@ -269,17 +292,17 @@ function annotate(row, judgement) {
  * Only a wording the server passed through the quality checks arrives here, and
  * only ever on a click: it replaces somebody else's pending submission.
  */
-function applyButton(row, proposal) {
+function applyButton(row, proposal, proposalPlural) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'wpt-apply';
   button.title = 'Bu çeviriyi satıra yaz ve kaydet';
-  button.textContent = `önerilen: ${proposal}`;
+  button.textContent = `önerilen: ${proposal}${proposalPlural ? ` / ${proposalPlural}` : ''}`;
 
   button.addEventListener('click', async () => {
     button.disabled = true;
     try {
-      const status = await applyProposal(row, proposal);
+      const status = await applyProposal(row, proposal, proposalPlural);
       // GlotPress restores an older translation by making it current again, so a
       // row left ticked would have this wording undone by its own bulk approve.
       if (untick(row)) state.ticked -= 1;
@@ -304,23 +327,24 @@ function applyButton(row, proposal) {
  * request fails, and so the page shows the same thing the request sent. Returns
  * the status the save actually produced, which is not always `current`.
  */
-async function applyProposal(row, proposal) {
+async function applyProposal(row, proposal, proposalPlural) {
   const originalId = row.row.split('-')[0];
   const nonce = actionNonce(row.editor, 'save');
   if (!nonce) throw new Error('bu satırda kaydetme düğmesi yok — oturumun düzenleme yetkisi görünmüyor');
 
   // The id is digits, so the name needs no escaping inside the quoted value.
   const field = `translation[${originalId}][]`;
-  const areas = row.editor.querySelectorAll(`textarea[name="${field}"]`);
-  if (areas.length !== 1) {
-    // One wording cannot fill several plural forms, and the request sends every
-    // one it finds: a partial save would empty the others.
-    throw new Error(`${areas.length} çeviri alanı var, tek karşılık yazılamaz`);
+  const areas = [...row.editor.querySelectorAll(`textarea[name="${field}"]`)];
+  const forms = proposalPlural ? [proposal, proposalPlural] : [proposal];
+  if (areas.length !== forms.length) {
+    // The request sends one value per field, so a mismatch would leave a form
+    // empty — which is a translation the checks refuse.
+    throw new Error(`${areas.length} çeviri alanı var, ${forms.length} karşılık verildi`);
   }
-  areas[0].value = proposal;
+  areas.forEach((area, index) => (area.value = forms[index]));
 
   const body = new URLSearchParams({ original_id: originalId, _gp_route_nonce: nonce });
-  body.append(field, proposal);
+  for (const form of forms) body.append(field, form);
 
   const reply = await fetch(editorOptions(document).url ?? location.pathname, {
     method: 'POST',
@@ -361,9 +385,14 @@ async function run(panel, { approve }) {
   state.busy = true;
 
   try {
+    // Split by what the row has, not by which queue it came from: `fuzzy` and
+    // `either` hold both kinds, and only one of them can be judged.
     const rows = readRows(document);
     const batches = [];
-    for (let at = 0; at < rows.length; at += BATCH) batches.push(rows.slice(at, at + BATCH));
+    for (const kind of ['judge', 'propose']) {
+      const mine = rows.filter((row) => (row.translation ? 'judge' : 'propose') === kind);
+      for (let at = 0; at < mine.length; at += BATCH) batches.push(mine.slice(at, at + BATCH));
+    }
 
     let next = 0;
     const lane = async (index) => {
@@ -391,22 +420,33 @@ async function run(panel, { approve }) {
   }
 }
 
-/** One batch: ask, then act on each row it answered for. */
+/**
+ * One batch: ask, then act on each row it answered for.
+ *
+ * A batch holds rows of one kind. Rows carrying somebody's wording are judged;
+ * rows carrying none are translated, and the answer arrives as a proposal to
+ * apply — there is nothing to approve or tick on a string with no translation.
+ */
 async function judgeBatch(panel, slice, { approve, total }) {
   report(panel, `${state.counted + slice.length}/${total} soruluyor…`);
+  const proposing = !slice[0].translation;
 
   let judgements;
   try {
-    ({ judgements } = await ask('/api/judge', {
-      projectPath: projectPath(),
-      items: slice.map((row) => ({
-        id: row.id,
-        source: row.source,
-        ...(row.sourcePlural ? { sourcePlural: row.sourcePlural } : {}),
-        translation: row.translation,
-        ...(row.translationPlural ? { translationPlural: row.translationPlural } : {}),
-      })),
-    }));
+    judgements = proposing
+      ? await propose(slice)
+      : (
+          await ask('/api/judge', {
+            projectPath: projectPath(),
+            items: slice.map((row) => ({
+              id: row.id,
+              source: row.source,
+              ...(row.sourcePlural ? { sourcePlural: row.sourcePlural } : {}),
+              translation: row.translation,
+              ...(row.translationPlural ? { translationPlural: row.translationPlural } : {}),
+            })),
+          })
+        ).judgements;
   } catch (problem) {
     // One batch the tool could not answer is ten rows, not the page. They are
     // marked with the reason and the other lanes carry on.
@@ -451,6 +491,8 @@ async function judgeBatch(panel, slice, { approve, total }) {
       state.ticked += 1;
     } else if (judgement.verdict === 'flagged') {
       state.flagged += 1;
+    } else if (judgement.verdict === 'proposed') {
+      state.proposed += 1;
     } else {
       state.unknown += 1;
     }
@@ -460,12 +502,52 @@ async function judgeBatch(panel, slice, { approve, total }) {
   report(panel, `${state.counted}/${total}`);
 }
 
+/**
+ * Ask for a translation of rows that have none, as judgements the rest of the run
+ * already knows how to show.
+ *
+ * `untranslated` is the verdict for one the tool could not translate; it is not a
+ * failure of the run, and nothing is applied without a click either way.
+ */
+async function propose(slice) {
+  const { proposals } = await ask('/api/propose', {
+    ...ENGINE,
+    projectPath: projectPath(),
+    items: slice.map((row) => ({
+      id: row.id,
+      source: row.source,
+      ...(row.sourcePlural ? { sourcePlural: row.sourcePlural } : {}),
+    })),
+  });
+
+  return proposals.map((proposal) =>
+    proposal.translation
+      ? {
+          id: proposal.id,
+          verdict: 'proposed',
+          reason: WHERE_FROM[proposal.from] ?? 'Öneri',
+          expected: proposal.translation,
+          proposal: proposal.translation,
+          ...(proposal.translationPlural ? { proposalPlural: proposal.translationPlural } : {}),
+        }
+      : { id: proposal.id, verdict: 'unknown', reason: proposal.reason ?? 'Karşılık bulunamadı.' },
+  );
+}
+
+const WHERE_FROM = {
+  glossary: 'Sözlükteki karşılık — insan onaylı.',
+  memory: 'Daha önce aynı dizge için verilen karşılık.',
+  model: 'Model önerisi — kontrollerden geçti.',
+};
+
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function report(panel, what) {
   panel.querySelector('.wpt-status').textContent =
     `${what} · ${state.counted} bakıldı · ${state.approved} onaylandı · ` +
-    `${state.ticked} seçildi · ${state.flagged} işaretli · ${state.unknown} kararsız` +
+    `${state.ticked} seçildi · ${state.flagged} işaretli · ` +
+    (state.proposed ? `${state.proposed} öneri · ` : '') +
+    `${state.unknown} kararsız` +
     (state.failed ? ` · ${state.failed} küme sorulamadı` : '') +
     (state.refused ? ` · ${state.refused} onaylanamadı` : '') +
     (state.unticked ? ` · ${state.unticked} kutucuk bulunamadı` : '');
@@ -480,7 +562,7 @@ function report(panel, what) {
  */
 function pendingFilter() {
   const status = new URL(location.href).searchParams.get('filters[status]');
-  return status === 'waiting' || status === 'fuzzy' || status === 'either' ? status : null;
+  return QUEUES.includes(status) ? status : null;
 }
 
 function mount() {
@@ -499,6 +581,7 @@ function mount() {
       .wpt-note[data-verdict="exact"] { background: #0d2c2d; }
       .wpt-note[data-verdict="agreed"] { background: #122d40; }
       .wpt-note[data-verdict="flagged"] { background: #361c25; }
+      .wpt-note[data-verdict="proposed"] { background: #172c1c; }
       .wpt-expected { color: #b9bec7; }
       .wpt-apply { display: block; margin-block-start: 4px; max-width: 100%; text-align: start;
         padding: 3px 6px; border: 1px solid #5a6472; border-radius: 4px; cursor: pointer;

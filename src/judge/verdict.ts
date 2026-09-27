@@ -43,7 +43,11 @@ export interface Judgement {
  * the same checks as a translation of the tool's own. A plural source needs
  * every form and one wording is not — `checkTranslation` reports that too.
  */
-export function proposalFor(submission: Submission, wording: string): string | undefined {
+export function proposalFor(
+  submission: Submission,
+  wording: string,
+  wordingPlural?: string,
+): string | undefined {
   if (!wording.trim()) return undefined;
 
   const failures = checkTranslation({
@@ -51,9 +55,27 @@ export function proposalFor(submission: Submission, wording: string): string | u
     msgid: submission.source,
     ...(submission.sourcePlural ? { msgidPlural: submission.sourcePlural } : {}),
     msgstr: wording,
+    ...(wordingPlural ? { msgstrPlural: wordingPlural } : {}),
   });
 
   return failures.length === 0 ? wording : undefined;
+}
+
+/** Why the checks refuse a wording, in one line, or null when they do not. */
+export function refusalFor(
+  submission: Submission,
+  wording: string,
+  wordingPlural?: string,
+): string | null {
+  const failures = checkTranslation({
+    ordinal: 0,
+    msgid: submission.source,
+    ...(submission.sourcePlural ? { msgidPlural: submission.sourcePlural } : {}),
+    msgstr: wording,
+    ...(wordingPlural ? { msgstrPlural: wordingPlural } : {}),
+  });
+
+  return failures.length === 0 ? null : failures.map((failure) => failure.message).join(' · ');
 }
 
 /**
@@ -107,7 +129,7 @@ export function judgeLocally(
 }
 
 /** Every translation the glossary holds for this source, under these tags. */
-function glossaryWordings(
+export function glossaryWordings(
   db: Db,
   submission: Submission,
   tagIds: readonly number[],
