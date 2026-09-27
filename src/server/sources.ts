@@ -109,6 +109,19 @@ export async function verifyProjectUrl(url: string): Promise<void> {
 export function addSource(db: Db, url: string, tagIds: readonly number[], label?: string): number {
   const ref = parseProjectUrl(url);
 
+  // A source is the project, not the address it was pasted from: the same project
+  // reaches here as several URLs — with or without the locale segment, through the
+  // locale listing page, with a query string — and each would be synced separately
+  // and vouch for its own entries twice.
+  const already = db
+    .prepare(`SELECT label, translate_url AS url FROM trusted_sources WHERE project_path = ?`)
+    .get(ref.projectPath) as { label: string | null; url: string } | undefined;
+  if (already) {
+    throw new Error(
+      `Bu proje güvenilir kaynaklarda zaten var: ${already.label ?? ref.projectPath} (${already.url})`,
+    );
+  }
+
   return db.transaction((): number => {
     const nextRank =
       ((db.prepare(`SELECT max(rank) AS r FROM trusted_sources`).get() as { r: number | null }).r ??

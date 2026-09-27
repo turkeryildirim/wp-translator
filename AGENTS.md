@@ -145,6 +145,11 @@ measurement if one drove it.
   `current`. It need not: a fuzzy entry comes through the unfiltered export with
   an empty `msgstr` and is simply redone. Do not add a request per status
   without measuring that it buys something.
+- **A trusted source is a project, not a URL.** `project_path` is the unique
+  column; `translate_url` is only what the owner pasted, and the same project
+  arrives under several spellings of it. Two rows for one project sync it twice and
+  let it vouch for its own entries twice, which is exactly what the ranking reads.
+  `addSource` refuses by path and names what is already there.
 - **Nothing in a project writes to the glossary.** Not an approval, not an edit,
   not the model's output. What writes to `glossary_entries` is
   `src/glossary/sync.ts`, `src/glossary/officialGlossary.ts`, and the owner's own

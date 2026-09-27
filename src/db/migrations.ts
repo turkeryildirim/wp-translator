@@ -318,6 +318,43 @@ export const migrations: readonly Migration[] = [
       CREATE INDEX idx_ai_memory_source ON ai_memory (source_text);
     `,
   },
+  {
+    version: 12,
+    // A source is a project, not a URL. `translate_url` was the only unique
+    // column, so the same project added by another spelling of its address —
+    // without the locale segment, through the locale listing page, with a query
+    // string — became a second row, synced twice and vouching for its own
+    // entries twice.
+    //
+    // Duplicates are merged rather than deleted: `glossary_entry_sources` keys on
+    // `trusted_source_id`, and dropping a row would take real vouches with it.
+    // The lowest id survives, being the one the owner added first.
+    sql: `
+      CREATE TEMP TABLE keeper AS
+        SELECT project_path, min(id) AS keep_id
+          FROM trusted_sources GROUP BY project_path;
+
+      UPDATE OR IGNORE glossary_entry_sources
+         SET trusted_source_id = (
+               SELECT keep_id FROM keeper k
+                 JOIN trusted_sources s ON s.project_path = k.project_path
+                WHERE s.id = glossary_entry_sources.trusted_source_id)
+       WHERE trusted_source_id NOT IN (SELECT keep_id FROM keeper);
+
+      INSERT OR IGNORE INTO trusted_source_tags (trusted_source_id, tag_id)
+        SELECT k.keep_id, t.tag_id
+          FROM trusted_source_tags t
+          JOIN trusted_sources s ON s.id = t.trusted_source_id
+          JOIN keeper k ON k.project_path = s.project_path
+         WHERE t.trusted_source_id <> k.keep_id;
+
+      DELETE FROM trusted_sources WHERE id NOT IN (SELECT keep_id FROM keeper);
+
+      CREATE UNIQUE INDEX idx_trusted_source_path ON trusted_sources (project_path);
+
+      DROP TABLE temp.keeper;
+    `,
+  },
 ];
 
 export const latestVersion = migrations[migrations.length - 1]!.version;
