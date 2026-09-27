@@ -200,7 +200,12 @@ the page can talk to it.
 
 The panel checks that before you press anything — it asks `/api/health`, which
 touches neither the database nor a model — and says `hazır değil` with the reason
-if it cannot. **A new script version makes the extension ask for its connection
+if it cannot.
+
+**`background shutdown` in that message is the extension, not the server.** Chrome
+puts an extension's background worker to sleep and it carries every request the
+script makes, so one can die with the worker. The script sends it again; the server
+remembers what it already answered, so the second ask costs nothing. **A new script version makes the extension ask for its connection
 permission again**, and a dismissed prompt reads exactly like a server that is not
 running, so the message names both.
 

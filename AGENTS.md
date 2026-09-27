@@ -136,6 +136,14 @@ measurement if one drove it.
   succeeds seconds later. `src/wporg/fetch.ts` paces and retries; keep it.
 - **A 404 from translate.wordpress.org is a large HTML page.** Check the status
   and content type, never the byte count.
+- **`GM_xmlhttpRequest` dies with `background shutdown`.** Manifest V3 sleeps the
+  extension's service worker and every such request is carried by it, so one fails
+  while the worker restarts and a long one fails because the worker was evicted
+  under it. The script retries on that error alone, and the retry is cheap because
+  the server finishes a batch and writes `ai_memory` whether or not anybody is
+  still listening. If it becomes common, the fuller answer is a ticket the script
+  polls, so no request is ever held open — the synchronous endpoints are what make
+  this possible at all.
 - **translate.wordpress.org replaces GlotPress's editor row.** Read
   `wporg-gp-customizations/templates/translation-row-editor.php` in
   `WordPress/wordpress.org`, not GlotPress core, for anything inside

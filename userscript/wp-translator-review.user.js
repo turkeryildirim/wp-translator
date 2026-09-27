@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         wp-translator · bekleyen çevirileri değerlendir
 // @namespace    https://github.com/turker/wp-translator
-// @version      1.7.1
+// @version      1.8.0
 // @description  Açık sayfadaki bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları gerekçesiyle işaretler.
 // @match        https://translate.wordpress.org/projects/*
 // @grant        GM_xmlhttpRequest
@@ -71,7 +71,30 @@ function reset() {
  */
 const REQUEST_TIMEOUT_MS = 300_000;
 
-function ask(path, body, method = 'POST') {
+/**
+ * Ask, and ask again when the extension's own plumbing drops the request.
+ *
+ * Manifest V3 puts the background service worker to sleep, and it carries every
+ * `GM_xmlhttpRequest` — so one dies with `background shutdown` while the worker
+ * restarts, and a long one dies because the worker was evicted under it. Retrying
+ * is cheap either way: the server finishes the batch and writes `ai_memory`
+ * whether or not anybody is still listening, so the second ask is served from it.
+ */
+async function ask(path, body, method = 'POST') {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await request(path, body, method);
+    } catch (problem) {
+      if (attempt > TRANSPORT_ATTEMPTS || !problem.transport) throw problem;
+      await pause(attempt * 1_000);
+    }
+  }
+}
+
+/** How many extra times a dropped request is sent before it is reported. */
+const TRANSPORT_ATTEMPTS = 2;
+
+function request(path, body, method) {
   return new Promise((resolve, reject) => {
     GM_xmlhttpRequest({
       method,
@@ -94,20 +117,16 @@ function ask(path, body, method = 'POST') {
         }
       },
       onerror: (reply) => {
-        // Two very different causes read the same from here: the server is not
-        // listening, or the extension refused the cross-origin request — which it
-        // asks about again on a new script version. What it hands back is the only
-        // thing that tells them apart.
-        const detail = [reply?.error, reply?.status ? `status ${reply.status}` : '']
-          .filter(Boolean)
-          .join(' ');
-        reject(
-          new Error(
-            `${SERVER} adresine ulaşılamadı${detail ? ` (${detail})` : ''}. ` +
-              'Sunucu çalışıyorsa Tampermonkey bu betiğin bağlantı iznini soruyor olabilir — ' +
-              'yeni sürümde yeniden sorar.',
-          ),
+        // Three causes read alike from here: the server is not listening, the
+        // extension refused the request, or its background worker dropped it. Only
+        // what it hands back tells them apart, and only the last is worth retrying.
+        const reason = String(reply?.error ?? '');
+        const problem = new Error(
+          `${SERVER} adresine ulaşılamadı${reason ? ` (${reason})` : ''}. ` +
+            'Sunucu çalışıyorsa Tampermonkey bu betiğin bağlantı iznini soruyor olabilir.',
         );
+        problem.transport = /shutdown|terminated|disconnect/i.test(reason);
+        reject(problem);
       },
       ontimeout: () =>
         reject(new Error(`Yerel sunucu ${REQUEST_TIMEOUT_MS / 1000} saniyede yanıt vermedi.`)),
