@@ -110,6 +110,12 @@ measurement if one drove it.
   worker Chrome puts to sleep, taking any request it is carrying with it. A ticket
   outlives that; a held-open request loses the answer. A collected ticket is
   dropped — there is one reader.
+- **A row's `row` attribute is `<originalId>` or `<originalId>-<translationId>`.**
+  An untranslated row has no translation to number, so it carries the original id
+  alone. Reading the second segment unconditionally skips every untranslated row —
+  and a synthetic fixture that invents the id is what lets that pass unnoticed.
+  Judging keys on the translation id (`-set-status/` takes it), proposing on the
+  original's (the save route takes that).
 - **A row with no translation is proposed for, not judged.** `/api/judge` on an
   empty wording returns `flagged: empty` for every row, which is worse than
   nothing, so `/api/propose` (`src/server/propose.ts`) translates instead — the

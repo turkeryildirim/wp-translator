@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         wp-translator · bekleyen çevirileri değerlendir
 // @namespace    https://github.com/turker/wp-translator
-// @version      1.9.0
+// @version      1.9.1
 // @description  Açık sayfadaki bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları gerekçesiyle işaretler.
 // @match        https://translate.wordpress.org/projects/*
 // @grant        GM_xmlhttpRequest
@@ -195,8 +195,12 @@ function readRows(root) {
   const rows = [];
   for (const preview of root.querySelectorAll('tr.preview[row]')) {
     const row = preview.getAttribute('row');
-    const translationId = Number(row.split('-')[1]);
-    if (!Number.isFinite(translationId) || translationId === 0) continue;
+    // `<originalId>-<translationId>` where a translation exists, and the original
+    // id alone where none does — an untranslated row has nothing to number.
+    const [original, translation_] = row.split('-');
+    const originalId = Number(original);
+    const translationId = translation_ ? Number(translation_) : null;
+    if (!Number.isFinite(originalId) || originalId === 0) continue;
 
     const source = forms(preview, 'td.original', '.original-text');
     const translation = forms(preview, 'td.translation', '.translation-text');
@@ -206,8 +210,9 @@ function readRows(root) {
     const editor = root.querySelector(`#editor-${row}`);
     rows.push({
       row,
-      id: translationId,
-      nonce: actionNonce(editor, 'approve'),
+      originalId,
+      /** Null on an untranslated row, which is also why it cannot be judged. */
+      translationId: Number.isFinite(translationId) ? translationId : null,
       source: source[0],
       ...(source[1] ? { sourcePlural: source[1] } : {}),
       translation: translation[0] ?? '',
@@ -293,16 +298,20 @@ function editorOptions(root) {
 const setStatusUrl = () => editorOptions(document).set_status_url ?? `${location.pathname}-set-status/`;
 
 async function setStatus(row, status) {
-  if (!row.nonce) {
+  // Read here rather than per row up front: an untranslated page has nothing to
+  // approve, and looking for a button that is rightly absent logged a warning
+  // apiece.
+  const nonce = actionNonce(row.editor, 'approve');
+  if (!nonce) {
     throw new Error(
       `Bu satırda "${status}" için nonce yok — oturumun bu projede onaylama yetkisi görünmüyor.`,
     );
   }
 
   const body = new URLSearchParams({
-    translation_id: String(row.id),
+    translation_id: String(row.translationId),
     status,
-    _gp_route_nonce: row.nonce,
+    _gp_route_nonce: nonce,
   });
   const reply = await fetch(setStatusUrl(), {
     method: 'POST',
@@ -408,7 +417,7 @@ function applyButton(row, proposal, proposalPlural) {
  * the status the save actually produced, which is not always `current`.
  */
 async function applyProposal(row, proposal, proposalPlural) {
-  const originalId = row.row.split('-')[0];
+  const originalId = String(row.originalId);
   const nonce = actionNonce(row.editor, 'save');
   if (!nonce) throw new Error('bu satırda kaydetme düğmesi yok — oturumun düzenleme yetkisi görünmüyor');
 
@@ -520,7 +529,8 @@ async function judgeBatch(panel, slice, { approve, total }) {
             ...engineChoice(),
             projectPath: projectPath(),
             items: slice.map((row) => ({
-              id: row.id,
+              // `-set-status/` takes the translation id, so judgements key on it.
+              id: row.translationId,
               source: row.source,
               ...(row.sourcePlural ? { sourcePlural: row.sourcePlural } : {}),
               translation: row.translation,
@@ -554,7 +564,11 @@ async function judgeBatch(panel, slice, { approve, total }) {
   }
 
   for (const judgement of judgements) {
-    const row = slice.find((candidate) => candidate.id === judgement.id);
+    // Keyed on whichever id was sent: judging carries the translation's, proposing
+    // the original's, because an untranslated row has no translation to carry.
+    const row = slice.find(
+      (candidate) => (proposing ? candidate.originalId : candidate.translationId) === judgement.id,
+    );
     if (!row) continue;
 
     if (judgement.verdict === 'exact' && approve) {
@@ -595,7 +609,9 @@ async function propose(slice) {
     ...engineChoice(),
     projectPath: projectPath(),
     items: slice.map((row) => ({
-      id: row.id,
+      // Nothing to translate has a translation id; the save route takes the
+      // original's, so proposals key on that.
+      id: row.originalId,
       source: row.source,
       ...(row.sourcePlural ? { sourcePlural: row.sourcePlural } : {}),
     })),
