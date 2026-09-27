@@ -1,4 +1,4 @@
-import { notify } from './notify.ts';
+import { notify, withdraw } from './notify.ts';
 export interface CheckFailure {
   rule: string;
   message: string;
@@ -58,15 +58,21 @@ export interface UnitDetail {
  *
  * @param label names the write for the corner message; a read passes none.
  */
+/** The group for "the server is not answering", withdrawn as soon as it does. */
+const OFFLINE = 'offline';
+
 const json = async <T>(input: string, init?: RequestInit, label?: string): Promise<T> => {
   let response: Response;
   try {
     response = await fetch(input, init);
   } catch (problem) {
-    // The server is a local process the owner starts by hand.
-    notify('error', `Sunucuya ulaşılamadı. Çalışıyor mu? (${describe(problem)})`);
+    // The server is a local process the owner starts by hand, so it goes away and
+    // comes back. Tagged, because the message stops being true by itself.
+    notify('error', `Sunucuya ulaşılamadı. Çalışıyor mu? (${describe(problem)})`, OFFLINE);
     throw problem;
   }
+
+  withdraw(OFFLINE);
 
   if (!response.ok) {
     notify('error', `${label ?? 'İstek'} başarısız: ${await reason(response)}`);

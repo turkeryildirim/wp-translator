@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dismiss, notes, notify } from '../panel/src/notify.ts';
+import { dismiss, notes, notify, withdraw } from '../panel/src/notify.ts';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -54,3 +54,25 @@ describe('the corner report', () => {
     expect(notes.at(-1)!.text).toBe('hata 11');
   });
 });
+
+describe('a message that stops being true on its own', () => {
+  it('is withdrawn when the thing it reported recovers', () => {
+    // The server is a local process the owner restarts. An error stays until
+    // dismissed — right for a failed save, wrong for "cannot reach the server",
+    // which would then sit on screen reading as the present state.
+    notify('error', 'Sunucuya ulaşılamadı.', 'offline');
+    expect(notes.length).toBe(1);
+
+    withdraw('offline');
+
+    expect(notes.length).toBe(0);
+  });
+
+  it('leaves an untagged error alone, because nothing makes it untrue', () => {
+    notify('error', 'Kaydedilemedi.');
+
+    withdraw('offline');
+
+    expect(notes.length).toBe(1);
+  });
+})
