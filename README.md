@@ -198,6 +198,12 @@ The local server must be running. The script reaches it through
 `GM_xmlhttpRequest`, so the server needs no CORS of its own and nothing else on
 the page can talk to it.
 
+The panel checks that before you press anything — it asks `/api/health`, which
+touches neither the database nor a model — and says `hazır değil` with the reason
+if it cannot. **A new script version makes the extension ask for its connection
+permission again**, and a dismissed prompt reads exactly like a server that is not
+running, so the message names both.
+
 Judging goes through **agy** rather than opencode: it needs a verdict per row and
 agy's `--json-schema` is what makes that reliable. A row the model cannot be
 asked about is annotated with the reason and left alone, so a configuration

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         wp-translator · bekleyen çevirileri değerlendir
 // @namespace    https://github.com/turker/wp-translator
-// @version      1.7.0
+// @version      1.7.1
 // @description  Açık sayfadaki bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları gerekçesiyle işaretler.
 // @match        https://translate.wordpress.org/projects/*
 // @grant        GM_xmlhttpRequest
@@ -71,13 +71,14 @@ function reset() {
  */
 const REQUEST_TIMEOUT_MS = 300_000;
 
-function ask(path, body) {
+function ask(path, body, method = 'POST') {
   return new Promise((resolve, reject) => {
     GM_xmlhttpRequest({
-      method: 'POST',
+      method,
       url: `${SERVER}${path}`,
-      headers: { 'content-type': 'application/json' },
-      data: JSON.stringify(body),
+      ...(body === undefined
+        ? {}
+        : { headers: { 'content-type': 'application/json' }, data: JSON.stringify(body) }),
       timeout: REQUEST_TIMEOUT_MS,
       onload: (reply) => {
         if (reply.status !== 200) {
@@ -92,7 +93,22 @@ function ask(path, body) {
           reject(problem);
         }
       },
-      onerror: () => reject(new Error('Yerel sunucuya ulaşılamadı. wp-translator çalışıyor mu?')),
+      onerror: (reply) => {
+        // Two very different causes read the same from here: the server is not
+        // listening, or the extension refused the cross-origin request — which it
+        // asks about again on a new script version. What it hands back is the only
+        // thing that tells them apart.
+        const detail = [reply?.error, reply?.status ? `status ${reply.status}` : '']
+          .filter(Boolean)
+          .join(' ');
+        reject(
+          new Error(
+            `${SERVER} adresine ulaşılamadı${detail ? ` (${detail})` : ''}. ` +
+              'Sunucu çalışıyorsa Tampermonkey bu betiğin bağlantı iznini soruyor olabilir — ' +
+              'yeni sürümde yeniden sorar.',
+          ),
+        );
+      },
       ontimeout: () =>
         reject(new Error(`Yerel sunucu ${REQUEST_TIMEOUT_MS / 1000} saniyede yanıt vermedi.`)),
     });
@@ -624,6 +640,7 @@ function mount() {
   }
 
   say(panel, `hazır · ${filter} · bu sayfada ${rows} satır`);
+  void reachable(panel, filter, rows);
   dry.addEventListener('click', () => void run(panel, { approve: false }));
   live.addEventListener('click', () => {
     if (confirm('Bu sayfada sözlükle birebir eşleşenler doğrudan onaylanacak. Devam edilsin mi?')) {
@@ -641,6 +658,25 @@ function mount() {
       onTop && `${onTop.tagName}.${onTop.className}`,
     );
   }
+}
+
+/**
+ * Check the local tool answers, before the reader presses anything.
+ *
+ * Otherwise an unreachable server or a refused permission first shows itself part
+ * way through a run, looking like a failure of the run.
+ */
+async function reachable(panel, filter, rows) {
+  try {
+    // `/api/health` on purpose: a judging request would reach the model, and a
+    // page load must not spend one.
+    await ask('/api/health', undefined, 'GET');
+  } catch (problem) {
+    say(panel, `hazır değil · ${problem.message}`);
+    for (const button of panel.querySelectorAll('button')) button.disabled = true;
+    return;
+  }
+  say(panel, `hazır · ${filter} · bu sayfada ${rows} satır`);
 }
 
 /** The panel's one line of state, also echoed to the console. */

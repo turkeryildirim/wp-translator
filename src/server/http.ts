@@ -211,6 +211,12 @@ async function api(
     if (method === 'GET') return send(response, 200, syncProgress());
   }
 
+  // Answered without touching the database or a model: it exists so a caller can
+  // tell "the tool is not running" from "the tool refused", up front.
+  if (method === 'GET' && route === '/api/health') {
+    return send(response, 200, { ok: true });
+  }
+
   if (method === 'POST' && route === '/api/judge') {
     const body = (await readJson(request)) as unknown as JudgeRequest & { model?: string };
     if (!Array.isArray(body.items) || body.items.length === 0) {
