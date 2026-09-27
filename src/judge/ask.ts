@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Db } from '../db/open.ts';
 import { questionKey, recall, remember, rulesKey } from '../ai/memory.ts';
-import { agyItems, invokeAgy, type AgyOptions } from '../translate/agy.ts';
+import { agyItems, invokeAgy } from '../translate/agy.ts';
+import { collectText, invokeOpencode, jsonArray, providerError } from '../translate/opencode.ts';
 import { buildJudgePrompt, toJudgeItems, type JudgeContext } from './prompt.ts';
 import { proposalFor, type Judgement, type Submission } from './verdict.ts';
 
@@ -44,19 +45,29 @@ export const judgeKey = (submission: Submission): string =>
     submission.translationPlural ?? '',
   ]);
 
+export interface AskOptions {
+  /** Which CLI to ask. agy enforces the answer's shape; opencode is parsed. */
+  engine?: 'opencode' | 'agy';
+  model?: string;
+  /** opencode only: the tool-free agent. */
+  agent?: string;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
 /**
  * Ask the model to judge a batch, and turn its answer into judgements.
  *
  * Anything already answered under the same rules is served from memory and never
- * asked again — the same string turns up across project after project. Only agy
- * is used: the reply is a verdict per item and a schema is what keeps that
- * reliable, which opencode cannot enforce.
+ * asked again — the same string turns up across project after project. Either CLI
+ * can be asked: agy is given a schema and hands back the items parsed, opencode
+ * cannot be told a shape so its text is scraped for the array.
  */
 export async function askModel(
   db: Db,
   submissions: readonly Submission[],
   context: JudgeContext,
-  options: AgyOptions & { signal?: AbortSignal } = {},
+  options: AskOptions = {},
 ): Promise<{ judgements: Judgement[]; asked: number }> {
   if (submissions.length === 0) return { judgements: [], asked: 0 };
 
@@ -80,7 +91,7 @@ export async function askModel(
     try {
       await writeFile(schemaPath, JSON.stringify(SCHEMA), 'utf-8');
       const prompt = `${buildJudgePrompt(context)}\n\nJSON:\n${JSON.stringify(toJudgeItems(toAsk))}`;
-      opinions = agyItems(await invokeAgy({ ...options, schemaPath, prompt }));
+      opinions = await opinionsFrom(prompt, schemaPath, options);
     } catch (problem) {
       // A model that cannot be reached or cannot be read leaves these rows
       // undecided instead of failing the batch: the verdicts the checks and the
@@ -131,6 +142,46 @@ function settle(submission: Submission, answer: Judgement): Judgement {
   const { proposal: _stored, ...rest } = answer;
   const proposal = rest.expected ? proposalFor(submission, rest.expected) : undefined;
   return { ...rest, id: submission.id, ...(proposal ? { proposal } : {}) };
+}
+
+/**
+ * Put the question to whichever CLI was asked for.
+ *
+ * agy is given the schema and answers in it. opencode has no such flag, so the
+ * prompt's own output rules are all there is and the array is cut out of the text —
+ * the same scraping its translations go through.
+ */
+async function opinionsFrom(
+  prompt: string,
+  schemaPath: string,
+  options: AskOptions,
+): Promise<unknown[]> {
+  if (options.engine === 'opencode') {
+    const stdout = await invokeOpencode({
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.agent ? { agent: options.agent } : {}),
+      ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+      prompt,
+    });
+
+    const text = collectText(stdout);
+    if (!text.trim()) {
+      const reported = providerError(stdout);
+      throw new Error(reported ? `opencode: ${reported}` : 'opencode boş yanıt verdi.');
+    }
+    return jsonArray(text);
+  }
+
+  return agyItems(
+    await invokeAgy({
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+      schemaPath,
+      prompt,
+    }),
+  );
 }
 
 /**

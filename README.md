@@ -190,9 +190,11 @@ the script's to do. Saving as a GTE makes it the current translation and marks a
 submission it replaces `old`, which is what correcting a short mistake in place
 should do. Rejecting is for the ones worth sending back.
 
-**Which CLI translates a proposal is a constant at the top of the script** —
-`ENGINE`. Judging goes through whatever the server is set up for; proposing needs a
-translator, and the script names one. Edit it there if the plan or model changes.
+**The panel has a dropdown for which CLI to use** — opencode or agy — and remembers
+it. Both judging and proposing go through the one you pick. It is a choice rather
+than a constant because a CLI that is out of quota does not fail, it hangs, and
+from the page there is no way to tell which one that is. What each name means —
+which model, which agent — is the `ENGINES` block at the top of the script.
 
 The local server must be running. The script reaches it through
 `GM_xmlhttpRequest`, so the server needs no CORS of its own and nothing else on
@@ -204,8 +206,10 @@ if it cannot.
 
 **`background shutdown` in that message is the extension, not the server.** Chrome
 puts an extension's background worker to sleep and it carries every request the
-script makes, so one can die with the worker. The script sends it again; the server
-remembers what it already answered, so the second ask costs nothing. **A new script version makes the extension ask for its connection
+script makes, so one can die with the worker. Nothing is held open for it to die
+during: judging and proposing hand back a ticket the script polls, each request
+taking milliseconds, and a poll that is lost finds the answer waiting. A request
+dropped outright is sent again. **A new script version makes the extension ask for its connection
 permission again**, and a dismissed prompt reads exactly like a server that is not
 running, so the message names both.
 

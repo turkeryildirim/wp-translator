@@ -92,13 +92,24 @@ measurement if one drove it.
   and naming a file that is not there is what invites the read. Keep the error
   message in `agyItems` naming the denied tool; read as "ignored the schema" it
   sends you looking at the payload instead of at the model.
-- **Judging runs one model call per request; the concurrency is the script's.**
-  `/api/judge` answers one batch with one `invokeAgy`, and
-  `userscript/wp-translator-review.user.js` keeps three of those requests in
-  flight. It sits there rather than in the server so each answer can be annotated
-  the moment it lands — a page that fills in as it goes, not one that appears at
-  the end. `src/server/translate.ts` owns its own lanes because nothing is
-  watching that one row by row.
+- **Judging runs one model call per batch; the concurrency is the script's.**
+  `/api/judge` and `/api/propose` each start one batch, and
+  `userscript/wp-translator-review.user.js` keeps three of those in flight. It sits
+  there rather than in the server so each answer can be annotated the moment it
+  lands — a page that fills in as it goes, not one that appears at the end.
+  `src/server/translate.ts` owns its own lanes because nothing is watching that one
+  row by row.
+- **Both take an `engine`, and neither may assume one.** Judging used to call
+  `invokeAgy` directly; a CLI that is out of quota does not fail, it hangs, so being
+  unable to switch meant every batch waiting out the timeout. `askModel` asks
+  whichever was named — agy with its schema, opencode by scraping the array out of
+  the text, which is what `jsonArray` is for.
+- **Nothing that takes minutes is answered on the request that asked for it.**
+  `/api/judge` and `/api/propose` return a ticket and `GET /api/jobs/:id` collects
+  it (`src/server/jobs.ts`). The caller is a browser extension whose background
+  worker Chrome puts to sleep, taking any request it is carrying with it. A ticket
+  outlives that; a held-open request loses the answer. A collected ticket is
+  dropped — there is one reader.
 - **A row with no translation is proposed for, not judged.** `/api/judge` on an
   empty wording returns `flagged: empty` for every row, which is worse than
   nothing, so `/api/propose` (`src/server/propose.ts`) translates instead — the

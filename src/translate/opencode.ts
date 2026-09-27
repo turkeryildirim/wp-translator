@@ -71,73 +71,87 @@ export class OpencodeProvider implements TranslationProvider {
     }
   }
 
-  private async invoke(
+  private invoke(
     payloadPath: string,
     prompt: string,
     signal: AbortSignal | undefined,
   ): Promise<string> {
-    const args = ['run', '--format', 'json', '--file', payloadPath];
-    if (this.options.model) args.push('--model', this.options.model);
-    if (this.options.agent) args.push('--agent', this.options.agent);
-    args.push(prompt);
-
-    const timeoutMs = this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-
-    return new Promise<string>((resolve, reject) => {
-      const child = spawn(this.options.binary ?? 'opencode', args, {
-        // `opencode run --format json` never returns unless stdin is closed,
-        // which is why this uses spawn: execFile cannot set stdio.
-        stdio: ['ignore', 'pipe', 'pipe'],
-        ...(signal ? { signal } : {}),
-      });
-
-      let stdout = '';
-      let stderr = '';
-      child.stdout.setEncoding('utf-8');
-      child.stderr.setEncoding('utf-8');
-
-      // Reported as it arrives. A stalled request looks identical to a slow one
-      // from the outside; its output is the difference.
-      const watch = this.options.onLine;
-      const feed = (render: (line: string) => string | null): ((chunk: string) => void) => {
-        let rest = '';
-        return (chunk: string) => {
-          if (!watch) return;
-          const lines = (rest + chunk).split('\n');
-          rest = lines.pop() ?? '';
-          for (const line of lines) {
-            const shown = line.trim() ? render(line) : null;
-            if (shown) watch(shown);
-          }
-        };
-      };
-      const toOut = feed(describeEvent);
-      const toErr = feed((line) => `hata: ${line.trim()}`);
-
-      child.stdout.on('data', (chunk: string) => { stdout += chunk; toOut(chunk); });
-      child.stderr.on('data', (chunk: string) => { stderr += chunk; toErr(chunk); });
-
-      const timer = setTimeout(() => {
-        child.kill('SIGKILL');
-        reject(new Error(`opencode did not answer within ${timeoutMs / 1000}s`));
-      }, timeoutMs);
-
-      child.on('error', (error) => { clearTimeout(timer); reject(error); });
-      child.on('close', (code) => {
-        clearTimeout(timer);
-        if (code === 0) return resolve(stdout);
-
-        const reported = providerError(stdout);
-        reject(
-          new Error(
-            reported
-              ? `opencode: ${reported}`
-              : `opencode exited with ${code}: ${stderr.trim().slice(0, 400) || '(hiçbir şey yazmadı)'}`,
-          ),
-        );
-      });
-    });
+    return invokeOpencode({ ...this.options, payloadPath, prompt, ...(signal ? { signal } : {}) });
   }
+
+}
+
+export interface OpencodeCall extends OpencodeOptions {
+  /** A JSON file attached with `--file`, where the task has a payload. */
+  payloadPath?: string;
+  prompt: string;
+  signal?: AbortSignal | undefined;
+}
+
+/** Run opencode once and hand back its raw event stream. */
+export function invokeOpencode(call: OpencodeCall): Promise<string> {
+  const args = ['run', '--format', 'json'];
+  if (call.payloadPath) args.push('--file', call.payloadPath);
+  if (call.model) args.push('--model', call.model);
+  if (call.agent) args.push('--agent', call.agent);
+  args.push(call.prompt);
+
+  const timeoutMs = call.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(call.binary ?? 'opencode', args, {
+      // `opencode run --format json` never returns unless stdin is closed, which
+      // is why this uses spawn: execFile cannot set stdio.
+      stdio: ['ignore', 'pipe', 'pipe'],
+      ...(call.signal ? { signal: call.signal } : {}),
+    });
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf-8');
+    child.stderr.setEncoding('utf-8');
+
+    // Reported as it arrives. A stalled request looks identical to a slow one from
+    // the outside; its output is the difference.
+    const watch = call.onLine;
+    const feed = (render: (line: string) => string | null): ((chunk: string) => void) => {
+      let rest = '';
+      return (chunk: string) => {
+        if (!watch) return;
+        const lines = (rest + chunk).split('\n');
+        rest = lines.pop() ?? '';
+        for (const line of lines) {
+          const shown = line.trim() ? render(line) : null;
+          if (shown) watch(shown);
+        }
+      };
+    };
+    const toOut = feed(describeEvent);
+    const toErr = feed((line) => `hata: ${line.trim()}`);
+
+    child.stdout.on('data', (chunk: string) => { stdout += chunk; toOut(chunk); });
+    child.stderr.on('data', (chunk: string) => { stderr += chunk; toErr(chunk); });
+
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(`opencode did not answer within ${timeoutMs / 1000}s`));
+    }, timeoutMs);
+
+    child.on('error', (error) => { clearTimeout(timer); reject(error); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) return resolve(stdout);
+
+      const reported = providerError(stdout);
+      reject(
+        new Error(
+          reported
+            ? `opencode: ${reported}`
+            : `opencode exited with ${code}: ${stderr.trim().slice(0, 400) || '(hiçbir şey yazmadı)'}`,
+        ),
+      );
+    });
+  });
 }
 
 /**
@@ -230,8 +244,15 @@ export function collectText(ndjson: string): string {
   return texts.join('');
 }
 
-/** Pull the JSON array out of the reply, tolerating a markdown fence or stray prose. */
-export function parseResponse(text: string): ResponseItem[] {
+export const parseResponse = (text: string): ResponseItem[] => jsonArray(text) as ResponseItem[];
+
+/**
+ * Pull the JSON array out of a reply, tolerating a markdown fence or stray prose.
+ *
+ * opencode cannot be told to answer in a shape, unlike agy, so whatever the model
+ * wrapped the array in has to be cut away here.
+ */
+export function jsonArray(text: string): unknown[] {
   const withoutFence = text.replace(/```(?:json)?/gi, '').trim();
 
   const direct = tryParse(withoutFence);
@@ -247,10 +268,10 @@ export function parseResponse(text: string): ResponseItem[] {
   );
 }
 
-function tryParse(candidate: string): ResponseItem[] | undefined {
+function tryParse(candidate: string): unknown[] | undefined {
   try {
     const parsed: unknown = JSON.parse(candidate);
-    return Array.isArray(parsed) ? (parsed as ResponseItem[]) : undefined;
+    return Array.isArray(parsed) ? parsed : undefined;
   } catch {
     return undefined;
   }

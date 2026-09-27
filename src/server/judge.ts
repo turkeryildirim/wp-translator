@@ -4,7 +4,7 @@ import { askModel } from '../judge/ask.ts';
 import { judgeLocally, type Judgement, type Submission } from '../judge/verdict.ts';
 import { defaultTagId } from './sources.ts';
 import { styleGuideFor } from './tags.ts';
-import type { AgyOptions } from '../translate/agy.ts';
+import type { AskOptions } from '../judge/ask.ts';
 
 export interface JudgeRequest {
   /** e.g. `wp-themes/phlox`. Used to pick the tags; any project may be judged. */
@@ -30,7 +30,7 @@ export interface JudgeResult {
 export async function judgeSubmissions(
   db: Db,
   request: JudgeRequest,
-  options: AgyOptions & { signal?: AbortSignal } = {},
+  options: AskOptions = {},
 ): Promise<JudgeResult> {
   const { projectId, tagIds } = scopeFor(db, request.projectPath);
   const settled = new Map<number, Judgement>();

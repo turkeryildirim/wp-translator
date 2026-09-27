@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         wp-translator · bekleyen çevirileri değerlendir
 // @namespace    https://github.com/turker/wp-translator
-// @version      1.8.0
+// @version      1.9.0
 // @description  Açık sayfadaki bekleyen ve fuzzy çevirileri yerel wp-translator sunucusuna sorar; sözlükle birebir eşleşenleri onaylar, kalanları gerekçesiyle işaretler.
 // @match        https://translate.wordpress.org/projects/*
 // @grant        GM_xmlhttpRequest
@@ -33,13 +33,34 @@ const BATCH = 10;
 const QUEUES = ['waiting', 'fuzzy', 'untranslated', 'either'];
 
 /**
- * Which CLI translates a proposal, and with what.
+ * The CLIs the server can be asked to use, and with what.
  *
- * Judging goes through whatever the server is configured for; proposing needs a
- * translator, and this is the one combination measured to answer. Edit it here if
- * the plan or the model changes.
+ * Both judging and proposing take one. They are named here rather than discovered
+ * because the working combination is a property of the owner's plans, not of the
+ * page — and a model that is out of quota does not fail, it hangs.
  */
-const ENGINE = { engine: 'opencode', agent: 'wp-translator', model: 'zai-coding-plan/glm-5.3-flash' };
+const ENGINES = {
+  opencode: { engine: 'opencode', agent: 'wp-translator', model: 'zai-coding-plan/glm-5.3-flash' },
+  agy: { engine: 'agy', model: 'gemini-3.8-flash-low' },
+};
+
+const ENGINE_LABELS = { opencode: 'opencode · GLM 5.3 Flash', agy: 'agy · Gemini 3.8 Flash' };
+const ENGINE_REMEMBERED = 'wpt-engine';
+
+/** The chosen CLI, as the server's routes take it. */
+function engineChoice() {
+  return ENGINES[chosenEngine()] ?? ENGINES.opencode;
+}
+
+function chosenEngine() {
+  try {
+    const kept = localStorage.getItem(ENGINE_REMEMBERED);
+    if (kept && ENGINES[kept]) return kept;
+  } catch {
+    // Private windows and blocked site data both throw; the default stands.
+  }
+  return 'opencode';
+}
 
 /** Consecutive batches with nothing but `unknown` before the run gives up. */
 const SILENT_LIMIT = 2;
@@ -90,6 +111,30 @@ async function ask(path, body, method = 'POST') {
     }
   }
 }
+
+/**
+ * Start work and collect it by ticket.
+ *
+ * Nothing is held open: a judging or proposing batch takes minutes, and the
+ * extension's background worker — which carries every request — is put to sleep
+ * long before that, taking the answer with it. Polling keeps each request to
+ * milliseconds, and the work survives the worker going away entirely.
+ */
+async function await_(path, body) {
+  const { job } = await ask(path, body);
+  if (!job) throw new Error('Sunucu fiş döndürmedi; eski bir sürüm çalışıyor olabilir.');
+
+  for (;;) {
+    await pause(POLL_MS);
+    const state = await ask(`/api/jobs/${job}`, undefined, 'GET');
+    if (!state.done) continue;
+    if (state.error) throw new Error(state.error);
+    return state.result;
+  }
+}
+
+/** How often a ticket is asked about. Short enough to feel live, long enough to be cheap. */
+const POLL_MS = 1_500;
 
 /** How many extra times a dropped request is sent before it is reported. */
 const TRANSPORT_ATTEMPTS = 2;
@@ -471,7 +516,8 @@ async function judgeBatch(panel, slice, { approve, total }) {
     judgements = proposing
       ? await propose(slice)
       : (
-          await ask('/api/judge', {
+          await await_('/api/judge', {
+            ...engineChoice(),
             projectPath: projectPath(),
             items: slice.map((row) => ({
               id: row.id,
@@ -545,8 +591,8 @@ async function judgeBatch(panel, slice, { approve, total }) {
  * failure of the run, and nothing is applied without a click either way.
  */
 async function propose(slice) {
-  const { proposals } = await ask('/api/propose', {
-    ...ENGINE,
+  const { proposals } = await await_('/api/propose', {
+    ...engineChoice(),
     projectPath: projectPath(),
     items: slice.map((row) => ({
       id: row.id,
@@ -611,6 +657,8 @@ function mount() {
       #wpt-panel button { font: inherit; margin-inline-end: 6px; padding: 3px 10px; cursor: pointer;
         border: 1px solid #6c727d; border-radius: 4px; background: transparent; color: inherit; }
       .wpt-status { display: block; margin-block-start: 6px; color: #b9bec7; }
+      #wpt-panel .wpt-engine { font: inherit; margin-block-start: 6px; padding: 2px 6px;
+        border: 1px solid #6c727d; border-radius: 4px; background: #1c2332; color: inherit; }
       .wpt-note { margin-block-start: 4px; padding: 3px 6px; border-radius: 4px; font-size: 12px;
         background: #1c2332; color: #e6e8ec; }
       .wpt-note[data-verdict="exact"] { background: #0d2c2d; }
@@ -628,6 +676,7 @@ function mount() {
     <div>
       <button data-act="dry" title="Bu sayfadaki satırları değerlendirir, hiçbir şeyi değiştirmez">Bu sayfayı değerlendir</button>
       <button data-act="live" title="Bu sayfayı değerlendirir ve sözlükle birebir eşleşenleri onaylar">Değerlendir ve birebir olanları onayla</button>
+      <select class="wpt-engine" title="Hangi yapay zekâ aracı kullanılsın"></select>
     </div>
     <span class="wpt-status">hazır</span>
   `;
@@ -637,6 +686,30 @@ function mount() {
   const rows = readRows(document).length;
   const dry = panel.querySelector('[data-act="dry"]');
   const live = panel.querySelector('[data-act="live"]');
+
+  // Which CLI is asked is a choice, not a constant: one of them being out of quota
+  // does not fail, it hangs, and there is no way to tell from here which that is.
+  const engine = panel.querySelector('.wpt-engine');
+  const chosen = chosenEngine();
+  for (const name of Object.keys(ENGINES)) {
+    // Marked on the option rather than set on the select: the same thing in a
+    // browser, and the only one of the two that works in a bare DOM.
+    engine.append(
+      Object.assign(document.createElement('option'), {
+        value: name,
+        textContent: ENGINE_LABELS[name],
+        selected: name === chosen,
+      }),
+    );
+  }
+  engine.addEventListener('change', () => {
+    try {
+      localStorage.setItem(ENGINE_REMEMBERED, engine.value);
+    } catch {
+      // Not fatal: the choice holds for this page either way.
+    }
+    say(panel, `yapay zekâ aracı: ${ENGINE_LABELS[engine.value]}`);
+  });
 
   if (!filter) {
     // Not a dead end: pressing goes to the queue rather than leaving the reader to

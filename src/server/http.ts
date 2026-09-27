@@ -5,6 +5,7 @@ import type { Db } from '../db/open.ts';
 import { applyGlossary } from '../glossary/match.ts';
 import { judgeSubmissions, type JudgeRequest } from './judge.ts';
 import { proposeTranslations, type ProposeRequest } from './propose.ts';
+import { readJob, startJob } from './jobs.ts';
 import { exportProject } from '../project/export.ts';
 import {
   createEntry,
@@ -217,38 +218,37 @@ async function api(
     return send(response, 200, { ok: true });
   }
 
+  // Judging and proposing hand back a ticket rather than holding the request open.
+  // The caller reaches this through a browser extension's background worker, which
+  // Chrome puts to sleep: a request held for a minute dies with it and the answer
+  // is lost, where a ticket survives being disconnected from.
   if (method === 'POST' && route === '/api/judge') {
-    const body = (await readJson(request)) as unknown as JudgeRequest & { model?: string };
+    const body = (await readJson(request)) as unknown as JudgeRequest & Engines;
     if (!Array.isArray(body.items) || body.items.length === 0) {
       return send(response, 400, { error: 'items is required and must not be empty.' });
     }
-    const { model, ...judge } = body;
-    return send(
-      response,
-      200,
-      await judgeSubmissions(db, judge, model ? { model } : {}),
-    );
+    const { engine, model, agent, ...judge } = body;
+    return send(response, 200, {
+      job: startJob(() => judgeSubmissions(db, judge, engines({ engine, model, agent }))),
+    });
+  }
+
+  const job = /^\/api\/jobs\/([0-9a-f-]{36})$/.exec(route);
+  if (job && method === 'GET') {
+    const state = readJob(job[1]!);
+    if (!state) return send(response, 404, { error: 'Bu fiş yok ya da yanıtı çoktan alındı.' });
+    return send(response, 200, state);
   }
 
   if (method === 'POST' && route === '/api/propose') {
-    const body = (await readJson(request)) as unknown as ProposeRequest & {
-      engine?: Engine;
-      model?: string;
-      agent?: string;
-    };
+    const body = (await readJson(request)) as unknown as ProposeRequest & Engines;
     if (!Array.isArray(body.items) || body.items.length === 0) {
       return send(response, 400, { error: 'items is required and must not be empty.' });
     }
     const { engine, model, agent, ...propose } = body;
-    return send(
-      response,
-      200,
-      await proposeTranslations(db, propose, {
-        ...(engine ? { engine } : {}),
-        ...(model ? { model } : {}),
-        ...(agent ? { agent } : {}),
-      }),
-    );
+    return send(response, 200, {
+      job: startJob(() => proposeTranslations(db, propose, engines({ engine, model, agent }))),
+    });
   }
 
   if (method === 'GET' && route === '/api/glossary') {
@@ -468,3 +468,17 @@ function send(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
   response.end(JSON.stringify(body));
 }
+
+/** Which CLI a request asked for, as both judging and proposing accept it. */
+interface Engines {
+  engine?: Engine | undefined;
+  model?: string | undefined;
+  agent?: string | undefined;
+}
+
+/** Dropped rather than passed as undefined, so a provider's own default stands. */
+const engines = ({ engine, model, agent }: Engines) => ({
+  ...(engine ? { engine } : {}),
+  ...(model ? { model } : {}),
+  ...(agent ? { agent } : {}),
+});
