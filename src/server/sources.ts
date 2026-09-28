@@ -122,6 +122,11 @@ export function addSource(db: Db, url: string, tagIds: readonly number[], label?
     );
   }
 
+  // A source with no tag imports nothing: the sync loops over its tags, so an empty
+  // list means the inner loop never runs and the run reports success having done
+  // nothing at all. Everything starts under one tag; splitting comes later.
+  const tags = tagIds.length > 0 ? tagIds : [defaultTagId(db)];
+
   return db.transaction((): number => {
     const nextRank =
       ((db.prepare(`SELECT max(rank) AS r FROM trusted_sources`).get() as { r: number | null }).r ??
@@ -139,7 +144,7 @@ export function addSource(db: Db, url: string, tagIds: readonly number[], label?
     const link = db.prepare(
       `INSERT INTO trusted_source_tags (trusted_source_id, tag_id) VALUES (?, ?)`,
     );
-    for (const tagId of tagIds) link.run(id, tagId);
+    for (const tagId of tags) link.run(id, tagId);
 
     return id;
   })();

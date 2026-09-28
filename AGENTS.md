@@ -176,6 +176,11 @@ measurement if one drove it.
   `current`. It need not: a fuzzy entry comes through the unfiltered export with
   an empty `msgstr` and is simply redone. Do not add a request per status
   without measuring that it buys something.
+- **A trusted source with no tag imports nothing, silently.** `syncTrustedSource`
+  loops over the source's tags, so an empty list skips every unit and the run still
+  reports success. `addSource` falls back to the seeded tag for exactly this reason,
+  and migration 13 repairs any that were created without one. Everything starts
+  under one tag; splitting it is a later decision.
 - **A sync that adds nothing is the normal case.** A source already in step carries
   the same entries, so the glossary's total does not move — which reads as a button
   that did nothing. `SyncResult.entriesAdded` counts rows actually created (the

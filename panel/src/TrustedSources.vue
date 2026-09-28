@@ -62,7 +62,8 @@ async function add(): Promise<void> {
   notice.value = '';
   adding.value = true;
   try {
-    // The server normalises the address and checks the project really exports.
+    // The server normalises the address, checks the project really exports, and
+    // puts it under the seeded tag: a source with none imports nothing.
     await addSource(url.value, []);
     url.value = '';
     await load();

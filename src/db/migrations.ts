@@ -355,6 +355,23 @@ export const migrations: readonly Migration[] = [
       DROP TABLE temp.keeper;
     `,
   },
+  {
+    version: 13,
+    // A trusted source with no tag contributes nothing: `syncTrustedSource` loops
+    // over its tags, so an empty list skips every unit and the run still reports
+    // success. Sources added through the panel were created without any, so they
+    // synced cleanly and imported zero entries.
+    //
+    // Repaired to the seeded tag, which is where everything starts before the
+    // owner splits it.
+    sql: `
+      INSERT INTO trusted_source_tags (trusted_source_id, tag_id)
+        SELECT s.id, (SELECT id FROM tags ORDER BY name = 'wordpress' DESC, id LIMIT 1)
+          FROM trusted_sources s
+         WHERE NOT EXISTS (SELECT 1 FROM trusted_source_tags t WHERE t.trusted_source_id = s.id)
+           AND EXISTS (SELECT 1 FROM tags);
+    `,
+  },
 ];
 
 export const latestVersion = migrations[migrations.length - 1]!.version;

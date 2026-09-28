@@ -73,3 +73,25 @@ describe('adding a trusted source twice', () => {
     expect(listSources(db).length).toBe(2);
   });
 });
+
+describe('a source added without a tag', () => {
+  it('still lands under one, because a source with none imports nothing', () => {
+    // `syncTrustedSource` loops over a source's tags. With none the loop never
+    // runs, every unit is skipped, and the run reports success having imported
+    // nothing — which is what seventeen sources added from the panel did.
+    const id = addSource(
+      db,
+      'https://translate.wordpress.org/projects/wp-plugins/embed-optimizer/dev/',
+      [],
+    );
+
+    expect(listSources(db).find((source) => source.id === id)?.tagIds).toEqual([tagId]);
+  });
+
+  it('keeps the tags it was given', () => {
+    const other = Number(db.prepare(`INSERT INTO tags (name) VALUES ('woo')`).run().lastInsertRowid);
+    const id = addSource(db, 'https://translate.wordpress.org/projects/wp-plugins/x/dev/', [other]);
+
+    expect(listSources(db).find((source) => source.id === id)?.tagIds).toEqual([other]);
+  });
+})
