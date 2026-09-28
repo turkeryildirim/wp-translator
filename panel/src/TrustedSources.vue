@@ -197,12 +197,25 @@ async function sync(ids?: number[]): Promise<void> {
   }, 700);
 }
 
+/** Entries created across the run, which is the number that moves. */
+const addedCount = (done: SyncProgress): number =>
+  done.results.reduce((sum, result) => sum + result.added, 0);
+
 function report(done: SyncProgress): void {
   if (done.errors.length) {
     notify('error', `Güncelleme bitti, ${done.errors.length} kaynak hata verdi.`);
     return;
   }
-  notify('ok', `Güncelleme bitti: ${syncedCount(done)} kaynak.`);
+
+  // "Nothing was added" and "nothing happened" look the same from the entry
+  // count alone, so the result says which — a source already in step adds none.
+  const added = addedCount(done);
+  notify(
+    'ok',
+    added > 0
+      ? `Güncelleme bitti: ${syncedCount(done)} kaynak, ${added.toLocaleString('tr')} yeni girdi.`
+      : `Güncelleme bitti: ${syncedCount(done)} kaynak. Yeni girdi yok — kaynaklar zaten güncel.`,
+  );
 }
 
 onMounted(load);
@@ -260,10 +273,26 @@ onUnmounted(() => {
       Güncelleme bitti: {{ syncedCount(progress) }} kaynak<span v-if="progress.glossaryTerms">
         + resmî sözlükten {{ progress.glossaryTerms }} terim</span
 >.
+      <span class="muted">
+        {{ addedCount(progress) > 0
+          ? `${addedCount(progress).toLocaleString('tr')} yeni girdi`
+          : 'Yeni girdi yok — kaynaklar zaten güncel.' }}
+      </span>
       <span v-if="progress.errors.length" class="failure-inline">
         {{ progress.errors.length }} hata
       </span>
     </p>
+
+    <!-- Per source, because a partial update is usually one source and its own
+         outcome is what was being asked about. -->
+    <ul v-if="progress && !progress.running && progress.results.length" class="errors outcomes">
+      <li v-for="result in progress.results" :key="result.source">
+        {{ result.source }} — {{ result.seen.toLocaleString('tr') }} girdi okundu,
+        {{ result.added.toLocaleString('tr') }} yeni<span v-if="result.entriesRemoved">
+          , {{ result.entriesRemoved.toLocaleString('tr') }} silindi</span
+        >
+      </li>
+    </ul>
     <ul v-if="progress?.errors.length" class="errors">
       <li v-for="problem in progress.errors" :key="problem.source">
         <b>{{ problem.source }}</b> — {{ problem.message }}

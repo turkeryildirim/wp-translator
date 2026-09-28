@@ -222,6 +222,8 @@ export interface SyncProgress {
   /** True when only the picked sources ran, so the counts are partial. */
   partial: boolean;
   finishedAt: string | null;
+  /** What each source's run did; a source that has not changed adds nothing. */
+  results: { source: string; seen: number; added: number; linksRemoved: number; entriesRemoved: number }[];
 }
 
 export interface GlossaryEntry {

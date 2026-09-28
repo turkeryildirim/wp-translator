@@ -317,3 +317,6 @@ tr.dropinto td { box-shadow: inset 0 2px 0 currentColor; }
 /* Which engine a run chose, beside its heading. */
 .modal h3 .engine { font-weight: 400; font-size: 12px; color: var(--muted);
   border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; margin-inline-start: 8px; }
+
+/* A run's per-source outcome, in the same quiet register as its errors. */
+.outcomes { color: var(--muted); }

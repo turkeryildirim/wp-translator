@@ -5,7 +5,10 @@ import { affixes } from '../text/whitespace.ts';
 
 export interface SyncResult {
   syncRunId: number;
+  /** Rows the source carries, after its own duplicates meet on one entry. */
   entriesSeen: number;
+  /** Of those, rows that did not exist before this run. */
+  entriesAdded: number;
   linksRemoved: number;
   entriesRemoved: number;
 }
@@ -30,6 +33,7 @@ export function syncTrustedSource(
   return db.transaction((): SyncResult => {
     const syncRunId = Number(statements.beginRun.run(trustedSourceId).lastInsertRowid);
     let entriesSeen = 0;
+    let entriesAdded = 0;
 
     for (const unit of catalogue.units) {
       // Stored without its surrounding whitespace: that is shape, and keeping it
@@ -48,11 +52,14 @@ export function syncTrustedSource(
           translation,
           translationPlural: unit.msgstrPlural ? affixes(unit.msgstrPlural).core || null : null,
         };
-        statements.insertEntry.run({
+        // `changes` is 1 only when the row was created: the conflict clause makes
+        // a repeat a no-op, which is what tells a re-sync that found nothing new
+        // from one that did not run.
+        entriesAdded += statements.insertEntry.run({
           ...key,
           text: source,
           plural: sourcePlural ?? null,
-        });
+        }).changes;
         statements.linkSource.run({ ...key, trustedSourceId, syncRunId });
         if (unit.msgctxt) statements.recordContext.run({ ...key, msgctxt: unit.msgctxt });
         entriesSeen += 1;
@@ -64,7 +71,7 @@ export function syncTrustedSource(
     statements.finishRun.run(entriesSeen, syncRunId);
     statements.markSynced.run(syncRunId, trustedSourceId);
 
-    return { syncRunId, entriesSeen, linksRemoved, entriesRemoved };
+    return { syncRunId, entriesSeen, entriesAdded, linksRemoved, entriesRemoved };
   })();
 }
 

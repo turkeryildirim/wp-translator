@@ -220,3 +220,35 @@ describe('what a sync stores', () => {
     ).toBe(0);
   });
 });
+
+describe('what a run reports', () => {
+  it('counts entries it created, not entries the source carries', () => {
+    // A source that has not changed upstream adds nothing. Without this number
+    // that run is indistinguishable from one that never happened, which is how
+    // "the entry count does not move" gets read as a broken button.
+    const db = openDb(':memory:');
+    const tagId = (db.prepare(`SELECT id FROM tags WHERE name = 'wordpress'`).get() as { id: number })
+      .id;
+    const sourceId = Number(
+      db
+        .prepare(
+          `INSERT INTO trusted_sources (translate_url, family, project_path)
+           VALUES ('https://translate.wordpress.org/projects/wp-plugins/x/', 'plugin', 'wp-plugins/x')`,
+        )
+        .run().lastInsertRowid,
+    );
+    const catalogue = {
+      headers: {},
+      units: [
+        { ordinal: 0, msgid: 'Save', msgstr: 'Kaydet' },
+        { ordinal: 1, msgid: 'Cancel', msgstr: 'İptal' },
+      ],
+    } as Catalogue;
+
+    const first = syncTrustedSource(db, sourceId, catalogue, [tagId]);
+    expect(first).toMatchObject({ entriesSeen: 2, entriesAdded: 2 });
+
+    const again = syncTrustedSource(db, sourceId, catalogue, [tagId]);
+    expect(again).toMatchObject({ entriesSeen: 2, entriesAdded: 0 });
+  });
+})

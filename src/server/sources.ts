@@ -208,11 +208,27 @@ export interface SyncProgress {
   glossaryTerms: number | null;
   /** True when only some sources were asked for, so the totals are partial. */
   partial: boolean;
+  /**
+   * What each source's run did.
+   *
+   * A source that has not changed upstream adds nothing, which looks exactly like
+   * a run that did not happen unless it is said out loud.
+   */
+  results: SyncOutcome[];
   finishedAt: string | null;
+}
+
+export interface SyncOutcome {
+  source: string;
+  seen: number;
+  added: number;
+  linksRemoved: number;
+  entriesRemoved: number;
 }
 
 const idle = (): SyncProgress => ({
   running: false,
+  results: [],
   done: 0,
   total: 0,
   current: null,
@@ -252,7 +268,14 @@ export function startSync(db: Db, ids?: readonly number[]): SyncProgress {
       progress.current = source.label ?? source.projectPath;
       try {
         const po = await fetchExport(exportUrl(source.projectPath));
-        syncTrustedSource(db, source.id, parsePo(po), source.tagIds);
+        const result = syncTrustedSource(db, source.id, parsePo(po), source.tagIds);
+        progress.results.push({
+          source: source.label ?? source.projectPath,
+          seen: result.entriesSeen,
+          added: result.entriesAdded,
+          linksRemoved: result.linksRemoved,
+          entriesRemoved: result.entriesRemoved,
+        });
       } catch (error) {
         progress.errors.push({
           source: source.projectPath,

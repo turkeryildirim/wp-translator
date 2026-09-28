@@ -176,6 +176,11 @@ measurement if one drove it.
   `current`. It need not: a fuzzy entry comes through the unfiltered export with
   an empty `msgstr` and is simply redone. Do not add a request per status
   without measuring that it buys something.
+- **A sync that adds nothing is the normal case.** A source already in step carries
+  the same entries, so the glossary's total does not move — which reads as a button
+  that did nothing. `SyncResult.entriesAdded` counts rows actually created (the
+  insert's `changes`, which the conflict clause makes zero on a repeat) and the run
+  reports it per source. `last_synced_at` is the other thing that proves it ran.
 - **A trusted source is a project, not a URL.** `project_path` is the unique
   column; `translate_url` is only what the owner pasted, and the same project
   arrives under several spellings of it. Two rows for one project sync it twice and
