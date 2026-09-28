@@ -168,6 +168,41 @@ export const bulkSetState = (
     'Toplu işlem',
   );
 
+export interface ReplaceResult {
+  /** Translations in scope containing the text. */
+  matched: number;
+  /** Of those, how many were written. Zero on a preview. */
+  changed: number;
+  /** Of those written, how many the quality checks now refuse. */
+  blocked: number;
+}
+
+/**
+ * Replace text inside translations, across the same scope the bulk actions take.
+ *
+ * `preview` counts without writing, so the size of a change measured in thousands
+ * of rows is known before it is made.
+ */
+export const replaceInTranslations = (
+  projectId: number,
+  find: string,
+  replace: string,
+  target: { ids: number[] } | { params: Record<string, string> },
+  preview = false,
+) =>
+  post<ReplaceResult>(
+    `/api/projects/${projectId}/replace`,
+    {
+      find,
+      replace,
+      preview,
+      ...('ids' in target
+        ? { ids: target.ids }
+        : { filter: new URLSearchParams(target.params).toString() }),
+    },
+    preview ? undefined : 'Bul ve değiştir',
+  );
+
 export const unitDetail = (unitId: number) => json<UnitDetail>(`/api/units/${unitId}/detail`);
 
 /**

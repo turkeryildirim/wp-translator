@@ -371,6 +371,93 @@ export function saveUnit(
   return blocking.length === 0 ? { unit } : { unit, blocked: blocking };
 }
 
+export interface ReplaceResult {
+  /** Units in scope whose translation contains the text. */
+  matched: number;
+  /** Of those, how many were written. Zero on a preview. */
+  changed: number;
+  /** Of those written, how many the quality checks now refuse. */
+  blocked: number;
+}
+
+/**
+ * Replace text inside translations, across whatever the queue is currently showing.
+ *
+ * Literal and case-sensitive: a replacement is applied to thousands of rows at
+ * once and matching loosely is how the wrong ones get rewritten. Only `msgstr` and
+ * its plural are touched — never the source — and every unit written goes back to
+ * `review` exactly as editing one by hand does, because the text is no longer the
+ * one that was approved.
+ *
+ * @param preview counts without writing, so the size of the change is known first.
+ */
+export function replaceInTranslations(
+  db: Db,
+  projectId: number,
+  target: BulkTarget,
+  find: string,
+  replace: string,
+  preview = false,
+): ReplaceResult {
+  if (find === '') throw new Error('Aranacak metin boş olamaz.');
+
+  const { clause, params } = targetClause(projectId, target);
+  const rows = db
+    .prepare(
+      `SELECT u.id, u.msgid, u.msgid_plural AS msgidPlural, u.msgstr,
+              u.msgstr_plural AS msgstrPlural
+         FROM translation_units u
+        WHERE ${clause} AND u.msgstr IS NOT NULL AND u.msgstr <> ''`,
+    )
+    .all(...params) as {
+    id: number;
+    msgid: string;
+    msgidPlural: string | null;
+    msgstr: string;
+    msgstrPlural: string | null;
+  }[];
+
+  const write = db.prepare(
+    `UPDATE translation_units
+        SET msgstr = ?, msgstr_plural = ?, state = 'review', blocked = ?,
+            provenance = 'human', updated_at = datetime('now')
+      WHERE id = ?`,
+  );
+  const exceptions = db.prepare(`SELECT rule FROM qa_exceptions WHERE unit_id = ?`);
+
+  return db.transaction((): ReplaceResult => {
+    let matched = 0;
+    let changed = 0;
+    let blocked = 0;
+
+    for (const row of rows) {
+      const msgstr = row.msgstr.replaceAll(find, replace);
+      const msgstrPlural = row.msgstrPlural?.replaceAll(find, replace) ?? null;
+      if (msgstr === row.msgstr && msgstrPlural === row.msgstrPlural) continue;
+
+      matched += 1;
+      if (preview) continue;
+
+      const overridden = new Set(
+        (exceptions.all(row.id) as { rule: string }[]).map((exception) => exception.rule),
+      );
+      const blocking = checkTranslation({
+        ordinal: 0,
+        msgid: row.msgid,
+        ...(row.msgidPlural ? { msgidPlural: row.msgidPlural } : {}),
+        msgstr,
+        ...(msgstrPlural ? { msgstrPlural } : {}),
+      }).filter((failure) => !overridden.has(failure.rule));
+
+      write.run(msgstr, msgstrPlural, blocking.length === 0 ? 0 : 1, row.id);
+      changed += 1;
+      if (blocking.length > 0) blocked += 1;
+    }
+
+    return { matched, changed, blocked };
+  })();
+}
+
 /** One unit, enriched the same way the queue enriches its page. */
 export function getUnit(db: Db, projectId: number, unitId: number): UnitRow {
   const row = db

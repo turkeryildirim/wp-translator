@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import {
   bulkSetState,
   exportPo as fetchExport,
+  replaceInTranslations,
   listProjects,
   listUnits,
   reloadCost,
@@ -126,6 +127,64 @@ function pollTranslation(): void {
 }
 
 const project = computed(() => projects.value.find((p) => p.id === selected.value));
+
+const findText = ref('');
+const replaceText = ref('');
+const replacing = ref(false);
+
+/**
+ * What a replacement would act on: the rows picked, or everything the current
+ * filter and search select — never merely the page on screen.
+ */
+const replaceScopeCount = computed(() => (picked.value.length > 0 ? picked.value.length : total.value));
+const replaceScope = computed(() =>
+  picked.value.length > 0
+    ? `${picked.value.length.toLocaleString('tr')} seçili satırda`
+    : `${VIEWS.find((view) => view.view === filter.value)?.label ?? filter.value} filtresindeki ${total.value.toLocaleString('tr')} kaydın tümünde`,
+);
+
+/**
+ * Replace inside translations only, literally and with case respected.
+ *
+ * Counted first and confirmed with the real number: the scope is a filter, so it
+ * is routinely thousands of rows and the word being replaced is rarely unique.
+ */
+async function runReplace(): Promise<void> {
+  if (selected.value === null || !findText.value) return;
+  const target = picked.value.length > 0 ? { ids: picked.value } : { params: queryParams(false) };
+
+  replacing.value = true;
+  try {
+    const { matched } = await replaceInTranslations(
+      selected.value, findText.value, replaceText.value, target, true,
+    );
+    if (matched === 0) {
+      notify('error', `"${findText.value}" bu kapsamda hiçbir çeviride geçmiyor.`);
+      return;
+    }
+    if (
+      !confirm(
+        `${matched.toLocaleString('tr')} çeviride "${findText.value}" → "${replaceText.value}" ` +
+          `değişikliği yapılacak. Bunlar incelemeye geri döner. Devam edilsin mi?`,
+      )
+    )
+      return;
+
+    const done = await replaceInTranslations(
+      selected.value, findText.value, replaceText.value, target,
+    );
+    notify(
+      done.blocked > 0 ? 'error' : 'ok',
+      done.blocked > 0
+        ? `${done.changed.toLocaleString('tr')} çeviri değişti, ${done.blocked.toLocaleString('tr')} tanesi kontrollere takıldı.`
+        : `${done.changed.toLocaleString('tr')} çeviri değişti.`,
+    );
+    projects.value = await listProjects();
+    await load();
+  } finally {
+    replacing.value = false;
+  }
+}
 
 /** The filter as the server reads it, shared by the queue and the bulk actions. */
 function queryParams(withPaging = true): Record<string, string> {
@@ -526,6 +585,16 @@ watch(page, load);
       </label>
       <span v-if="picked.length && !wholeFilter" class="muted">{{ picked.length }} satır seçili</span>
       <button v-if="picked.length || wholeFilter" @click="clearSelection">Seçimi bırak</button>
+    </div>
+
+    <!-- Above the pager because it acts on the whole filter, not on the page. -->
+    <div class="toolbar">
+      <input v-model="findText" class="grow" placeholder="Çevirilerde bul (harf duyarlı)…" />
+      <input v-model="replaceText" class="grow" placeholder="Şununla değiştir…" />
+      <button :disabled="!findText || replacing" @click="runReplace">
+        {{ replacing ? 'Değiştiriliyor…' : `Değiştir (${replaceScopeCount.toLocaleString('tr')})` }}
+      </button>
+      <span class="muted">{{ replaceScope }}</span>
     </div>
 
     <Pager :page="page" :total="total" :page-size="PAGE" :busy="loading" @go="goTo" />

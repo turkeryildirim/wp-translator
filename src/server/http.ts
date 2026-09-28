@@ -22,6 +22,7 @@ import {
   bulkSetState,
   listProjects,
   listUnits,
+  replaceInTranslations,
   unitIdsFor,
   overrideCheck,
   saveUnit,
@@ -374,6 +375,37 @@ async function api(
       return send(response, 200, { changed: result.filled, skipped: result.unmatched });
     }
     return send(response, 200, bulkSetState(db, projectId, target, body.action));
+  }
+
+  const replace = /^\/api\/projects\/(\d+)\/replace$/.exec(route);
+  if (method === 'POST' && replace) {
+    const body = (await readJson(request)) as {
+      find?: string;
+      replace?: string;
+      ids?: number[];
+      filter?: string;
+      preview?: boolean;
+    };
+    if (!body.find) return send(response, 400, { error: 'find is required.' });
+
+    // The same scope the bulk actions take: the rows picked, or everything the
+    // current filter and search select — not merely the page on screen.
+    const target = body.ids
+      ? { ids: body.ids }
+      : { filter: readFilter(new URL(`http://x/?${body.filter ?? ''}`)) };
+
+    return send(
+      response,
+      200,
+      replaceInTranslations(
+        db,
+        Number(replace[1]),
+        target,
+        body.find,
+        body.replace ?? '',
+        body.preview === true,
+      ),
+    );
   }
 
   if (method === 'POST' && route === '/api/units/bulk-approve') {

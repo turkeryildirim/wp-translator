@@ -34,7 +34,11 @@ personal glossary, and it cannot run AI translation.
    rows you picked, or the whole catalogue from scratch.
 6. **Review.** A paged queue you filter by what you are looking for. Approve,
    edit and approve, or reject — which empties the string and sends it back to
-   be translated again.
+   be translated again. **Find and replace** works on translations only, literally
+   and with case respected, across whatever the filter and search currently
+   select — not the page in front of you. It counts first and asks before writing,
+   and what it rewrites returns to review, because the approved text is no longer
+   the text.
 7. **Export.** Only approved strings, as a PO GlotPress will import cleanly. The
    panel says how many went in and how many stayed behind, and will not hand you a
    file with nothing in it — a project nobody has approved yet exports nothing, by

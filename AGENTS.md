@@ -245,6 +245,14 @@ measurement if one drove it.
   translated `title` and any ordering; the prompt has to say so, or the model
   produces English tooltips the checks then bless. A test asserts the prompt
   carries both rules.
+- **A bulk action's scope is the filter, not the page.** `targetClause` takes
+  either the picked ids or the whole filter, and the queue, the bulk actions and
+  find-and-replace all go through it. A screenful is never the unit of work.
+- **Find and replace is literal and case-sensitive on purpose.** It rewrites
+  thousands of rows at once, where a loose match is how the wrong ones change —
+  and SQLite's `LIKE` folds ASCII, so `%Alan%` finds `alan` while the replacement
+  rightly does not. It is done in the application for that reason, and because
+  every row it writes has to be re-checked and demoted to `review`.
 - **Nothing that can grow belongs inside a review row.** Editing happens in the
   detail panel. The queue is a table and stays one.
 
