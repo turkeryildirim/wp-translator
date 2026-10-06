@@ -225,6 +225,95 @@ agy's `--json-schema` is what makes that reliable. A row the model cannot be
 asked about is annotated with the reason and left alone, so a configuration
 problem shows up on the page instead of stopping the run.
 
+## Settling what the memory already answers
+
+A pending queue carries rows that need no judgement, because GlotPress's own
+translation memory already answers them: it holds a 100% match for the source
+string, and the only question is whether the submitted wording is that one.
+`userscript/wp-translator-tm-approve.user.js` walks the plugins with something
+pending and settles exactly those rows. It needs no local server and asks no
+model — it reads the suggestions GlotPress loads into the row and presses
+GlotPress's own buttons, so it has the rights your session has and no others.
+
+Three things can happen to a row, and the memory decides which:
+
+- **The wordings are identical** — the row is **approved**.
+- **The memory answers with a different wording** — that wording is **saved**,
+  which as a GTE makes it the current translation and keeps the submission in the
+  history. Where the memory offers several at 100% the first is taken, because
+  that is the one GlotPress itself puts at the top.
+- **The plugin has no code project at all** — its page carries *This plugin is not
+  properly prepared for localization*, which
+  `wporg-gp-customizations/templates/locale-project.php` renders when the project
+  has neither a `dev` nor a `stable` sub-project. Nothing translated there can ever
+  ship, so every pending row is **rejected**, memory or no memory, and the walk
+  takes every sub-project with something pending rather than the usual two. The
+  sentence and the sub-project list say the same thing, and the console says so
+  when they disagree.
+
+Install it alongside the review script and open
+`/locale/tr/default/wp-plugins/?filter=strings-waiting-and-fuzzy-asc`. A second
+panel appears with **Kuru gezinti**, which writes beside every row what would
+happen to it and touches nothing, and **Gez ve uygula**, which does it. A dry run
+is bounded to the first couple of listing pages — `DRY_LIST_PAGES` at the top of
+the script — because what it is there to show is that the memory answers and that
+the comparison picks the right rows, and the first plugins say that. A live run
+takes the whole plugin list before it writes anything, because that listing is
+sorted by what is pending and every write moves a plugin in it — following its
+paging live would walk past whatever crossed a page boundary meanwhile.
+
+Per plugin it works **Development and Development Readme** where there is a
+development project, and Stable and its readme where there is not, taking the
+`waiting` and `fuzzy` queue URLs from the plugin page's own table so a sub-project
+with nothing pending costs no page load. It pages with GlotPress's own `next`, and
+works a page again when it wrote something there: a settled row leaves the queue
+and pulls the next page's rows onto this one.
+
+What it will act on is narrow on purpose:
+
+- **The score has to be 100%.** That number is the similarity of the *source*
+  string, so a 95% suggestion is a translation of a different English string and
+  says nothing about this one.
+- **Identical means identical**, with no folding of case or edge whitespace. The
+  memory holds `Geri yükle`, `Geri Yükle` and `Geri Yükleme` as separate answers
+  for one string, and a trailing space is exactly what GlotPress's own checks are
+  watching — so a wording that differs by either is a wording to save, not one to
+  approve.
+- **Plural rows are skipped**, where the memory is what decides. It answers the
+  singular, and settling a plural row off its singular half settles a form nobody
+  looked at. A rejection does not read the wording, so an unlocalisable plugin's
+  plural rows go with the rest.
+- **Pressing is not doing.** The row's status is what says it happened; a press
+  that leaves the row where it was is counted and annotated, not reported as a
+  write. A save makes a *new* translation, so the row comes back under a new id and
+  the status is watched by the original's id rather than the row's. A row whose
+  write did not take is left alone for the rest of that queue: a save GlotPress
+  stored as `waiting` would otherwise be saved again on every pass over the page.
+- **A refusal is read, not waited out.** The request belongs to the page, so the
+  script wraps `XMLHttpRequest` and `fetch` — which it can because it is granted
+  nothing and runs in the page's own context — and matches the answer to the row by
+  the id in the request body. A non-200, or a 200 whose body says `success: false`,
+  ends the wait at once and the row carries the reason. Success is still the row's
+  status: what a 200 means is GlotPress's business and not something to guess. Where
+  the wrapping does not take, the walk waits for the status as before and the console
+  says so on load.
+- **Rejection is the row's own inline button and nothing else.**
+  `gp-translation-helpers/js/reject-feedback.js` puts a feedback modal in front of
+  the *bulk* reject, and the editor's reject button sits inside that feedback form,
+  so pressing either would wait on a dialog nobody is going to fill.
+- **A pending row with no wording at all** — a `fuzzy` entry left empty — gets the
+  memory's wording saved, because there is nothing to compare and nothing to lose.
+
+A row the script decided about is coloured as well as annotated — approve, save,
+reject, and a press that did not take each get their own colour — and
+both of the string's rows carry it, the queue's and the one opening it left behind,
+because which of them you are looking at is your own doing.
+
+Each source string is asked about once and the answer is kept in the browser, so
+the `Delete` three plugins later costs nothing. **Önbelleği temizle** empties that.
+The run lives in the tab doing it, so another translate.wordpress.org tab is left
+alone, and it picks up where it left off if the tab reloads. **Durdur** ends it.
+
 ## Updating the style guide in an existing database
 
 The guide is seeded once, on first open, so a database created before an edit to
@@ -254,7 +343,7 @@ not, and prints them — that is the signature of a hand edit.
 | `src/judge/` | judging somebody else's translation |
 | `src/ai/` | what the model has already been asked |
 | `style-guide/` | the Turkish style guide seeded into new databases |
-| `userscript/` | the review script for translate.wordpress.org |
+| `userscript/` | the review script and the memory-approval walk for translate.wordpress.org |
 
 ## Tests
 
