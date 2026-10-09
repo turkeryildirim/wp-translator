@@ -5,6 +5,7 @@ import type { Db } from '../db/open.ts';
 import { questionKey, recall, remember, rulesKey } from '../ai/memory.ts';
 import { agyItems, invokeAgy } from '../translate/agy.ts';
 import { collectText, invokeOpencode, jsonArray, providerError } from '../translate/opencode.ts';
+import { unescapeEchoedQuotes } from '../text/escapes.ts';
 import { buildJudgePrompt, toJudgeItems, type JudgeContext } from './prompt.ts';
 import { proposalFor, type Judgement, type Submission } from './verdict.ts';
 
@@ -139,9 +140,17 @@ export async function askModel(
  * none at all.
  */
 function settle(submission: Submission, answer: Judgement): Judgement {
-  const { proposal: _stored, ...rest } = answer;
-  const proposal = rest.expected ? proposalFor(submission, rest.expected) : undefined;
-  return { ...rest, id: submission.id, ...(proposal ? { proposal } : {}) };
+  const { proposal: _derived, expected: _asStored, ...rest } = answer;
+  const expected = answer.expected
+    ? unescapeEchoedQuotes(submission.source, answer.expected)
+    : undefined;
+  const proposal = expected ? proposalFor(submission, expected) : undefined;
+  return {
+    ...rest,
+    id: submission.id,
+    ...(expected ? { expected } : {}),
+    ...(proposal ? { proposal } : {}),
+  };
 }
 
 /**
@@ -212,7 +221,8 @@ export function readOpinions(
     if (!opinion) {
       return { id: submission.id, verdict: 'unknown', reason: 'Model bu dizge için yanıt vermedi.' };
     }
-    const expected = opinion.mine && opinion.mine !== submission.translation ? opinion.mine : undefined;
+    const mine = opinion.mine ? unescapeEchoedQuotes(submission.source, opinion.mine) : undefined;
+    const expected = mine && mine !== submission.translation ? mine : undefined;
     const proposal = expected ? proposalFor(submission, expected) : undefined;
     return {
       id: submission.id,

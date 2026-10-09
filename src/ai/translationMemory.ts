@@ -1,5 +1,6 @@
 import type { Db } from '../db/open.ts';
 import { affixes, questionKey, reapply, recall, remember, rulesKey } from './memory.ts';
+import { unescapeEchoedQuotes } from '../text/escapes.ts';
 import type { RequestItem, ResponseItem } from '../translate/types.ts';
 
 /** What the store holds for one source: the translation, without its shape. */
@@ -48,9 +49,16 @@ export function splitByMemory(
       continue;
     }
 
-    const answer: ResponseItem = { i: item.i, t: reapply(stored.answer.t, affixes(item.s)) };
+    // Repaired on the way out rather than on the way in: an answer stored
+    // before the repair existed is still in here, and reading it is what the
+    // owner hits — memory is never asked again, so a wording the checks refuse
+    // would be refused for ever.
+    const answer: ResponseItem = {
+      i: item.i,
+      t: reapply(unescapeEchoedQuotes(item.s, stored.answer.t), affixes(item.s)),
+    };
     if (stored.answer.tp && item.p) {
-      answer.tp = reapply(stored.answer.tp, affixes(item.p));
+      answer.tp = reapply(unescapeEchoedQuotes(item.p, stored.answer.tp), affixes(item.p));
     }
     known.set(item.i, answer);
   }

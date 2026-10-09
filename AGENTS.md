@@ -92,6 +92,17 @@ measurement if one drove it.
   and naming a file that is not there is what invites the read. Keep the error
   message in `agyItems` naming the denied tool; read as "ignored the schema" it
   sends you looking at the payload instead of at the model.
+- **A model can hand back the payload's own escaping.** The strings ride inline
+  inside `JSON.stringify`, where a quote is `\"`, and an answer sometimes spells
+  it that way too — a whole batch at a time, not a string. `href=\"…\"` is then a
+  tag the source does not have, so the HTML check refuses the wording and the
+  refusal reads as a dropped link. `unescapeEchoedQuotes`
+  (`src/text/escapes.ts`) takes it off where an answer meets the string it was
+  asked about: `reconcile` for both providers, `readOpinions` and `settle` for a
+  judgement, and `splitByMemory` on the way *out* of the store — a remembered
+  answer is never asked for again, so one stored before the repair would be
+  refused for ever. It repairs quotes only, and only where the source carries no
+  backslash: `WordPress\AI` and `\frac{a}{b}` mean theirs.
 - **Judging runs one model call per batch; the concurrency is the script's.**
   `/api/judge` and `/api/propose` each start one batch, and
   `userscript/wp-translator-review.user.js` keeps three of those in flight. It sits

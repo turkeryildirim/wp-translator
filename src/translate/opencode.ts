@@ -3,7 +3,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildPrompt } from './prompt.ts';
-import type { ResponseItem, TranslationProvider, TranslationRequest } from './types.ts';
+import { unescapeEchoedQuotes } from '../text/escapes.ts';
+import type { RequestItem, ResponseItem, TranslationProvider, TranslationRequest } from './types.ts';
 
 export interface OpencodeOptions {
   /**
@@ -281,6 +282,10 @@ function tryParse(candidate: string): unknown[] | undefined {
  * Check the reply covers exactly what was sent. A missing or invented id fails
  * the chunk rather than being guessed at, which is also how a truncated reply
  * is caught.
+ *
+ * It is also where an answer meets the string it was asked about, so it is where
+ * the payload's own escaping is taken back off — both providers come through
+ * here, and a wording is repaired before anything checks or remembers it.
  */
 export function reconcile(
   request: TranslationRequest,
@@ -304,5 +309,14 @@ export function reconcile(
     );
   }
 
-  return request.items.map((item) => byId.get(item.i)!);
+  return request.items.map((item) => unescaped(item, byId.get(item.i)!));
+}
+
+/** One answer with the quotes it echoed out of the payload put back as quotes. */
+function unescaped(asked: RequestItem, answer: ResponseItem): ResponseItem {
+  const repaired: ResponseItem = { i: answer.i, t: unescapeEchoedQuotes(asked.s, answer.t) };
+  if (answer.tp !== undefined) {
+    repaired.tp = unescapeEchoedQuotes(asked.p ?? asked.s, answer.tp);
+  }
+  return repaired;
 }
