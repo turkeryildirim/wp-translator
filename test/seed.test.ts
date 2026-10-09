@@ -42,9 +42,11 @@ describe('a fresh database', () => {
 
     expect(rules).toHaveLength(1);
     expect(rules[0]!.tagId).toBeNull();
-    // The rule that costs the most if missed: sentence case, not title case.
+    // The two rules that cost the most if missed: sentence case rather than title
+    // case, and no suffix on a placeholder. The guide's prose is English and its
+    // examples are Turkish, so one of these is asserted in each language.
     expect(rules[0]!.body).toContain('Tüm değişiklikleri kaydet');
-    expect(rules[0]!.body).toContain('yer tutucuya ek ekleme');
+    expect(rules[0]!.body).toContain('Do not add a suffix to a placeholder');
   });
 
   it('hands that guide to a project’s translation requests', () => {
@@ -55,7 +57,7 @@ describe('a fresh database', () => {
         .run().lastInsertRowid,
     );
 
-    expect(styleGuideFor(db, projectId)).toContain('Türkçe çeviri rehberi');
+    expect(styleGuideFor(db, projectId)).toContain('Turkish translation guide');
   });
 
   it('has no glossary yet, because that needs a fetch', () => {

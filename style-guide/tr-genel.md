@@ -1,205 +1,199 @@
-# Türkçe çeviri rehberi — genel kurallar
+# Turkish translation guide — general rules
 
-Bu metin, çeviri isteklerinin her birinde yapay zekâya sözlük terimleriyle birlikte gönderilir. Bir dil bilgisi ders kitabı değil; **çeviri anında uygulanacak kararlar** listesidir.
+This text is not just a grammar textbook; it is also a list of **decisions to be applied during translation**.
 
-Kaynak: TDK Yazım Kuralları. WordPress'e özgü maddeler ayrıca işaretlendi.
+Source: TDK (Turkish Language Association) Spelling Rules. Items specific to WordPress are marked separately.
 
 ---
 
-## 1. Büyük harf — en sık yapılan hata
+## 1. Capitalization — the most common mistake
 
-**WordPress arayüz metinleri cümle düzeninde yazılır, başlık düzeninde değil.**
+**WordPress interface texts are written in sentence case, not title case.**
 
-İngilizce arayüzde her kelimenin büyük harfle başlaması (*Title Case*) bir **biçem** geleneğidir, dil bilgisi kuralı değil. Türkçede büyük harf yalnızca cümle başında ve özel adlarda kullanılır. Bir düğme metni **emirdir**, başlık değil.
+In English interfaces, capitalizing every word (*Title Case*) is a **style** convention, not a grammatical rule. In Turkish, capital letters are used only at the beginning of sentences and for proper nouns. A button text is a **command**, not a title.
 
-| İngilizce | ✅ Doğru | ❌ Yanlış |
+| English | ✅ Correct | ❌ Incorrect |
 |---|---|---|
 | Save All Changes | Tüm değişiklikleri kaydet | Tüm Değişiklikleri Kaydet |
 | Add New Post | Yeni yazı ekle | Yeni Yazı Ekle |
 | Approve Comment | Yorumu onayla | Yorumu Onayla |
 | Screen Options | Ekran seçenekleri | Ekran Seçenekleri |
 
-Büyük harf **yalnızca** şunlarda:
+Capitalization is used **only** for:
 
-- Cümle başı
-- Özel adlar: `WordPress`, `WooCommerce`, `Ayşe`, `İstanbul`, `Türkçe`
-- Kurum adları: `Türk Dil Kurumu`
-- Millet, dil, din adları: `Türk`, `Türkçe`, `Müslüman`
+- Sentence beginnings
+- Proper nouns: `WordPress`, `WooCommerce`, `Ayşe`, `İstanbul`, `Türkçe`
+- Institution names: `Türk Dil Kurumu`
+- Names of nationalities, languages, and religions: `Türk`, `Türkçe`, `Müslüman`
 
-Kitap, dergi, yazı adlarında her kelime büyük harfle başlar (`Nutuk`, `Türk Dili`) — ama bir arayüz metni yazı adı değildir. **Tereddütte kalınca cümle düzenini seç.**
+In titles of books, magazines, or articles, every word starts with a capital letter (`Nutuk`, `Türk Dili`) — but an interface text is not a book title. **When in doubt, choose sentence case.**
 
 ---
 
-## 2. Yer tutucular ve ekler — WordPress'e özgü
+## 2. Placeholders and suffixes — WordPress specific
 
-`%s`, `%d`, `%1$s` çalışma anında bilinmeyen bir değerle dolar. Değerin son sesi bilinmediği için **ek uyumu hesaplanamaz**.
+`%s`, `%d`, `%1$s` are replaced by values unknown at runtime. Since the final sound of the value is unknown, **suffix harmony cannot be calculated.**
 
-**Kural: yer tutucuya ek ekleme, cümleyi ek gerektirmeyecek şekilde kur.**
+**Rule: Do not add a suffix to a placeholder; structure the sentence so that it does not require one.**
 
-Bu bir tercih değil, yerleşik uygulama: WordPress core, WooCommerce ve BuddyPress'in Türkçe çevirilerinde ~26.000 dizeden **yalnızca 2 tanesinde** yer tutucuya gerçek bir Türkçe eki eklenmiş. Yer tutucuların %52'sini boşluk, %32'sini noktalama, %14'ünü dize sonu izliyor.
+This is not a preference, but a built-in practice: In the Turkish translations of WordPress core, WooCommerce, and BuddyPress, out of ~26,000 strings, **only 2** have an actual Turkish suffix added to a placeholder. 52% of placeholders are followed by a space, 32% by punctuation, and 14% by the end of the string.
 
-| Kaynak | ✅ Doğru | ❌ Yanlış |
+| Source | ✅ Correct | ❌ Incorrect |
 |---|---|---|
 | `Delete %s?` | `%s silinsin mi?` | `%s'yi sil?` |
 | `%s has been updated.` | `%s güncellendi.` | `%s'ı güncellendi.` |
 | `Move to %s` | `Taşınacak yer: %s` | `%s'a taşı` |
 | `Edit %s` | `Düzenle: %s` | `%s'ı düzenle` |
 
-Ekten kaçınılamıyorsa iki yol var: ya değeri tırnağa al (`"%s" silinsin mi?`), ya da eki en geniş biçimde seç ve bunu bilinçli bir istisna olarak işaretle. Yanlış olan, tek bir uyum varsayıp sessizce geçmek: `%s'ın siteleri` dizesinde değer *Ayşe* ise sonuç `Ayşe'ın` olur — doğrusu `Ayşe'nin`.
+If a suffix cannot be avoided, there are two ways: either put the value in quotes (`"%s" silinsin mi?`), or choose the most inclusive suffix and mark it as a conscious exception. What is wrong is to assume a single harmony and pass silently: in the string `%s'ın siteleri`, if the value is *Ayşe*, the result becomes `Ayşe'ın` — the correct form is `Ayşe'nin`.
 
-**Sıra değiştirmek serbesttir ve teşvik edilir.** `%1$s`, `%2$s` biçimi tam bu yüzden vardır:
+**Changing the order is permitted and encouraged.** This is exactly why the `%1$s`, `%2$s` format exists:
 `%1$s in %2$s` → `%2$s içinde %1$s`
 
 ---
 
-## 2b. HTML içeren dizeler
+## 2b. Strings containing HTML
 
-Etiketler ve **yapısal** öznitelikler olduğu gibi kalır: `href`, `src`, `class`, `id`,
-`target`, `rel`. Bunlarda yer tutucu varsa (`href="%1$s"`) birebir korunur.
+Tags and **structural** attributes remain as they are: `href`, `src`, `class`, `id`, `target`, `rel`. If they contain placeholders (`href="%1$s"`), they are preserved exactly.
 
-Ama **kullanıcının gördüğü öznitelik metinleri çevrilir**: `title`, `alt`,
-`aria-label`, `placeholder`. Bunlar ekranda görünen ya da ekran okuyucunun
-seslendirdiği metinlerdir; İngilizce bırakmak onları çevrilmemiş arayüz yapar.
+However, **attribute texts visible to the user must be translated**: `title`, `alt`, `aria-label`, `placeholder`. These are texts seen on the screen or read by screen readers; leaving them in English makes them untranslated interface elements.
 
 | | |
 |---|---|
 | ✅ | `<a href="%1$s" title="Sharing Docs">` → `<a href="%1$s" title="Paylaşma belgeleri">` |
-| ❌ | `<a href="%2$s" title="Sharing Docs">` — href değişmiş |
-| ❌ | `<a href="%1$s">` — title silinmiş |
-| ❌ | `<a href="%1$s" title="Sharing Docs">` — title çevrilmemiş |
+| ❌ | `<a href="%2$s" title="Sharing Docs">` — href changed |
+| ❌ | `<a href="%1$s">` — title deleted |
+| ❌ | `<a href="%1$s" title="Sharing Docs">` — title not translated |
 
-Özniteliği **silme**; yalnızca değerini çevir.
+**Do not delete** the attribute; only translate its value.
 
-**Sıra serbesttir.** Etiketlerin ve yer tutucuların cümle içindeki yeri Türkçe söz
-dizimine göre değişebilir; önemli olan sayılarının ve biçimlerinin aynı kalması.
-`<b>A</b> and <i>B</i>` → `<i>B</i> ve <b>A</b>` doğrudur.
+**Order is flexible.** The positions of tags and placeholders within the sentence can change according to Turkish syntax; what matters is that their quantity and formats remain the same. `<b>A</b> and <i>B</i>` → `<i>B</i> ve <b>A</b>` is correct.
 
 ---
 
-## 3. Kesme işareti
+## 3. Apostrophe
 
-**Kullanılır:**
+**Used for:**
 
-- Özel ada gelen çekim eki: `WordPress'te`, `Türkiye'nin`, `Ayşe'ye`
-- Kısaltmaya gelen ek: `TDK'nin`, `URL'yi`, `API'den`, `HTML'e`
-- Sayıya gelen ek: `2024'te`, `8'inci`, `%50'si`
-- Harf ve hece: `a'dan z'ye`
+- Inflectional suffixes attached to proper nouns: `WordPress'te`, `Türkiye'nin`, `Ayşe'ye`
+- Suffixes attached to abbreviations: `TDK'nin`, `URL'yi`, `API'den`, `HTML'e`
+- Suffixes attached to numbers: `2024'te`, `8'inci`, `%50'si`
+- Letters and syllables: `a'dan z'ye`
 
-**Kullanılmaz:**
+**Not used for:**
 
-- Yapım eki: `Türkçe`, `Türklük`, `WordPressçi` *(ad değil, türetilmiş sözcük)*
-- Çokluk eki: `Ahmetler`
-- Kurum adına gelen ek: `Türk Dil Kurumundan` *(kesmesiz)*
-- Cins adlar: `sitede`, `yazıda`, `eklentiden`
-
----
-
-## 4. Ek uyumu
-
-**Ünsüz uyumu.** Sert ünsüzle (`ç f h k p s ş t`) biten sözcük sert ünsüzle başlayan ek alır:
-`seç-ti`, `bak-tım`, `çiçek-ten`, `link-ten` — `seç-di` ✗
-
-**Küçük ünlü uyumu.** Düz ünlüden sonra düz, yuvarlaktan sonra dar yuvarlak veya geniş düz gelir. Alıntı sözcüklerde aranmaz (`doktor`, `radyo`, `alkol`), ama onlara gelen ek son ünlüye uyar: `müzik-çi`, `alkol-lü`.
-
-**Ünlü düşmesi.** İki heceli bazı sözcüklerde ikinci hecenin dar ünlüsü, ünlüyle başlayan ek alınca düşer: `ağız → ağzı`, `burun → burnu`, `şehir → şehri`.
-Ama `içeri`, `dışarı`, `yukarı`, `ileri` sözcüklerinin ünlüsü **düşmez**: `içeride` ✅ / `içerde` ✗
-
-**Ünsüz türemesi.** Arapça kökenli bazı sözcükler ünlüyle başlayan ek alınca son ünsüzünü ikizler: `hak → hakkı`, `af → affetmek`, `his → hissetmek`, `ret → reddi`, `zam → zammı`.
-
-**Ünsüz yumuşaması.** Sonu `p ç t k` ile biten alıntı sözcükler ünlüyle başlayan ek alınca yumuşar: `kitap → kitabı`, `renk → rengi`.
-
-**Ünlü daralması.** `-yor` eki önünde `a/e` daralır ve **yazıya geçer**: `başla-yor → başlıyor`, `izle-yor → izliyor`. Ama çok heceli fiillerde `-acak/-ecek`, `-an/-en` önünde daralma **yazılmaz**: `başlayacak` ✅ / `başlıyacak` ✗, `gelmeyen` ✅ / `gelmiyen` ✗
-İstisna: `demek` ve `yemek` — `diyen`, `diyecek`, `yiyecek` yazılır (ama `deyince`, `deyip`).
-
-**Mastara gelen ek.** `-ma/-me` ile biten mastara `-a/-e` veya `-ı/-i` gelirse araya `y` girer: `okuma-y-a`, `görme-y-i`, `silme-y-i`.
+- Derivational suffixes: `Türkçe`, `Türklük`, `WordPressçi` *(not a proper noun, a derived word)*
+- Plural suffixes: `Ahmetler`
+- Suffixes attached to institution names: `Türk Dil Kurumundan` *(without apostrophe)*
+- Common nouns: `sitede`, `yazıda`, `eklentiden`
 
 ---
 
-## 5. Ayrı mı, bitişik mi
+## 4. Suffix harmony
 
-| Yapı | Kural | Örnek |
+**Consonant harmony.** Words ending with voiceless consonants (`ç f h k p s ş t`) take suffixes starting with voiceless consonants: `seç-ti`, `bak-tım`, `çiçek-ten`, `link-ten` — `seç-di` ✗
+
+**Minor vowel harmony.** After an unrounded vowel comes an unrounded one; after a rounded vowel comes a close-rounded or open-unrounded one. This is not sought in loanwords (`doktor`, `radyo`, `alkol`), but the suffixes attached to them must match the final vowel: `müzik-çi`, `alkol-lü`.
+
+**Vowel syncope.** In some two-syllable words, the close vowel of the second syllable drops when a suffix starting with a vowel is added: `ağız → ağzı`, `burun → burnu`, `şehir → şehri`.
+However, the vowels in `içeri`, `dışarı`, `yukarı`, `ileri` **do not drop**: `içeride` ✅ / `içerde` ✗
+
+**Consonant gemination.** Some words of Arabic origin double their final consonant when a suffix starting with a vowel is added: `hak → hakkı`, `af → affetmek`, `his → hissetmek`, `ret → reddi`, `zam → zammı`.
+
+**Consonant lenition.** Loanwords ending in `p ç t k` soften when a suffix starting with a vowel is added: `kitap → kitabı`, `renk → rengi`.
+
+**Vowel narrowing.** Before the `-yor` suffix, `a/e` narrows and **this is written**: `başla-yor → başlıyor`, `izle-yor → izliyor`. However, in multi-syllable verbs, narrowing is **not written** before `-acak/-ecek` and `-an/-en`: `başlayacak` ✅ / `başlıyacak` ✗, `gelmeyen` ✅ / `gelmiyen` ✗
+Exception: `demek` and `yemek` — `diyen`, `diyecek`, `yiyecek` are written (but `deyince`, `deyip`).
+
+**Suffixes for infinitives.** If `-a/-e` or `-ı/-i` are added to an infinitive ending in `-ma/-me`, a `y` is inserted: `okuma-y-a`, `görme-y-i`, `silme-y-i`.
+
+---
+
+## 5. Separate or joined
+
+| Structure | Rule | Example |
 |---|---|---|
-| Bağlaç `da/de` | **Ayrı**, kesmesiz, asla `ta/te` olmaz | `Ayşe de geldi`, `ya da` |
-| Bulunma eki `-da/-de/-ta/-te` | **Bitişik** | `yolda`, `işte`, `sitede` |
-| Bağlaç `ki` | **Ayrı** | `demek ki`, `kaldı ki` |
-| Kalıplaşmış `ki` | **Bitişik** | `belki`, `çünkü`, `hâlbuki`, `sanki`, `oysaki`, `mademki` |
-| Soru eki `mı/mi/mu/mü` | **Ayrı**, sonraki ek ona bitişir | `Kaldı mı?`, `Verecek misin?`, `Silinsin mi?` |
-| `ile` | Ayrı ya da bitişik | `bulut ile` / `bulutla`, `çevre-y-le` |
-| Ek fiil `idi/imiş/ise/iken` | Ayrı ya da bitişik | `yorgundu`, `gelirse`, `okuldayken` |
-| Deyimler | **Ayrı** | `göz atmak`, `kulak vermek` |
-| İkilemeler | **Ayrı**, tiresiz | `adım adım`, `yavaş yavaş`, `el ele` |
-| Pekiştirmeli sözler | **Bitişik** | `bembeyaz`, `kupkuru`, `dümdüz` |
-| `etmek/olmak` ile kurulanlar | Ses değişmiyorsa **ayrı** | `kabul etmek`, `var olmak` — ama `kaybolmak`, `emretmek` |
+| Conjunction `da/de` | **Separate**, no apostrophe, never `ta/te` | `Ayşe de geldi`, `ya da` |
+| Locative suffix `-da/-de/-ta/-te` | **Joined** | `yolda`, `işte`, `sitede` |
+| Conjunction `ki` | **Separate** | `demek ki`, `kaldı ki` |
+| Fixed/Idiomatic `ki` | **Joined** | `belki`, `çünkü`, `hâlbuki`, `sanki`, `oysaki`, `mademki` |
+| Question suffix `mı/mi/mu/mü` | **Separate**, following suffixes join to it | `Kaldı mı?`, `Verecek misin?`, `Silinsin mi?` |
+| `ile` | Separate or joined | `bulut ile` / `bulutla`, `çevre-y-le` |
+| Copula `idi/imiş/ise/iken` | Separate or joined | `yorgundu`, `gelirse`, `okuldayken` |
+| Idioms | **Separate** | `göz atmak`, `kulak vermek` |
+| Reduplications | **Separate**, no hyphens | `adım adım`, `yavaş yavaş`, `el ele` |
+| Intensifiers | **Joined** | `bembeyaz`, `kupkuru`, `dümdüz` |
+| Formed with `etmek/olmak` | **Separate** if no sound change | `kabul etmek`, `var olmak` — but `kaybolmak`, `emretmek` |
 
-`da/de` ayrımı arayüzde sık karışır: *"Bu sayfada da görünür"* (bağlaç, ayrı) / *"Bu sayfada görünür"* (ek, bitişik).
-
----
-
-## 6. Sayılar, simgeler, birimler
-
-- Saat, para, ölçü, istatistik **rakamla**: `17.30`, `%25`, `5 MB`
-- Yüzde ve binde işaretinden sonra boşluk yok: `%25` ✅ / `% 25` ✗
-- Sıra sayısı: `15.` ya da `15'inci` — ikisi birden değil (`15'nci` ✗)
-- Dört ve daha çok basamaklı sayılar üçerli gruplanır: `1.000`, `326.197`
-- Üleştirme sayıları **yazıyla**: `ikişer` ✅ / `2'şer` ✗
-- Birim simgelerinden sonra nokta konmaz: `5 cm`, `10 kg`
-- Ek, simgeye değil sözcüğün okunuşuna göre gelir: `5 MB'a` değil, mümkünse `5 MB boyutunda`
+The `da/de` distinction is often confused in interfaces: *"Bu sayfada da görünür"* (conjunction, separate) / *"Bu sayfada görünür"* (suffix, joined).
 
 ---
 
-## 7. Noktalama
+## 6. Numbers, symbols, units
 
-- Noktalama işaretleri kendinden önceki sözcüğe **bitişik**, sonrasında bir boşluk
-- Üç nokta tek karakterdir: `…` (üç ayrı nokta değil)
-- `ve` bağlacından önce virgül konmaz
-- Tırnak içindeki cümlenin noktalaması tırnağın **içinde** kalır
-- İngilizce tırnak `"` yerine Türkçe metinde `"…"` tercih edilir — **ama arayüz dizelerinde kaynaktaki karakteri koru**, HTML ve JSON bozulabilir
-
-**Kaynaktaki noktalamayı koru.** Kaynak `Save changes` ise çeviri `Değişiklikleri kaydet` olur, `Değişiklikleri kaydet.` değil. Kaynak nokta ile bitiyorsa çeviri de bitmeli.
-
----
-
-## 8. Alıntı sözcükler ve yabancı adlar
-
-- Yerleşmiş alıntılar Türkçe yazımla: `program`, `proje`, `spor`, `tren`, `elektrik`, `paragraf`
-- Latin alfabesi kullanan dillerden özel adlar **özgün yazımıyla**: `WordPress`, `WooCommerce`, `Gutenberg`, `New York`
-- Yerleşmiş biçimi olanlar Türkçe yazımla: `Londra`, `Atina`, `Napolyon`
-- Terim tercihleri sözlükte tutulur; rehber değil sözlük belirler. Genel eğilim: yerleşmiş Türkçe karşılık varsa o kullanılır (`e-posta`, `bağlantı`, `eklenti`, `tema`), yoksa özgün terim korunur (`plugin` değil `eklenti`; ama `widget`, `blok` gibi yerleşmişlerde sözlüğe bak).
+- Time, currency, measurement, statistics in **digits**: `18:30`, `5 TL`, `5 TRY`, `651317,3034`, `%25`, `5 MB`
+- No space after percent and per-mille signs: `%25` ✅ / `% 25` ✗
+- Ordinal numbers: `15.` or `15'inci` — not both (`15.'nci` ✗)
+- Numbers with four or more digits are grouped by threes: `1.000`, `1.000,4765`, `326.197`
+- Distributive numerals are written **in words**: `ikişer` ✅ / `2'şer` ✗
+- No period after unit symbols: `5 cm`, `10 kg`
+- The suffix follows the reading of the word, not the symbol: not `5 MB'a`, but `5 MB boyutunda` if possible.
 
 ---
 
-## 9. Düzeltme işareti (şapka)
+## 7. Punctuation
 
-- Anlam ayırmak için: `hala` (teyze) / `hâlâ` (henüz), `adem` / `âdem`
-- `g`, `k`, `l` ince okunuyorsa: `kâğıt`, `dergâh`, `Elâzığ`
-- Nispet eki `-î`: `millî`, `resmî`, `dinî` — `dini` (onun dini) ile karışmasın
+- Punctuation marks are **joined** to the preceding word, followed by a space
+- Ellipsis is a single character: `…` (not three separate dots)
+- No comma before the `ve` conjunction
+- Punctuation of a quoted sentence stays **inside** the quotes
+- The `&` symbol does not exist in Turkish. This character and its HTML entity equivalent `&amp;` must be translated and used as "ve".
 
-Uzun ünlüler bunun dışında **işaretlenmez**: `adalet`, `şair`, `numune`.
+**Preserve the punctuation in the source.** If the source is `Save changes`, the translation is `Değişiklikleri kaydet`, not `Değişiklikleri kaydet.` If the source ends with a period, the translation must end with one too.
 
 ---
 
-## 10. Arayüz metni türüne göre
+## 8. Loanwords and foreign names
 
-| Tür | Biçim | Örnek |
+- Established loanwords are written with Turkish spelling: `program`, `proje`, `spor`, `tren`, `elektrik`, `paragraf`
+- Proper nouns from languages using the Latin alphabet are written in their **original form**: `WordPress`, `WooCommerce`, `Gutenberg`, `New York`
+- Those with established forms are written in Turkish: `Londra`, `Atina`, `Napolyon`
+- Term preferences are kept in the glossary; the glossary, not this guide, determines them. General trend: if there is an established Turkish equivalent, it is used (`e-posta`, `bağlantı`, `eklenti`, `tema`); otherwise, the original term is kept (not `plugin` but `eklenti`; but check the glossary for established ones like `widget`, `blok`).
+
+---
+
+## 9. Circumflex (caret)
+
+- To distinguish meaning: `hala` (aunt) / `hâlâ` (still/yet), `adem` (human) / `âdem` (humanity)
+- If `g`, `k`, `l` are read softly: `kâğıt`, `dergâh`, `Elâzığ`
+- Relative suffix `-î`: `millî`, `resmî`, `dinî` — so it doesn't mix with `dini` (his religion)
+
+Long vowels are **not marked** otherwise: `adalet`, `şair`, `numune`.
+
+---
+
+## 10. By interface text type
+
+| Type | Format | Example |
 |---|---|---|
-| Düğme | Emir kipi, cümle düzeni, nokta yok | `Kaydet`, `Yeni yazı ekle` |
-| Menü / sekme | Ad öbeği, cümle düzeni | `Ekran seçenekleri` |
-| Başlık | Cümle düzeni | `Yorum ayarları` |
-| Onay sorusu | Soru, `mi` ayrı | `Bu yazı silinsin mi?` |
-| Bilgi mesajı | Tam cümle, nokta ile | `Değişiklikleriniz kaydedildi.` |
-| Hata mesajı | Ne olduğunu ve ne yapılacağını söyle | `Dosya yüklenemedi. Boyutu 2 MB'ı aşıyor.` |
-| Alan etiketi | Kısa ad öbeği, iki nokta yok | `E-posta adresi` |
-| Yer tutucu metin | Örnek değer | `ornek@site.com` |
+| Button | Imperative, sentence case, no period | `Kaydet`, `Yeni yazı ekle` |
+| Menu / tab | Noun phrase, sentence case | `Ekran seçenekleri` |
+| Heading | Sentence case | `Yorum ayarları` |
+| Confirmation | Question, `mi` separate | `Bu yazı silinsin mi?` |
+| Info message | Full sentence, with period | `Değişiklikleriniz kaydedildi.` |
+| Error message | State what it is and what to do | `Dosya yüklenemedi. Boyutu 2 MB'ı aşıyor.` |
+| Field label | Short noun phrase, no colon | `E-posta adresi` |
+| Placeholder text | Example value | `ornek@site.com` |
 
-**Uzun metinler (paragraf, e-posta gövdesi).** Cümle cümle çevir, İngilizce cümle sınırlarını koru. Satır sonları (`\n`), boş satırlar ve HTML yapısı kaynaktaki gibi kalmalı — bunlar boşluk değil, biçimdir.
+**Long texts (paragraphs, email bodies).** Translate sentence by sentence, maintain English sentence boundaries. Line breaks (`\n`), empty lines, and HTML structure must remain as in the source — these are formatting, not whitespace.
 
-**Siz/sen.** WordPress Türkçe çevirilerinde kullanıcıya **siz** diye hitap edilir, ama edilgen ve emir yapıları yüzünden çoğu dizede hitap hiç geçmez. Gereksiz yere özne ekleme: `Değişiklikleriniz kaydedildi.` ✅ / `Siz değişikliklerinizi kaydettiniz.` ✗
+**You/Formal.** In WordPress Turkish translations, the user is addressed as **you (siz)**, but due to passive and imperative structures, the address often doesn't appear in most strings. Do not add a subject unnecessarily: `Değişiklikleriniz kaydedildi.` ✅ / `Siz değişikliklerinizi kaydettiniz.` ✗
 
 ---
 
-## Açık maddeler
+## Open items
 
-Aşağıdakiler henüz karara bağlanmadı; sahibi doldurur:
+The following have not yet been decided; the owner will fill them in:
 
-- Terim tercihleri tablosu (sözlükte tutulacak, burada değil)
-- Etiket bazlı ek kurallar (e-ticaret, form, SEO…) ayrı dosyalarda
+- Table of term preferences (will be kept in the glossary, not here)
+- Tag-based additional rules (e-commerce, form, SEO…) in separate files
