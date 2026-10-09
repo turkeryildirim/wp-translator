@@ -42,6 +42,31 @@ describe('judging when the model cannot be reached', () => {
     ]);
   });
 
+  it('says the provider was unreachable, beside rows that were settled anyway', async () => {
+    // A caller walking thousands of rows has to stop on a CLI that is out of
+    // quota, and cannot see one from the verdicts: measured against a dead plan,
+    // the batch came back with one `unknown` reading *Insufficient balance*
+    // beside a row the glossary had settled, so "every verdict is unknown" would
+    // have walked straight past it.
+    const result = await judgeSubmissions(db, {
+      items: [
+        { id: 1, source: 'Save', translation: 'Kaydet' },
+        { id: 3, source: 'Sharing docs', translation: 'Paylaşma belgeleri' },
+      ],
+    });
+
+    expect(result.judgements[0]!.verdict).toBe('exact');
+    expect(result.unreachable).toMatch(/did not answer within 120s/);
+  });
+
+  it('says nothing about reachability when the model was never needed', async () => {
+    const result = await judgeSubmissions(db, {
+      items: [{ id: 1, source: 'Save', translation: 'Kaydet' }],
+    });
+
+    expect(result).not.toHaveProperty('unreachable');
+  });
+
   it('carries the provider’s own error into the reason', async () => {
     // The verdict reaches a row as an annotation, so the reason is the only place
     // the owner can learn why nothing was decided.
@@ -126,5 +151,17 @@ describe('a judgement served from memory', () => {
 
     expect(result.judgements[0]!.expected).toBe('Şimdi kullan');
     expect(result.judgements[0]).not.toHaveProperty('proposal');
+  });
+
+  it('is not served to the same string under another context', async () => {
+    // The context is part of what the model was shown, so it is part of the
+    // question. Without it the answer about a post's status would settle the
+    // verb, and a model that was never asked would appear to have agreed.
+    const { judgeKey } = await import('../src/judge/ask.ts');
+    const status = { id: 9, source: 'Draft', context: 'post status', translation: 'Taslak' };
+    const verb = { id: 9, source: 'Draft', context: 'verb', translation: 'Taslak' };
+
+    expect(judgeKey(status)).not.toBe(judgeKey(verb));
+    expect(judgeKey(status)).not.toBe(judgeKey({ id: 9, source: 'Draft', translation: 'Taslak' }));
   });
 });

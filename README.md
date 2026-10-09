@@ -330,6 +330,64 @@ the `Delete` three plugins later costs nothing. **Önbelleği temizle** empties 
 The run lives in the tab doing it, so another translate.wordpress.org tab is left
 alone, and it picks up where it left off if the tab reloads. **Durdur** ends it.
 
+## Spending the work where it can ship
+
+A locale is shown in a plugin once its translation reaches 90%. Three good
+suggestions on a project at 5% therefore change nothing at all, and checking them
+by hand costs exactly what checking the ones that matter costs.
+`userscript/wp-translator-tier-run.user.js` asks each sub-project one question
+before it reads a single row: **if every waiting and fuzzy row in it were settled,
+what would it reach?** The answer decides what happens to the rows.
+
+- **75% or more** — within reach of shipping, so it is yours to look at. The
+  sub-project is listed and its rows are left alone. **Elle listesi** copies the
+  list; it survives resetting the run, because it is the only thing the run
+  produces that nothing else records.
+- **25% to 74%** — worth closing. GlotPress's own memory settles what it answers
+  at 100%, exactly as the memory walk does: identical is approved, different is
+  saved. What it does not answer goes to the local server with the source, the
+  `msgctxt` and the submitted wording — the glossary and the quality checks there
+  settle what they can before any model is asked. The tool agreeing approves the
+  row; the tool offering another wording saves that instead, but only a wording
+  the checks have already accepted. Anything else is annotated and left.
+- **Under 25%** — out of reach whatever is done to the queue, so every waiting and
+  fuzzy row is rejected, plural rows included.
+
+The projection is not the size of the queue. GlotPress counts originals in `All`
+and translations in the status columns, so a string that already has a current
+translation *and* a pending suggestion is counted in two of them — and approving
+that row replaces a translation that was already current, moving the percentage by
+nothing. What it is:
+
+```
+projected = ceil((All - Untranslated - Changes requested) / All * 100)
+```
+
+Those four numbers come from the filter bar of the page the rows are on, which
+carries the set's counts whether or not a filter is applied. The percentages the
+site itself prints are not used: they come from cached counters on the translation
+set and disagree with the live counts in both directions.
+
+Install it alongside the other two and open
+`/locale/tr/default/wp-plugins/?filter=strings-waiting-and-fuzzy-asc`. **Deneme**
+writes beside every row what would happen and presses nothing. It still asks the
+memory and the model, so it is bounded to the first couple of listing pages —
+`DRY_LIST_PAGES` at the top of the script — because what it is there to show is
+that the bands land where they should, and the first plugins say that; what it
+asks the model is remembered for the live run either way. **Çalıştır** does it. The listing
+runs to dozens of pages and its last ones carry thousands of rows each, so the run
+is long by nature: it keeps where it was outside the tab, **Durdur** ends it with
+that kept, and **Devam** picks it up. A provider that cannot be reached stops the
+run by itself — the server says so as a field rather than as a verdict, because a
+CLI that is out of quota hangs rather than failing, and the glossary settles rows
+in the same batch it would otherwise hide behind.
+
+It reaches the server from the page's own context, so `/api/*` answers
+`https://translate.wordpress.org` and nothing else. In Chrome a page calling
+127.0.0.1 is a private-network request the browser decides about before the server
+sees it; the preflight grants it, and a refusal there leaves no trace in the
+server's log.
+
 ## Updating the style guide in an existing database
 
 The guide is seeded once, on first open, so a database created before an edit to
@@ -362,7 +420,7 @@ not, and prints them — that is the signature of a hand edit.
 | `src/ai/` | what the model has already been asked |
 | `src/text/` | the whitespace a stored word is put back into |
 | `style-guide/` | the Turkish style guide seeded into new databases |
-| `userscript/` | the review script and the memory-approval walk for translate.wordpress.org |
+| `userscript/` | the three translate.wordpress.org walks: review, memory approval, completion tiers |
 
 ## Tests
 

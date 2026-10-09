@@ -101,10 +101,56 @@ async function handle(
   const url = new URL(request.url ?? '/', 'http://localhost');
   const route = url.pathname;
 
-  if (route.startsWith('/api/')) return api(options, request, response, url);
+  if (route.startsWith('/api/')) {
+    if (cors(request, response)) return;
+    return api(options, request, response, url);
+  }
   if (options.panelDir) return serveStatic(options.panelDir, route, response);
 
   send(response, 404, { error: 'Not found' });
+}
+
+/**
+ * The one page outside this server that may talk to it from a browser.
+ *
+ * The userscript that walks the pending queues runs in that page's own context,
+ * so its requests to 127.0.0.1 carry that origin and the browser refuses them
+ * without these headers. Exactly that origin is answered and no other: a header
+ * written for every origin would put an unauthenticated database behind whatever
+ * page the owner happens to have open.
+ */
+export const ALLOWED_ORIGIN = 'https://translate.wordpress.org';
+
+/**
+ * Answer the browser's side of a cross-origin call. True when the request was a
+ * preflight and is now answered, so there is nothing left to route.
+ */
+export function cors(request: IncomingMessage, response: ServerResponse): boolean {
+  const allowed = request.headers.origin === ALLOWED_ORIGIN;
+  if (allowed) {
+    response.setHeader('access-control-allow-origin', ALLOWED_ORIGIN);
+    // The answer differs by origin, and a cache that does not know that would
+    // hand the header to a page it was never written for.
+    response.setHeader('vary', 'Origin');
+  }
+
+  if ((request.method ?? 'GET') !== 'OPTIONS') return false;
+
+  // A public page reaching 127.0.0.1 is a private-network request. Chrome asks
+  // about it on the preflight and refuses the real request unless the preflight
+  // grants it — and that refusal happens in the browser, so without this the
+  // request never reaches this process and leaves no trace here at all.
+  if (allowed && request.headers['access-control-request-private-network'] === 'true') {
+    response.setHeader('access-control-allow-private-network', 'true');
+  }
+
+  response.writeHead(204, {
+    'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
+    'access-control-allow-headers': 'content-type',
+    'access-control-max-age': '600',
+  });
+  response.end();
+  return true;
 }
 
 async function api(

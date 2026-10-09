@@ -37,14 +37,39 @@ const SCHEMA = {
   required: ['items'],
 };
 
-/** The exact question a submission puts to the model, hashed as the memory key. */
+/**
+ * The exact question a submission puts to the model, hashed as the memory key.
+ *
+ * `msgctxt` is part of the question because it is part of what the model is shown
+ * and changes the answer: `Draft` as a post status and `Draft` as a verb are two
+ * questions. It is the only key in the tool that reads a context — matching never
+ * does — and that is why: this one is a model's opinion, not a glossary lookup.
+ */
 export const judgeKey = (submission: Submission): string =>
   questionKey([
     submission.source,
     submission.sourcePlural ?? '',
+    submission.context ?? '',
     submission.translation,
     submission.translationPlural ?? '',
   ]);
+
+export interface AskResult {
+  judgements: Judgement[];
+  /** How many reached the model, rather than its memory. */
+  asked: number;
+  /**
+   * Why the provider could not be asked at all, where that is what happened.
+   *
+   * An `unknown` verdict says nothing about which of two things went wrong: the
+   * model answered the batch and skipped this one id, or there was no answer
+   * because the CLI is out of quota and hanging. A caller walking thousands of
+   * rows has to tell them apart — the first is one row to leave alone, the second
+   * is a reason to stop — and it cannot do that from a sentence, nor from "every
+   * verdict is unknown", because the glossary settles rows in the same batch.
+   */
+  unreachable?: string;
+}
 
 export interface AskOptions {
   /** Which CLI to ask. agy enforces the answer's shape; opencode is parsed. */
@@ -69,7 +94,7 @@ export async function askModel(
   submissions: readonly Submission[],
   context: JudgeContext,
   options: AskOptions = {},
-): Promise<{ judgements: Judgement[]; asked: number }> {
+): Promise<AskResult> {
   if (submissions.length === 0) return { judgements: [], asked: 0 };
 
   const rules = rulesKey(context.styleGuide);
@@ -83,6 +108,7 @@ export async function askModel(
   }
 
   let silence = 'Model bu dizge için yanıt vermedi.';
+  let unreachable: string | undefined;
 
   if (toAsk.length > 0) {
     const directory = await mkdtemp(join(tmpdir(), 'wp-translator-judge-'));
@@ -99,7 +125,8 @@ export async function askModel(
       // glossary already settled are worth keeping, and nothing is ever approved
       // on an `unknown`. The reason carries the error so it reaches the row.
       if (options.signal?.aborted) throw problem;
-      silence = `Model yanıt vermedi: ${problem instanceof Error ? problem.message : String(problem)}`;
+      unreachable = problem instanceof Error ? problem.message : String(problem);
+      silence = `Model yanıt vermedi: ${unreachable}`;
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -114,7 +141,11 @@ export async function askModel(
           keyHash: judgeKey(submission),
           rulesHash: rules,
           sourceText: submission.source,
-          question: { source: submission.source, translation: submission.translation },
+          question: {
+            source: submission.source,
+            ...(submission.context ? { context: submission.context } : {}),
+            translation: submission.translation,
+          },
           answer: forget(judgement),
           model: options.model ?? null,
         });
@@ -128,6 +159,7 @@ export async function askModel(
         answers.get(submission.id) ?? { id: submission.id, verdict: 'unknown', reason: silence },
     ),
     asked: toAsk.length,
+    ...(unreachable ? { unreachable } : {}),
   };
 }
 

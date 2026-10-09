@@ -159,6 +159,34 @@ measurement if one drove it.
 - **agy has no effort flag worth passing.** Its models carry the effort in the id
   (`gemini-3.8-flash-low`), and `--effort` on one of those exits 1 with "not
   supported for the current model". Choose the model, not a flag.
+- **A sub-project's completion is not the sum of its status columns.** GlotPress
+  counts *originals* in `All` and *translations* in Translated/Fuzzy/Untranslated/
+  Waiting/Changes requested, so one original carrying both a current translation
+  and a pending suggestion is counted twice across them and the columns overshoot
+  `All`. Approving such a row moves the percentage by nothing — it replaces a
+  translation that was already current. What a queue can reach is therefore
+  `ceil((All − Untranslated − ChangesRequested) / All × 100)` and not anything
+  involving the size of the queue; `projectionOf` in
+  `userscript/wp-translator-tier-run.user.js` is where that lives.
+- **The percentages the site prints come from cached counters on the translation
+  set.** They disagree with the live filter-bar counts in *both* directions, so no
+  rounding rule reproduces them and they are not something to cross-check against.
+  Decide on the live counts; the filter bar carries the whole set whether or not a
+  filter is applied.
+- **An `unknown` verdict does not say the provider is down.** It is also what a
+  model skipping one id looks like, and the two call for opposite things: leave the
+  row, or stop the run. "Every verdict is unknown" does not separate them either,
+  because the checks and the glossary settle rows in the same batch — a plan out of
+  balance comes back as one `unknown` reading *Insufficient balance* beside a
+  `flagged` the glossary decided. `JudgeResult.unreachable` is the signal; the
+  reason text is not.
+- **`/api/*` answers one browser origin, and the browser decides first.** The
+  completion walk runs in translate.wordpress.org's own context, so `cors` in
+  `src/server/http.ts` writes the headers for exactly that origin. A page on HTTPS
+  calling 127.0.0.1 is a private-network request: Chrome asks on the preflight and
+  blocks the real request itself when the answer is missing, which leaves nothing
+  at all in the server's log. `Access-Control-Allow-Private-Network` is what keeps
+  that from reading as a server that is not listening.
 - **translate.wordpress.org rate-limits a tight loop.** No `Retry-After`, no
   headers — a run of sequential requests eventually returns 429 and the same URL
   succeeds seconds later. `src/wporg/fetch.ts` paces and retries; keep it.

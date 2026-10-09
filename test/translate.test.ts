@@ -7,7 +7,7 @@ import {
   reconcile,
 } from '../src/translate/opencode.ts';
 import { NO_TOOLS, buildPrompt } from '../src/translate/prompt.ts';
-import { buildJudgePrompt } from '../src/judge/prompt.ts';
+import { buildJudgePrompt, toJudgeItems } from '../src/judge/prompt.ts';
 import type { TranslationRequest } from '../src/translate/types.ts';
 
 const event = (type: string, text?: string) =>
@@ -143,6 +143,29 @@ describe('the prompt', () => {
     expect(buildPrompt({ styleGuide: '', terms: [] })).toContain(NO_TOOLS);
     expect(buildJudgePrompt({ styleGuide: '', terms: [] })).toContain(NO_TOOLS);
     expect(NO_TOOLS).toMatch(/araç/);
+  });
+
+  it('explains the context field, and says not to translate it', () => {
+    // `msgctxt` is what separates two readings of one English word, so it is
+    // worth sending — and worth saying what it is: an item where `c` reads as
+    // another string to translate is one the model answers with the context.
+    const prompt = buildJudgePrompt({ styleGuide: '', terms: [] });
+
+    expect(prompt).toContain('"c"');
+    expect(prompt).toMatch(/msgctxt/);
+    expect(prompt).toMatch(/ÇEVRİLMEZ/);
+  });
+
+  it('carries the context into the payload, and leaves it out when there is none', () => {
+    // Every byte is paid for per batch, so an absent context is an absent field
+    // rather than an empty one.
+    const [withContext, without] = toJudgeItems([
+      { id: 1, source: 'Draft', context: 'post status', translation: 'Taslak' },
+      { id: 2, source: 'Draft', translation: 'Taslak' },
+    ]);
+
+    expect(withContext).toMatchObject({ s: 'Draft', c: 'post status', t: 'Taslak' });
+    expect(without).not.toHaveProperty('c');
   });
 
   it('does not tell the model the payload is an attached file', () => {

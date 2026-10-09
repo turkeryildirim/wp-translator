@@ -12,6 +12,8 @@ export interface JudgeItem {
   i: number;
   s: string;
   p?: string;
+  /** `msgctxt`: what the string is used for. Disambiguates, and is never translated. */
+  c?: string;
   t: string;
   tp?: string;
 }
@@ -31,6 +33,9 @@ export function buildJudgePrompt(context: JudgeContext): string {
     'Aşağıdaki JSON, bir WordPress projesine BAŞKA çevirmenler tarafından gönderilmiş',
     've henüz onaylanmamış çevirilerdir. Her öğede "s" İngilizce kaynak, "t" gönderilen',
     'Türkçe çeviridir. "p" varsa İngilizce çoğul, "tp" gönderilen çoğul çeviridir.',
+    '"c" varsa dizgenin gettext bağlamıdır (msgctxt): dizgenin arayüzde nerede ve ne olarak',
+    'kullanıldığını söyler, anlamını belirler ve ÇEVRİLMEZ. Aynı İngilizce kelimenin iki',
+    'bağlamda iki ayrı karşılığı olabilir; kararı o bağlama göre ver.',
     '',
     'Görevin ÇEVİRMEK DEĞİL, DENETLEMEK: her çeviri aşağıdaki kurallara ve sözlüğe',
     'uyuyor mu? Ayrıca sen nasıl çevirirdin?',
@@ -76,6 +81,7 @@ export const toJudgeItems = (submissions: readonly Submission[]): JudgeItem[] =>
     i: index,
     s: submission.source,
     ...(submission.sourcePlural ? { p: submission.sourcePlural } : {}),
+    ...(submission.context ? { c: submission.context } : {}),
     t: submission.translation,
     ...(submission.translationPlural ? { tp: submission.translationPlural } : {}),
   }));

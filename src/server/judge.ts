@@ -18,6 +18,8 @@ export interface JudgeResult {
   asked: number;
   /** How many came from what the model had already said. */
   reused: number;
+  /** Why the provider could not be asked, where none of the rows reached it. */
+  unreachable?: string;
 }
 
 /**
@@ -43,11 +45,13 @@ export async function judgeSubmissions(
   }
 
   let asked = 0;
+  let unreachable: string | undefined;
   if (open.length > 0) {
     const styleGuide = styleGuideFor(db, projectId);
     const terms = collectTerms(db, projectId, open.map((item) => item.source));
     const answered = await askModel(db, open, { styleGuide, terms }, options);
     asked = answered.asked;
+    unreachable = answered.unreachable;
     for (const judgement of answered.judgements) settled.set(judgement.id, judgement);
   }
 
@@ -62,6 +66,7 @@ export async function judgeSubmissions(
     ),
     asked,
     reused: open.length - asked,
+    ...(unreachable ? { unreachable } : {}),
   };
 }
 
