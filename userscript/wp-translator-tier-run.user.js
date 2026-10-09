@@ -70,8 +70,15 @@ const MANUAL_KEY = 'wpt-tier-manual';
  * in the next plugin is the same answer — and a plugin queue is mostly strings
  * every other plugin also has. Keyed on the source text alone: `msgctxt` is not
  * what the memory is asked about.
+ *
+ * **Shared with the memory-approval walk**, which is why the key is its name and
+ * not this script's. Both read the same container with the same selectors and keep
+ * the same 100% filter, so an answer either one stored is an answer the other
+ * would have got — and between them they walk the same listing, where most of the
+ * cost is asking about strings every plugin has. The cost of sharing is that
+ * **Önbelleği temizle** empties it for both.
  */
-const CACHE_KEY = 'wpt-tier-tm-cache';
+const CACHE_KEY = 'wpt-tm-cache';
 const CACHE_LIMIT = 20_000;
 
 /** Pacing. translate.wordpress.org rate-limits a tight loop and sends no `Retry-After`. */
@@ -1574,7 +1581,7 @@ function mount() {
     <div>
       <button data-act="copy" title="Elle bakılacaklar listesini panoya kopyalar">Elle listesi</button>
       <button data-act="reset" title="Koşuyu sıfırlar; elle listesi ve önbellek kalır">Koşuyu sıfırla</button>
-      <button data-act="forget" title="Çeviri belleği önbelleğini siler">Önbelleği temizle</button>
+      <button data-act="forget" title="Çeviri belleği önbelleğini siler — bellek onayı betiğiyle paylaşımlı">Önbelleği temizle</button>
     </div>
     <span class="wpt-status">hazır</span>
   `;
@@ -1647,7 +1654,7 @@ function mount() {
     } catch {
       // Nothing kept is nothing to forget.
     }
-    say('önbellek temizlendi');
+    say('önbellek temizlendi · bellek onayı betiği de bu önbelleği kullanıyor');
   });
 
   const state = read();

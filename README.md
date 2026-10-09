@@ -326,9 +326,12 @@ both of the string's rows carry it, the queue's and the one opening it left behi
 because which of them you are looking at is your own doing.
 
 Each source string is asked about once and the answer is kept in the browser, so
-the `Delete` three plugins later costs nothing. **Önbelleği temizle** empties that.
-The run lives in the tab doing it, so another translate.wordpress.org tab is left
-alone, and it picks up where it left off if the tab reloads. **Durdur** ends it.
+the `Delete` three plugins later costs nothing. **The completion-tier walk shares
+that cache**, because it reads the same suggestions out of the same container and
+keeps the same 100% filter — so whichever of the two sees a string first pays for
+it. **Önbelleği temizle** empties it for both. The run itself lives in the tab
+doing it, so another translate.wordpress.org tab is left alone, and it picks up
+where it left off if the tab reloads. **Durdur** ends it.
 
 ## Spending the work where it can ship
 
@@ -377,7 +380,9 @@ that the bands land where they should, and the first plugins say that; what it
 asks the model is remembered for the live run either way. **Çalıştır** does it. The listing
 runs to dozens of pages and its last ones carry thousands of rows each, so the run
 is long by nature: it keeps where it was outside the tab, **Durdur** ends it with
-that kept, and **Devam** picks it up. A provider that cannot be reached stops the
+that kept, and **Devam** picks it up. What it asks GlotPress's memory goes into the
+same cache the memory-approval walk fills, so the two never pay for one string
+twice. A provider that cannot be reached stops the
 run by itself — the server says so as a field rather than as a verdict, because a
 CLI that is out of quota hangs rather than failing, and the glossary settles rows
 in the same batch it would otherwise hide behind.
