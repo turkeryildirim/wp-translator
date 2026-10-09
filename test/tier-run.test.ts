@@ -40,7 +40,7 @@ const { projectionOf, tierOf, actOn, silenced, place, setKind, projectPath, choo
     place: (pathname: string) => string;
     setKind: (pathname: string) => string | null;
     projectPath: (pathname: string) => string;
-    chooseSets: (kinds: string[]) => string[];
+    chooseSets: (pending: Record<string, number>) => string[];
   };
 
 describe('where settling a queue would take a sub-project', () => {
@@ -182,8 +182,44 @@ describe('finding the way around the site', () => {
     expect(setKind('/projects/wp-plugins/connections/branches/1.0/tr/default/')).toBeNull();
   });
 
-  it('works development where there is one, and stable only where there is not', () => {
-    expect(chooseSets(['dev', 'dev-readme', 'stable', 'stable-readme'])).toEqual(['dev', 'dev-readme']);
-    expect(chooseSets(['stable', 'stable-readme'])).toEqual(['stable', 'stable-readme']);
+  it('takes the set the pending rows are actually in', () => {
+    // Measured on quiz-maker: dev and dev-readme were in step while stable held
+    // 1,431 rows and stable-readme 183. Choosing development because it exists
+    // walked past every pending row the plugin had.
+    expect(
+      chooseSets({ dev: 0, 'dev-readme': 0, stable: 1431, 'stable-readme': 183 }),
+    ).toEqual(['stable', 'stable-readme']);
+  });
+
+  it('chooses each pair on its own', () => {
+    // mycred: the work is in stable, and neither readme has any.
+    expect(chooseSets({ dev: 83, stable: 1474, 'dev-readme': 0, 'stable-readme': 0 })).toEqual([
+      'stable',
+    ]);
+    // peepso-core: the code work is in stable, the one readme row is on trunk.
+    expect(chooseSets({ dev: 69, stable: 1511, 'dev-readme': 1, 'stable-readme': 0 })).toEqual([
+      'stable',
+      'dev-readme',
+    ]);
+  });
+
+  it('gives a tie to trunk', () => {
+    // loginizer: both readmes hold 299, which are the same submissions in two
+    // sets — so either settles the same rows, and trunk is where a plugin's
+    // current strings live.
+    expect(chooseSets({ dev: 622, stable: 626, 'dev-readme': 299, 'stable-readme': 299 })).toEqual([
+      'stable',
+      'dev-readme',
+    ]);
+  });
+
+  it('walks a sub-project that is the only one there is', () => {
+    expect(chooseSets({ stable: 12, 'stable-readme': 3 })).toEqual(['stable', 'stable-readme']);
+    expect(chooseSets({ dev: 12 })).toEqual(['dev']);
+  });
+
+  it('walks nothing for a plugin with nothing pending', () => {
+    expect(chooseSets({ dev: 0, stable: 0, 'dev-readme': 0, 'stable-readme': 0 })).toEqual([]);
+    expect(chooseSets({})).toEqual([]);
   });
 });

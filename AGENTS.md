@@ -159,6 +159,15 @@ measurement if one drove it.
 - **agy has no effort flag worth passing.** Its models carry the effort in the id
   (`gemini-3.8-flash-low`), and `--effort` on one of those exits 1 with "not
   supported for the current model". Choose the model, not a flag.
+- **A plugin's pending rows are not in its development project.** They sit in
+  whichever sub-project the submissions were made against, which is mostly the
+  released one, and a `dev` that is in step beside a `stable` that is not is
+  common — so "work development where there is one" walks past most of the queue
+  and sometimes past all of it. Choose per pair (code, readme) by which holds more
+  pending, as `chooseSets` in `userscript/wp-translator-tier-run.user.js` does; a
+  tie is the same submissions in both sets, so it costs nothing either way.
+  **`wp-translator-tm-approve.user.js` still has the old rule** and skips the same
+  work.
 - **A sub-project's completion is not the sum of its status columns.** GlotPress
   counts *originals* in `All` and *translations* in Translated/Fuzzy/Untranslated/
   Waiting/Changes requested, so one original carrying both a current translation

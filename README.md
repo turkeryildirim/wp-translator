@@ -367,7 +367,17 @@ projected = ceil((All - Untranslated - Changes requested) / All * 100)
 ```
 
 Those four numbers come from the filter bar of the page the rows are on, which
-carries the set's counts whether or not a filter is applied. The percentages the
+carries the set's counts whether or not a filter is applied.
+
+Which sub-projects get walked is decided the same way — by where the rows are.
+A plugin has up to four, in two pairs: the code project and its readme, each in a
+development and a released copy. The walk takes **one out of each pair, whichever
+has more pending**, and a tie goes to development. Taking development because it
+exists is what skips the work: a queue sits in whichever set its submissions were
+made against, so a development project that is in step beside a released one that
+is not means walking past every pending row the plugin has. Where both hold rows
+they hold the same submissions, so the larger queue is the fuller copy of the work
+rather than more of it. The percentages the
 site itself prints are not used: they come from cached counters on the translation
 set and disagree with the live counts in both directions.
 

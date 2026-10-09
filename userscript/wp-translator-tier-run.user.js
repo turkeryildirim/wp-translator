@@ -144,10 +144,12 @@ const ENGINES = {
 const ENGINE_LABELS = { opencode: 'opencode · GLM 5.3 Flash', agy: 'agy · Gemini 3.8 Flash' };
 const ENGINE_REMEMBERED = 'wpt-engine';
 
-/** The sub-projects, and which of them a plugin's work is taken from. */
+/** The sub-projects, and the two pairs each plugin's work is chosen out of. */
 const SET_KINDS = ['dev', 'dev-readme', 'stable', 'stable-readme'];
-const PREFERRED = ['dev', 'dev-readme'];
-const FALLBACK = ['stable', 'stable-readme'];
+const PAIRS = [
+  ['dev', 'stable'],
+  ['dev-readme', 'stable-readme'],
+];
 
 /** Where GlotPress puts the memory's answer inside an opened row. */
 const MEMORY_CONTAINER = '.sidebar-div-others-translation-memory-content';
@@ -200,15 +202,24 @@ function projectPath(pathname) {
 }
 
 /**
- * The sub-projects to work, in order.
+ * The sub-projects to work, one out of each pair, by where the pending rows are.
  *
- * Development is where a plugin's current strings live, so where it has one, it
- * and its readme are the work. A plugin with no development project at all is
- * worked from stable instead — the alternative is walking past it.
+ * Taking development because it exists is what skips the work: a plugin's queue
+ * sits in whichever set its submissions were made against, and a dev that is in
+ * step beside a stable that is not means walking past every pending row there is.
+ * Where both hold some they hold the *same* submissions, so the larger queue is
+ * the fuller copy rather than more work — and a tie is the same rows either way,
+ * which trunk takes, being where a plugin's current strings live.
  */
-function chooseSets(kinds) {
-  const wanted = kinds.includes('dev') ? PREFERRED : FALLBACK;
-  return wanted.filter((kind) => kinds.includes(kind));
+function chooseSets(pending) {
+  const chosen = [];
+  for (const [trunk, released] of PAIRS) {
+    const onTrunk = pending[trunk] ?? 0;
+    const onReleased = pending[released] ?? 0;
+    if (onTrunk === 0 && onReleased === 0) continue;
+    chosen.push(onReleased > onTrunk ? released : trunk);
+  }
+  return chosen;
 }
 
 /** "1,234" as a number, and anything unreadable as 0. */
@@ -619,8 +630,13 @@ function targetsFrom(root) {
     found.set(kind, { waiting: queue(row, 'waiting'), fuzzy: queue(row, 'fuzzy') });
   }
 
+  const pending = {};
+  for (const [kind, queues] of found) {
+    pending[kind] = (queues.waiting?.count ?? 0) + (queues.fuzzy?.count ?? 0);
+  }
+
   const targets = [];
-  for (const kind of chooseSets([...found.keys()])) {
+  for (const kind of chooseSets(pending)) {
     for (const status of ['waiting', 'fuzzy']) {
       const one = found.get(kind)[status];
       if (one) targets.push({ url: one.url, kind, status, count: one.count });
