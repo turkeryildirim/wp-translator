@@ -17,7 +17,8 @@ personal glossary, and it cannot run AI translation.
 1. **Trusted sources.** A curated list of translate.wordpress.org projects whose
    Turkish translations are known to be good. Their PO exports are fetched and
    imported into a local glossary, along with the WordPress Turkish team's own
-   term list.
+   term list. Their order is yours — drag a row by its handle or move it with the
+   arrow keys — and it is what settles a disagreement: the higher source wins.
 2. **A project to translate.** Added by its translate.wordpress.org URL. Its
    catalogue is fetched, and for plugins and themes its wordpress.org metadata
    comes too.
@@ -34,7 +35,12 @@ personal glossary, and it cannot run AI translation.
    rows you picked, or the whole catalogue from scratch.
 6. **Review.** A paged queue you filter by what you are looking for. Approve,
    edit and approve, or reject — which empties the string and sends it back to
-   be translated again. **Find and replace** works on translations only, literally
+   be translated again. A row names the check that blocks it, and a check that is
+   wrong about that string can be skipped against a reason you type: the string is
+   saved again and checked without it. Characters with no appearance — the spaces
+   that matter, tabs, line breaks, anything else invisible — are drawn as markers
+   with a legend, because what the checks compare at a string's edges is what the
+   eye cannot find. **Find and replace** works on translations only, literally
    and with case respected, across whatever the filter and search currently
    select — not the page in front of you. It counts first and asks before writing,
    and what it rewrites returns to review, because the approved text is no longer
@@ -75,21 +81,24 @@ npm run serve            # http://127.0.0.1:4173
 ```
 
 `WPT_DB` sets the database path (default `wp-translator.sqlite`), `WPT_PORT` the
-port. Panel development: `npm run dev:panel`, which proxies `/api` to the server.
+port, `WPT_PANEL` the built panel it serves (default `dist/panel`). Panel
+development: `npm run dev:panel`, which proxies `/api` to the server.
 
 A fresh database already carries the trusted sources and the Turkish style guide
 — nothing to paste in. The official WordPress Turkish glossary is not seeded,
-because it needs a network fetch: press **Güncelle** on the trusted-sources
-screen once and it arrives along with every source.
+because it needs a network fetch: press **Tümünü güncelle** on the
+trusted-sources screen once and it arrives along with every source.
 
 **Splitting the tag is your call.** Everything starts under one `wordpress` tag.
 Giving WooCommerce its own tag is what makes `item` come out as `ürün` there and
 `öge` elsewhere; until that split exists the two senses share a tag and the
 source ranking decides.
 
-## Setting up opencode
+## Setting up a CLI
 
-The tool drives opencode, which has to be configured once.
+The tool drives a coding CLI, and the panel and the review script each let you
+pick which: **opencode**, or **agy** — the Antigravity CLI. opencode is the one
+that has to be configured; agy is only told a model.
 
 **A provider.** `opencode auth` — any provider opencode supports.
 `opencode api model.list` then shows what is available.
@@ -133,6 +142,12 @@ The refusal arrives as an error event on opencode's **stdout** with stderr empty
 so the exit code alone says nothing. The tool reads it out and reports the
 sentence; the run modal names the CLI and model it is using, so a run's output
 can be told from the engine you picked.
+
+**agy** is the other choice, and needs no agent of its own: it is asked with
+`--json-schema` and hands its answer back already parsed, so nothing has to be
+scraped out of prose. Its models carry the effort in their id and `--effort`
+against one of those is refused, so what you choose is the model — the panel asks
+for `gemini-3.8-flash-low`.
 
 ## Reviewing other people's translations
 
@@ -220,10 +235,11 @@ dropped outright is sent again. **A new script version makes the extension ask f
 permission again**, and a dismissed prompt reads exactly like a server that is not
 running, so the message names both.
 
-Judging goes through **agy** rather than opencode: it needs a verdict per row and
-agy's `--json-schema` is what makes that reliable. A row the model cannot be
-asked about is annotated with the reason and left alone, so a configuration
-problem shows up on the page instead of stopping the run.
+Judging goes through whichever CLI you picked: agy is given the schema and hands
+the verdicts back parsed, opencode cannot be told a shape so its text is scraped
+for the array. A row the model cannot be asked about is annotated with the reason
+and left alone, so a configuration problem shows up on the page instead of
+stopping the run.
 
 ## Settling what the memory already answers
 
@@ -333,15 +349,18 @@ not, and prints them — that is the signature of a hand edit.
 | | |
 |---|---|
 | `src/po/` | PO parse and serialise |
+| `src/db/` | schema, forward-only migrations, the folding SQLite needs |
 | `src/glossary/` | trusted-source sync, matching, terminology, the official term list |
 | `src/project/` | importing a project and exporting its PO |
 | `src/quality/` | the blocking checks |
-| `src/translate/` | the provider interface and its opencode implementation |
+| `src/translate/` | the provider interface, and opencode and agy behind it |
 | `src/wporg/` | translate.wordpress.org and wordpress.org access |
 | `src/server/` | HTTP API and the panel's back end |
+| `src/cli/` | the two entry points: the server and the style-guide sync |
 | `panel/` | Vue 3 panel |
 | `src/judge/` | judging somebody else's translation |
 | `src/ai/` | what the model has already been asked |
+| `src/text/` | the whitespace a stored word is put back into |
 | `style-guide/` | the Turkish style guide seeded into new databases |
 | `userscript/` | the review script and the memory-approval walk for translate.wordpress.org |
 

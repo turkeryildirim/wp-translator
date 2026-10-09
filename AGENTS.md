@@ -166,12 +166,11 @@ measurement if one drove it.
   and content type, never the byte count.
 - **`GM_xmlhttpRequest` dies with `background shutdown`.** Manifest V3 sleeps the
   extension's service worker and every such request is carried by it, so one fails
-  while the worker restarts and a long one fails because the worker was evicted
-  under it. The script retries on that error alone, and the retry is cheap because
-  the server finishes a batch and writes `ai_memory` whether or not anybody is
-  still listening. If it becomes common, the fuller answer is a ticket the script
-  polls, so no request is ever held open — the synchronous endpoints are what make
-  this possible at all.
+  while the worker restarts. The ticket is what keeps each request to
+  milliseconds, so none is held open long enough to be evicted under — but a short
+  one still dies this way, and the script sends it again on that error alone. The
+  retry is cheap because the server finishes a batch and writes `ai_memory`
+  whether or not anybody is still listening, so the second ask is served from it.
 - **translate.wordpress.org replaces GlotPress's editor row.** Read
   `wporg-gp-customizations/templates/translation-row-editor.php` in
   `WordPress/wordpress.org`, not GlotPress core, for anything inside
