@@ -372,6 +372,52 @@ export const migrations: readonly Migration[] = [
            AND EXISTS (SELECT 1 FROM tags);
     `,
   },
+  {
+    version: 14,
+    // AI CLI Agents settings and execution configuration.
+    // Supports claude, codex, opencode, agy via direct bash shell calls.
+    sql: `
+      CREATE TABLE IF NOT EXISTS ai_agents (
+        id            TEXT PRIMARY KEY,
+        name          TEXT NOT NULL,
+        command       TEXT NOT NULL,
+        model         TEXT,
+        default_model TEXT NOT NULL,
+        enabled       INTEGER NOT NULL DEFAULT 1,
+        icon          TEXT NOT NULL,
+        bash_sample   TEXT NOT NULL,
+        description   TEXT NOT NULL
+      ) STRICT;
+
+      INSERT OR IGNORE INTO ai_agents (id, name, command, model, default_model, enabled, icon, bash_sample, description)
+      VALUES
+        ('claude', 'Claude Code CLI', 'claude', 'claude-3-7-sonnet-20250219', 'claude-3-7-sonnet-20250219', 1, '🟣', 'claude -p --tools "" --model claude-3-7-sonnet-20250219 "<prompt>"', 'Anthropic Claude Code CLI aracı. Bash kabuğu üzerinden doğrudan çalıştırılır.'),
+        ('codex', 'OpenAI Codex CLI', 'codex', 'gpt-4o', 'gpt-4o', 1, '⚡', 'codex exec --sandbox read-only -m gpt-4o --output-schema schema.json "<prompt>"', 'OpenAI Codex CLI ortamı. Salt okunur korumalı şema çıktısıyla çalışır.'),
+        ('opencode', 'OpenCode CLI', 'opencode', 'zai-coding-plan/glm-5.3-flash', 'zai-coding-plan/glm-5.3-flash', 1, '💻', 'opencode run --format json --agent wp-translator --model zai-coding-plan/glm-5.3-flash < /dev/null', 'OpenCode CLI ortamı. Stdin kapatılarak (< /dev/null) ve json çıktı formatıyla çalışır.'),
+        ('agy', 'Antigravity CLI (agy)', 'agy', 'gemini-3.8-flash-low', 'gemini-3.8-flash-low', 1, '✨', 'agy -m gemini-3.8-flash-low --json-schema schema.json -p "<prompt>"', 'Google Antigravity CLI. Gemini abonelik modelleriyle şema tabanlı çeviri yapar.');
+    `,
+  },
+  {
+    version: 15,
+    // GlotPress live statistics for trusted sources.
+    // Tracks translated, fuzzy, waiting, untranslated counts and completion percent.
+    sql: `
+      ALTER TABLE trusted_sources ADD COLUMN translated INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE trusted_sources ADD COLUMN fuzzy INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE trusted_sources ADD COLUMN waiting INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE trusted_sources ADD COLUMN untranslated INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE trusted_sources ADD COLUMN total_strings INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE trusted_sources ADD COLUMN percent INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
+  {
+    version: 16,
+    // Distinguish official glossary terms from owner-created terms.
+    sql: `
+      ALTER TABLE glossary_entries ADD COLUMN is_official INTEGER NOT NULL DEFAULT 0;
+      UPDATE glossary_entries SET is_official = 1 WHERE pos IS NOT NULL;
+    `,
+  },
 ];
 
 export const latestVersion = migrations[migrations.length - 1]!.version;

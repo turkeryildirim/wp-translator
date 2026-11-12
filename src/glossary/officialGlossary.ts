@@ -42,10 +42,11 @@ export function importOfficialGlossary(
 ): ImportResult {
   const insert = db.prepare(
     `INSERT INTO glossary_entries
-       (source_hash, source_text, msgctxt, pos, note, tag_id, translation, origin)
-     VALUES (@hash, @en, NULL, @pos, @note, @tagId, @tr, 'owner')
+       (source_hash, source_text, msgctxt, pos, note, tag_id, translation, origin, is_official)
+     VALUES (@hash, @en, NULL, @pos, @note, @tagId, @tr, 'owner', 1)
      ON CONFLICT (source_hash, pos, translation, tag_id) WHERE pos IS NOT NULL DO UPDATE SET
        note = excluded.note,
+       is_official = 1,
        updated_at = datetime('now')
      RETURNING id`,
   );
@@ -88,7 +89,7 @@ export function importOfficialGlossary(
     const removed = db
       .prepare(
         `DELETE FROM glossary_entries
-          WHERE tag_id = ? AND pos IS NOT NULL AND id NOT IN (SELECT id FROM seen_terms)`,
+          WHERE tag_id = ? AND pos IS NOT NULL AND is_official = 1 AND id NOT IN (SELECT id FROM seen_terms)`,
       )
       .run(tagId).changes;
 

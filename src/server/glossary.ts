@@ -1,6 +1,7 @@
 import type { Db } from '../db/open.ts';
 import { sourceHash } from '../glossary/key.ts';
 import { affixes } from '../text/whitespace.ts';
+import { defaultTagId } from './sources.ts';
 
 export interface GlossaryRow {
   id: number;
@@ -12,6 +13,7 @@ export interface GlossaryRow {
   translation: string;
   translationPlural: string | null;
   origin: 'trusted' | 'owner';
+  isOfficial?: number;
   tag: string;
   /** How many trusted sources carry this entry. */
   sources: number;
@@ -26,6 +28,10 @@ export interface GlossaryQuery {
   tagId?: number;
   /** `memory` for translation memory, `term` for the terminology rows. */
   kind?: 'memory' | 'term';
+  /** Specific part of speech (noun, verb, etc.) or 'memory' / 'term'. */
+  pos?: string;
+  /** Filter by origin: 'trusted' (locked) or 'owner' (custom/editable) */
+  origin?: 'trusted' | 'owner';
   /** Only strings that have more than one translation under the same tag. */
   contested?: boolean;
   /** Match the query's casing exactly. Off by default. */
@@ -63,8 +69,30 @@ export function searchGlossary(db: Db, query: GlossaryQuery = {}): GlossaryPage 
     where.push('g.tag_id = ?');
     params.push(query.tagId);
   }
-  if (query.kind === 'memory') where.push('g.pos IS NULL');
-  if (query.kind === 'term') where.push('g.pos IS NOT NULL');
+  if (query.pos) {
+    if (query.pos === 'memory') {
+      where.push('g.pos IS NULL');
+    } else if (query.pos === 'term') {
+      where.push('g.pos IS NOT NULL');
+    } else {
+      where.push('g.pos = ?');
+      params.push(query.pos);
+    }
+  } else if (query.kind === 'memory') {
+    where.push('g.pos IS NULL');
+  } else if (query.kind === 'term') {
+    where.push('g.pos IS NOT NULL');
+  }
+
+  if (query.origin === 'trusted') {
+    where.push(
+      "(g.origin = 'trusted' OR g.is_official = 1 OR (SELECT count(*) FROM glossary_entry_sources l WHERE l.entry_id = g.id) > 0)",
+    );
+  } else if (query.origin === 'owner') {
+    where.push(
+      "g.origin = 'owner' AND g.is_official = 0 AND (SELECT count(*) FROM glossary_entry_sources l WHERE l.entry_id = g.id) = 0",
+    );
+  }
   if (query.contested) {
     // Two translations of one string are two entries, so disagreement is a
     // property of the rows rather than of the links.
@@ -93,7 +121,7 @@ export function searchGlossary(db: Db, query: GlossaryQuery = {}): GlossaryPage 
           LIMIT ? OFFSET ?)
        SELECT g.id, g.source_text AS sourceText, g.source_plural AS sourcePlural, g.msgctxt,
               g.pos, g.note, g.translation, g.translation_plural AS translationPlural,
-              g.origin, t.name AS tag,
+              g.origin, g.is_official AS isOfficial, t.name AS tag,
               (SELECT count(*) FROM glossary_entry_sources l WHERE l.entry_id = g.id) AS sources,
               (SELECT count(*) FROM glossary_entry_contexts c WHERE c.entry_id = g.id) AS contexts,
               (SELECT count(*) FROM glossary_entries o
@@ -167,7 +195,7 @@ export function listTags(db: Db): { id: number; name: string; entries: number }[
 const ENTRY_SELECT = `
   SELECT g.id, g.source_text AS sourceText, g.source_plural AS sourcePlural, g.msgctxt,
          g.pos, g.note, g.translation, g.translation_plural AS translationPlural,
-         g.origin, t.name AS tag,
+         g.origin, g.is_official AS isOfficial, t.name AS tag,
          (SELECT count(*) FROM glossary_entry_sources l WHERE l.entry_id = g.id) AS sources,
          (SELECT count(*) FROM glossary_entry_contexts c WHERE c.entry_id = g.id) AS contexts,
          (SELECT count(*) FROM glossary_entries o
@@ -198,23 +226,49 @@ export function updateEntry(
   entryId: number,
   translation: string,
   translationPlural?: string | null,
+  note?: string | null,
+  pos?: string | null,
+  sourceText?: string,
 ): EntryUpdate {
   const before = db
-    .prepare(`SELECT origin, sources FROM (${ENTRY_SELECT.trim()})`)
-    .get(entryId) as { origin: string; sources: number } | undefined;
+    .prepare(
+      `SELECT origin, sources, sourceText, sourcePlural FROM (${ENTRY_SELECT.trim()})`,
+    )
+    .get(entryId) as
+    | { origin: string; sources: number; sourceText: string; sourcePlural: string | null }
+    | undefined;
   if (!before) throw new Error(`No glossary entry with id ${entryId}.`);
+
+  const trimmedTranslation = affixes(translation).core;
+  if (!trimmedTranslation) throw new Error('Çeviri boş olamaz.');
+
+  const trimmedSource = sourceText !== undefined ? affixes(sourceText).core : before.sourceText;
+  if (!trimmedSource) throw new Error('Kaynak metin boş olamaz.');
+  const newHash = sourceHash(trimmedSource, before.sourcePlural ?? undefined);
 
   try {
     db.prepare(
       `UPDATE glossary_entries
           SET translation = ?,
               translation_plural = CASE WHEN ? THEN ? ELSE translation_plural END,
+              note = CASE WHEN ? THEN ? ELSE note END,
+              pos = CASE WHEN ? THEN ? ELSE pos END,
+              source_text = CASE WHEN ? THEN ? ELSE source_text END,
+              source_hash = CASE WHEN ? THEN ? ELSE source_hash END,
               origin = 'owner', updated_at = datetime('now')
         WHERE id = ?`,
     ).run(
-      translation,
+      trimmedTranslation,
       translationPlural === undefined ? 0 : 1,
       translationPlural === undefined ? null : (translationPlural || null),
+      note === undefined ? 0 : 1,
+      note === undefined ? null : (note || null),
+      pos === undefined ? 0 : 1,
+      pos === undefined ? null : (pos || null),
+      sourceText === undefined ? 0 : 1,
+      trimmedSource,
+      sourceText === undefined ? 0 : 1,
+      newHash,
       entryId,
     );
   } catch (problem) {
@@ -235,7 +289,9 @@ export interface NewEntry {
   sourcePlural?: string;
   translation: string;
   translationPlural?: string;
-  tagId: number;
+  tagId?: number;
+  pos?: string;
+  note?: string;
 }
 
 /**
@@ -265,21 +321,27 @@ export function createEntry(db: Db, input: NewEntry): GlossaryRow {
     throw new Error('Çoğul kaynak için çoğul çeviri de gerekir.');
   }
 
+  const tagId = input.tagId ? input.tagId : defaultTagId(db);
+  const pos = input.pos?.trim() || null;
+  const note = input.note?.trim() || null;
+
   try {
     const written = db
       .prepare(
         `INSERT INTO glossary_entries
            (source_hash, source_text, source_plural, msgctxt, tag_id,
-            translation, translation_plural, pos, origin)
-         VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, 'owner')`,
+            translation, translation_plural, pos, note, origin, is_official)
+         VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'owner', 0)`,
       )
       .run(
         sourceHash(source, sourcePlural),
         source,
         sourcePlural ?? null,
-        input.tagId,
+        tagId,
         translation,
         translationPlural ?? null,
+        pos,
+        note,
       );
     return db.prepare(ENTRY_SELECT).get(written.lastInsertRowid) as GlossaryRow;
   } catch (problem) {
@@ -293,19 +355,23 @@ export function createEntry(db: Db, input: NewEntry): GlossaryRow {
 /**
  * Whether an entry is the owner's own to remove.
  *
- * Everything else came from upstream — a trusted source's row, a row a source
- * still vouches for even after the owner reworded it, or a term from the official
- * WordPress glossary, which is stored as the owner's only so the sweep spares it.
- * Removing any of those cannot stick: the next update writes it back.
+ * Terms in the glossary (pos IS NOT NULL) can always be deleted and edited.
+ * For translation memory (pos IS NULL), only entries the owner added directly
+ * can be deleted; entries carrying links to trusted sources must be removed
+ * by removing the source instead.
  */
-export const isOwnEntry = (entry: GlossaryRow): boolean =>
-  entry.origin === 'owner' && entry.pos === null && entry.sources === 0;
+export const isOwnEntry = (entry: GlossaryRow): boolean => {
+  if (entry.pos === null) {
+    return entry.origin === 'owner' && entry.sources === 0;
+  }
+  return true;
+};
 
 /**
- * Remove one of the owner's own entries. Its context notes go with it.
+ * Remove one entry.
  *
- * An entry that came from upstream is refused rather than removed and restored
- * behind the owner's back. To be rid of one of those, remove its source.
+ * For translation memory, an entry that came from upstream is refused.
+ * For terms, all entries can be removed freely.
  */
 export function deleteEntry(db: Db, entryId: number): { removed: number } {
   const entry = db.prepare(ENTRY_SELECT).get(entryId) as GlossaryRow | undefined;
@@ -313,12 +379,206 @@ export function deleteEntry(db: Db, entryId: number): { removed: number } {
 
   if (!isOwnEntry(entry)) {
     throw new Error(
-      entry.pos !== null
-        ? 'Bu, resmî WordPress sözlüğünden gelen bir terim. Silinemez.'
-        : 'Bu girdiyi güvenilir bir kaynak taşıyor. Silinemez; kalıcı olarak çıkarmak için kaynağı listeden çıkarın.',
+      'Bu girdiyi güvenilir bir kaynak taşıyor. Silinemez; kalıcı olarak çıkarmak için kaynağı listeden çıkarın.',
     );
   }
 
   db.prepare(`DELETE FROM glossary_entries WHERE id = ?`).run(entryId);
   return { removed: entryId };
+}
+
+/**
+ * Delete multiple glossary terms in bulk. Only affects terms (pos IS NOT NULL).
+ */
+export function deleteEntries(db: Db, entryIds: number[]): { removed: number } {
+  if (entryIds.length === 0) return { removed: 0 };
+  const placeholders = entryIds.map(() => '?').join(',');
+  const result = db
+    .prepare(`DELETE FROM glossary_entries WHERE id IN (${placeholders}) AND pos IS NOT NULL`)
+    .run(...entryIds);
+  return { removed: result.changes };
+}
+
+const COMMON_ACTION_VERBS = new Set([
+  'add', 'apply', 'activate', 'attach', 'authorize', 'back', 'backup', 'block',
+  'calculate', 'cancel', 'change', 'check', 'choose', 'clean', 'clear',
+  'close', 'collapse', 'complete', 'confirm', 'configure', 'connect', 'continue',
+  'convert', 'copy', 'create', 'customize', 'deactivate', 'delete', 'deploy',
+  'disable', 'disconnect', 'dismiss', 'download', 'duplicate', 'edit', 'empty',
+  'enable', 'enter', 'erase', 'execute', 'expand', 'export', 'extract',
+  'fetch', 'filter', 'find', 'fix', 'generate', 'get', 'go', 'grant',
+  'hide', 'ignore', 'import', 'insert', 'install', 'invite', 'join', 'leave',
+  'link', 'load', 'lock', 'log', 'login', 'logout', 'manage', 'merge',
+  'modify', 'move', 'mute', 'navigate', 'notify', 'open', 'optimize',
+  'parse', 'paste', 'pause', 'play', 'preview', 'print', 'process', 'publish',
+  'purge', 'rebuild', 'recalculate', 'redirect', 'refresh', 'register',
+  'reject', 'reload', 'remove', 'rename', 'reorder', 'repair', 'replace',
+  'reply', 'resend', 'reset', 'resolve', 'restart', 'restore', 'retry',
+  'return', 'revoke', 'run', 'save', 'scan', 'schedule', 'search', 'select',
+  'send', 'set', 'share', 'show', 'sign', 'skip', 'sort', 'start', 'stop',
+  'submit', 'subscribe', 'switch', 'sync', 'test', 'toggle', 'track',
+  'translate', 'trigger', 'truncate', 'undo', 'uninstall', 'unlink', 'unlock',
+  'update', 'upgrade', 'upload', 'validate', 'verify', 'view', 'warn',
+]);
+
+const COMMON_ADJECTIVES = new Set([
+  'active', 'inactive', 'available', 'unavailable', 'enabled', 'disabled',
+  'visible', 'hidden', 'required', 'optional', 'default', 'custom',
+  'automatic', 'manual', 'current', 'previous', 'next', 'first', 'last',
+  'new', 'old', 'valid', 'invalid', 'public', 'private', 'primary',
+  'secondary', 'successful', 'failed', 'pending', 'complete', 'incomplete',
+  'ready', 'global', 'local', 'external', 'internal', 'responsive',
+  'simple', 'advanced', 'correct', 'incorrect', 'empty', 'full',
+]);
+
+/**
+ * Heuristically infer part of speech for a source text and translation pair.
+ */
+export function inferPos(
+  db: Db | undefined,
+  sourceText: string,
+  translation: string,
+): string {
+  const source = affixes(sourceText).core;
+  const tr = affixes(translation).core;
+  if (!source) return 'noun';
+
+  // 1. If a term with the exact same source_hash already exists in the dictionary, reuse its pos
+  if (db) {
+    const hash = sourceHash(source, undefined);
+    const existing = db
+      .prepare(
+        `SELECT pos FROM glossary_entries
+          WHERE source_hash = ? AND pos IS NOT NULL
+          LIMIT 1`,
+      )
+      .get(hash) as { pos: string } | undefined;
+    if (existing?.pos) return existing.pos;
+  }
+
+  // 2. Abbreviation (URL, ID, API, SEO, SSL, etc.)
+  if (/^[A-Z0-9]{2,5}$/.test(source)) {
+    return 'abbreviation';
+  }
+
+  const words = source.split(/\s+/).filter(Boolean);
+
+  // 3. Expressions: long text, punctuation, or format specifiers
+  if (
+    words.length >= 4 ||
+    /[.?!:]$/.test(source) ||
+    /%[0-9$]*[sdf]|{[^}]+}|###[a-zA-Z0-9_]+###/.test(source)
+  ) {
+    return 'expression';
+  }
+
+  // 4. Turkish translation ends with -mek or -mak
+  if (/m[ea]k$/i.test(tr) && words.length <= 2) {
+    return 'verb';
+  }
+
+  const firstLower = words[0]?.toLowerCase() ?? '';
+
+  // 5. English action verbs
+  if (COMMON_ACTION_VERBS.has(firstLower) && words.length <= 3) {
+    return 'verb';
+  }
+
+  // 6. Common adjectives
+  if (words.length === 1) {
+    if (COMMON_ADJECTIVES.has(firstLower)) return 'adjective';
+    if (
+      /(able|ible|less|ous|ful)$/i.test(firstLower) &&
+      !/(table|cable|title)$/i.test(firstLower)
+    ) {
+      return 'adjective';
+    }
+  }
+
+  // 7. Expressions for 3+ words that are not action verbs
+  if (words.length >= 3) {
+    return 'expression';
+  }
+
+  // 8. Default to noun
+  return 'noun';
+}
+
+export interface CopyResult {
+  added: number;
+  skipped: number;
+  entries: { id: number; sourceText: string; pos: string; added: boolean }[];
+}
+
+/**
+ * Copy translation memory entries into the terminology glossary without overriding existing terms.
+ * When `pos` is omitted or 'auto', automatically infers part of speech per row.
+ */
+export function copyMemoryToTerms(
+  db: Db,
+  memoryEntryIds: number[],
+  pos?: string,
+): CopyResult {
+  if (memoryEntryIds.length === 0) return { added: 0, skipped: 0, entries: [] };
+  const targetTagId = defaultTagId(db);
+  const fixedPos = pos && pos !== 'auto' ? pos.trim() : null;
+
+  const selectMemory = db.prepare(
+    `SELECT id, source_hash AS sourceHash, source_text AS sourceText,
+            source_plural AS sourcePlural, translation, translation_plural AS translationPlural,
+            note
+       FROM glossary_entries
+      WHERE id = ? AND pos IS NULL`,
+  );
+
+  const insert = db.prepare(
+    `INSERT OR IGNORE INTO glossary_entries
+       (source_hash, source_text, source_plural, msgctxt, tag_id,
+        translation, translation_plural, pos, note, origin, is_official)
+     VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'owner', 0)`,
+  );
+
+  return db.transaction(() => {
+    let added = 0;
+    let skipped = 0;
+    const entries: { id: number; sourceText: string; pos: string; added: boolean }[] = [];
+
+    for (const id of memoryEntryIds) {
+      const row = selectMemory.get(id) as
+        | {
+            sourceHash: string;
+            sourceText: string;
+            sourcePlural: string | null;
+            translation: string;
+            translationPlural: string | null;
+            note: string | null;
+          }
+        | undefined;
+      if (!row) {
+        skipped += 1;
+        continue;
+      }
+
+      const itemPos = fixedPos ?? inferPos(db, row.sourceText, row.translation);
+      const result = insert.run(
+        row.sourceHash,
+        row.sourceText,
+        row.sourcePlural,
+        targetTagId,
+        row.translation,
+        row.translationPlural,
+        itemPos,
+        row.note,
+      );
+
+      if (result.changes > 0) {
+        added += 1;
+        entries.push({ id, sourceText: row.sourceText, pos: itemPos, added: true });
+      } else {
+        skipped += 1;
+        entries.push({ id, sourceText: row.sourceText, pos: itemPos, added: false });
+      }
+    }
+    return { added, skipped, entries };
+  })();
 }

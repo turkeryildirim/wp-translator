@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDb, type Db } from '../src/db/open.ts';
-import { createEntry, deleteEntry, searchGlossary, updateEntry } from '../src/server/glossary.ts';
+import {
+  copyMemoryToTerms,
+  createEntry,
+  deleteEntries,
+  deleteEntry,
+  searchGlossary,
+  updateEntry,
+} from '../src/server/glossary.ts';
 import { sourceHash } from '../src/glossary/key.ts';
 
 let db: Db;
@@ -133,20 +140,73 @@ describe('removing an entry', () => {
     expect(() => deleteEntry(db, entryId)).toThrow(/kaynak/i);
   });
 
-  it('refuses a term from the official glossary', () => {
-    // Those are stored as the owner's only so the sweep spares them; they still
-    // come from upstream and reappear on the next update.
+  it('allows removing a term from the official glossary', () => {
     const termId = Number(
       db
         .prepare(
           `INSERT INTO glossary_entries
-             (source_hash, source_text, msgctxt, pos, tag_id, translation, origin)
-           VALUES (?, 'archive', NULL, 'noun', ?, 'arşiv', 'owner')`,
+             (source_hash, source_text, msgctxt, pos, tag_id, translation, origin, is_official)
+           VALUES (?, 'archive', NULL, 'noun', ?, 'arşiv', 'owner', 1)`,
         )
         .run(sourceHash('archive', undefined), tagId).lastInsertRowid,
     );
 
-    expect(() => deleteEntry(db, termId)).toThrow(/resmî/i);
+    expect(deleteEntry(db, termId)).toEqual({ removed: termId });
+    expect(searchGlossary(db, { search: 'archive' }).total).toBe(0);
+  });
+
+  it('allows removing an owner-created term with a part of speech', () => {
+    const entry = createEntry(db, {
+      sourceText: 'custom term',
+      translation: 'özel terim',
+      pos: 'noun',
+      tagId,
+    });
+
+    expect(entry.isOfficial).toBe(0);
+    deleteEntry(db, entry.id);
+    expect(searchGlossary(db, { search: 'custom term' }).total).toBe(0);
+  });
+
+  it('allows bulk deleting terms', () => {
+    const e1 = createEntry(db, { sourceText: 'term1', translation: 'terim1', pos: 'noun', tagId });
+    const e2 = createEntry(db, { sourceText: 'term2', translation: 'terim2', pos: 'verb', tagId });
+
+    expect(deleteEntries(db, [e1.id, e2.id])).toEqual({ removed: 2 });
+    expect(searchGlossary(db, { search: 'term' }).total).toBe(0);
+  });
+
+  it('copies translation memory to glossary terms without overriding existing terms', () => {
+    const mem1 = createEntry(db, { sourceText: 'Cart', translation: 'Sepet', tagId });
+    const mem2 = createEntry(db, { sourceText: 'Checkout', translation: 'Ödeme', tagId });
+
+    // Pre-create 'Cart' with 'Alışveriş Sepeti' as an existing term
+    createEntry(db, { sourceText: 'Cart', translation: 'Alışveriş Sepeti', pos: 'noun', tagId });
+
+    // Copy mem1 and mem2 to terms
+    const result = copyMemoryToTerms(db, [mem1.id, mem2.id], 'noun');
+    expect(result.added).toBe(2);
+
+    // Let's test with exact same wording:
+    const mem3 = createEntry(db, { sourceText: 'Checkout', translation: 'Kasa', tagId });
+    createEntry(db, { sourceText: 'Checkout', translation: 'Kasa', pos: 'noun', tagId });
+    const res2 = copyMemoryToTerms(db, [mem3.id], 'noun');
+    expect(res2.added).toBe(0);
+    expect(res2.skipped).toBe(1);
+  });
+
+  it('automatically infers parts of speech when copying memory', () => {
+    const memAction = createEntry(db, { sourceText: 'Save changes', translation: 'Değişiklikleri kaydet', tagId });
+    const memAbbr = createEntry(db, { sourceText: 'URL', translation: 'URL', tagId });
+    const memExpr = createEntry(db, { sourceText: 'Are you sure you want to proceed?', translation: 'Devam etmek istiyor musunuz?', tagId });
+    const memNoun = createEntry(db, { sourceText: 'Product category', translation: 'Ürün kategorisi', tagId });
+
+    const res = copyMemoryToTerms(db, [memAction.id, memAbbr.id, memExpr.id, memNoun.id]);
+    expect(res.added).toBe(4);
+    expect(res.entries.find((e) => e.id === memAction.id)?.pos).toBe('verb');
+    expect(res.entries.find((e) => e.id === memAbbr.id)?.pos).toBe('abbreviation');
+    expect(res.entries.find((e) => e.id === memExpr.id)?.pos).toBe('expression');
+    expect(res.entries.find((e) => e.id === memNoun.id)?.pos).toBe('noun');
   });
 
   it('fails on an id that is not there', () => {

@@ -75,14 +75,15 @@ source.
 ## Running
 
 ```bash
-npm install
-npm run build:panel
-npm run serve            # http://127.0.0.1:4173
+pnpm install
+pnpm run build:panel
+pnpm run serve            # http://127.0.0.1:4173
 ```
 
-`WPT_DB` sets the database path (default `wp-translator.sqlite`), `WPT_PORT` the
-port, `WPT_PANEL` the built panel it serves (default `dist/panel`). Panel
-development: `npm run dev:panel`, which proxies `/api` to the server.
+Requires Node.js >= 22 (for `node --experimental-strip-types`). `WPT_DB` sets the
+database path (default `wp-translator.sqlite`), `WPT_PORT` the port, `WPT_PANEL`
+the built panel it serves (default `dist/panel`). Panel development:
+`pnpm run dev:panel`, which proxies `/api` to the server.
 
 A fresh database already carries the trusted sources and the Turkish style guide
 — nothing to paste in. The official WordPress Turkish glossary is not seeded,
@@ -410,8 +411,8 @@ The guide is seeded once, on first open, so a database created before an edit to
 overwrite whatever has since been written in the panel.
 
 ```bash
-npm run style-guide:sync            # replaces the general guide with the file
-npm run style-guide:sync -- --force # …even if it was edited by hand
+pnpm run style-guide:sync            # replaces the general guide with the file
+pnpm run style-guide:sync -- --force # …even if it was edited by hand
 ```
 
 Without `--force` it refuses when the stored text carries lines the file does
@@ -440,10 +441,10 @@ not, and prints them — that is the signature of a hand edit.
 ## Tests
 
 ```bash
-npm test
-npm run typecheck
-npx vue-tsc --noEmit -p tsconfig.json
-npx vite build
+pnpm test
+pnpm run typecheck
+pnpm exec vue-tsc --noEmit -p tsconfig.json
+pnpm run build:panel
 ```
 
 They assert the properties the design argued for rather than the happy path: PO

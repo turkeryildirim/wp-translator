@@ -2,13 +2,16 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import type { Db } from '../db/open.ts';
+import { listAiAgents, updateAiAgent } from '../db/aiSettings.ts';
 import { applyGlossary } from '../glossary/match.ts';
 import { judgeSubmissions, type JudgeRequest } from './judge.ts';
 import { proposeTranslations, type ProposeRequest } from './propose.ts';
 import { readJob, startJob } from './jobs.ts';
 import { exportProject } from '../project/export.ts';
 import {
+  copyMemoryToTerms,
   createEntry,
+  deleteEntries,
   deleteEntry,
   entryContexts,
   entrySources,
@@ -19,6 +22,7 @@ import {
   type NewEntry,
 } from './glossary.ts';
 import {
+  addUnitsToGlossary,
   bulkSetState,
   listProjects,
   listUnits,
@@ -30,7 +34,7 @@ import {
   type QueueView,
   type UnitFilter,
 } from './review.ts';
-import { addProject, bulkApprove, ownWork, reloadProject, removeProject } from './projects.ts';
+import { addProject, bulkApprove, importSourcesToProjects, ownWork, reloadProject, removeProject } from './projects.ts';
 import {
   startTranslation,
   stopTranslation,
@@ -40,6 +44,7 @@ import {
 } from './translate.ts';
 import {
   createTag,
+  deleteTag,
   listStyleRules,
   mergeTags,
   previewMerge,
@@ -52,11 +57,13 @@ import {
   bulkTagSources,
   listSources,
   normaliseProjectUrl,
+  refreshSourcesStats,
   removeSources,
   reorderSources,
   setSourceTags,
   startSync,
   syncProgress,
+  updateSourceStats,
   verifyProjectUrl,
 } from './sources.ts';
 
@@ -215,7 +222,13 @@ async function api(
       const body = (await readJson(request)) as { url: string; tagIds?: number[]; label?: string };
       const url = normaliseProjectUrl(body.url);
       await verifyProjectUrl(url);
-      return send(response, 200, { id: addSource(db, url, body.tagIds ?? [], body.label) });
+      const id = addSource(db, url, body.tagIds ?? [], body.label);
+      try {
+        await updateSourceStats(db, id, url);
+      } catch (err) {
+        console.warn('İlk GlotPress istatistiği çekilemedi:', err);
+      }
+      return send(response, 200, { id });
     }
   }
 
@@ -249,6 +262,17 @@ async function api(
     const body = (await readJson(request)) as { ids: number[] };
     reorderSources(db, body.ids);
     return send(response, 200, { ok: true });
+  }
+
+  if (method === 'POST' && route === '/api/sources/import-to-projects') {
+    const body = (await readJson(request)) as { ids: number[] };
+    return send(response, 200, await importSourcesToProjects(db, body.ids ?? []));
+  }
+
+  if (method === 'POST' && route === '/api/sources/stats') {
+    const body = (await readJson(request)) as { ids?: number[] } | null;
+    const result = await refreshSourcesStats(db, body?.ids);
+    return send(response, 200, result);
   }
 
   if (route === '/api/sources/sync') {
@@ -306,6 +330,16 @@ async function api(
     return send(response, 200, createEntry(db, (await readJson(request)) as unknown as NewEntry));
   }
 
+  if (method === 'POST' && route === '/api/glossary/bulk-delete') {
+    const body = (await readJson(request)) as { ids: number[] };
+    return send(response, 200, deleteEntries(db, body.ids ?? []));
+  }
+
+  if (method === 'POST' && route === '/api/glossary/copy-from-memory') {
+    const body = (await readJson(request)) as { ids: number[]; pos?: string };
+    return send(response, 200, copyMemoryToTerms(db, body.ids ?? [], body.pos ?? 'noun'));
+  }
+
   const entry = /^\/api\/glossary\/(\d+)$/.exec(route);
   if (entry) {
     if (method === 'GET') {
@@ -316,11 +350,22 @@ async function api(
       const body = (await readJson(request)) as {
         translation: string;
         translationPlural?: string;
+        note?: string;
+        pos?: string;
+        sourceText?: string;
       };
       return send(
         response,
         200,
-        updateEntry(db, Number(entry[1]), body.translation, body.translationPlural),
+        updateEntry(
+          db,
+          Number(entry[1]),
+          body.translation,
+          body.translationPlural,
+          body.note,
+          body.pos,
+          body.sourceText,
+        ),
       );
     }
     if (method === 'DELETE') {
@@ -337,6 +382,12 @@ async function api(
   if (method === 'POST' && tag) {
     const body = (await readJson(request)) as { name: string };
     renameTag(db, Number(tag[1]), body.name);
+    return send(response, 200, { ok: true });
+  }
+  if (method === 'DELETE' && tag) {
+    const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+    const force = url.searchParams.get('force') === 'true';
+    deleteTag(db, Number(tag[1]), force);
     return send(response, 200, { ok: true });
   }
 
@@ -365,9 +416,35 @@ async function api(
     }
   }
 
+  if (route === '/api/settings/ai') {
+    if (method === 'GET') return send(response, 200, { agents: listAiAgents(db) });
+    if (method === 'POST') {
+      const body = (await readJson(request)) as {
+        agents?: Array<{
+          id: string;
+          model?: string;
+          enabled?: boolean;
+          command?: string;
+          bashSample?: string;
+        }>;
+      };
+      if (Array.isArray(body.agents)) {
+        for (const agent of body.agents) {
+          updateAiAgent(db, agent.id, agent);
+        }
+      }
+      return send(response, 200, { ok: true, agents: listAiAgents(db) });
+    }
+  }
+
   if (method === 'POST' && route === '/api/projects') {
     const body = (await readJson(request)) as { url: string; tagIds?: number[] };
-    return send(response, 200, await addProject(db, body.url, body.tagIds ?? []));
+    try {
+      return send(response, 200, await addProject(db, body.url, body.tagIds ?? []));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return send(response, 400, { error: message });
+    }
   }
 
   const project = /^\/api\/projects\/(\d+)$/.exec(route);
@@ -405,9 +482,10 @@ async function api(
   const bulkState = /^\/api\/projects\/(\d+)\/bulk$/.exec(route);
   if (method === 'POST' && bulkState) {
     const body = (await readJson(request)) as {
-      action: 'approve' | 'clear' | 'glossary';
+      action: 'approve' | 'clear' | 'glossary' | 'add_to_glossary';
       ids?: number[];
       filter?: string;
+      pos?: string;
     };
     const projectId = Number(bulkState[1]);
     const target = body.ids
@@ -420,7 +498,36 @@ async function api(
       const result = applyGlossary(db, projectId, ids);
       return send(response, 200, { changed: result.filled, skipped: result.unmatched });
     }
+    if (body.action === 'add_to_glossary') {
+      const result = addUnitsToGlossary(db, projectId, target, { pos: body.pos });
+      return send(response, 200, { changed: result.added, skipped: result.skipped, empty: result.empty });
+    }
     return send(response, 200, bulkSetState(db, projectId, target, body.action));
+  }
+
+  const addToGlossaryRoute = /^\/api\/projects\/(\d+)\/add-to-glossary$/.exec(route);
+  if (method === 'POST' && addToGlossaryRoute) {
+    const body = (await readJson(request)) as {
+      ids?: number[];
+      filter?: string;
+      pos?: string;
+      translation?: string;
+      translationPlural?: string;
+    };
+    const projectId = Number(addToGlossaryRoute[1]);
+    const target = body.ids
+      ? { ids: body.ids }
+      : { filter: readFilter(new URL(`http://x/?${body.filter ?? ''}`)) };
+
+    return send(
+      response,
+      200,
+      addUnitsToGlossary(db, projectId, target, {
+        pos: body.pos,
+        translation: body.translation,
+        translationPlural: body.translationPlural,
+      }),
+    );
   }
 
   const replace = /^\/api\/projects\/(\d+)\/replace$/.exec(route);
@@ -431,6 +538,7 @@ async function api(
       ids?: number[];
       filter?: string;
       preview?: boolean;
+      caseSensitive?: boolean;
     };
     if (!body.find) return send(response, 400, { error: 'find is required.' });
 
@@ -450,6 +558,7 @@ async function api(
         body.find,
         body.replace ?? '',
         body.preview === true,
+        body.caseSensitive !== false,
       ),
     );
   }
@@ -504,6 +613,10 @@ function readGlossaryQuery(url: URL): GlossaryQuery {
 
   const kind = url.searchParams.get('kind');
   if (kind === 'memory' || kind === 'term') query.kind = kind;
+  const pos = url.searchParams.get('pos');
+  if (pos) query.pos = pos;
+  const origin = url.searchParams.get('origin');
+  if (origin === 'trusted' || origin === 'owner') query.origin = origin;
   if (url.searchParams.get('contested') === '1') query.contested = true;
 
   const limit = Number(url.searchParams.get('limit'));
@@ -537,7 +650,7 @@ async function serveStatic(root: string, route: string, response: ServerResponse
       response.writeHead(200, { 'content-type': MIME['.html']! });
       response.end(index);
     } catch {
-      send(response, 404, { error: 'Panel is not built. Run `npm run build:panel`.' });
+      send(response, 404, { error: 'Panel is not built. Run `pnpm run build:panel`.' });
     }
   }
 }

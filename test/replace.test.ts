@@ -55,6 +55,17 @@ describe('replacing text across translations', () => {
     expect(unit('Plugin').msgstr).toBe('eklenti');
   });
 
+  it('supports case-insensitive replacement when caseSensitive is false', () => {
+    const result = replaceInTranslations(
+      db, projectId, { filter: { view: 'all' } }, 'eklenti', 'Uzantı', false, false,
+    );
+
+    expect(result).toMatchObject({ matched: 3, changed: 3 });
+    expect(unit('Plugin settings').msgstr).toBe('Uzantı ayarları');
+    expect(unit('Install plugin').msgstr).toBe('Uzantı kur');
+    expect(unit('Plugin').msgstr).toBe('Uzantı');
+  });
+
   it('matches Turkish letters as themselves', () => {
     // `İ` and `ı` are distinct letters, not case variants of `i`, and a fold that
     // treats them otherwise rewrites words it was never pointed at.

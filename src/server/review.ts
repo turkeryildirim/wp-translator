@@ -1,6 +1,7 @@
 import type { Db } from '../db/open.ts';
-import { match, searchColumns } from './glossary.ts';
-import { collectTerms, type Term } from '../glossary/terminology.ts';
+import { defaultTagId } from './sources.ts';
+import { inferPos, match, searchColumns } from './glossary.ts';
+import type { Term } from '../glossary/terminology.ts';
 import { checkTranslation, type CheckFailure } from '../quality/check.ts';
 
 export type UnitState = 'untranslated' | 'review' | 'ok';
@@ -63,6 +64,7 @@ export interface ProjectSummary {
   id: number;
   name: string | null;
   projectPath: string;
+  subProject: string | null;
   /** The project's page on translate.wordpress.org, as the owner gave it. */
   translateUrl: string;
   total: number;
@@ -76,7 +78,7 @@ const STRUCTURE = /%(?:\d+\$)?(?:ll|l|z|h)?[@sdifuxXgGc]|%%|<\/?[a-zA-Z][^<>]*>|
 export function listProjects(db: Db): ProjectSummary[] {
   return db
     .prepare(
-      `SELECT p.id, p.name, p.project_path AS projectPath, p.translate_url AS translateUrl,
+      `SELECT p.id, p.name, p.project_path AS projectPath, p.sub_project AS subProject, p.translate_url AS translateUrl,
               count(u.id) AS total,
               sum(u.state = 'ok') AS ok,
               sum(u.state = 'review') AS review,
@@ -258,12 +260,314 @@ export function bulkSetState(
   })();
 }
 
+export interface AddUnitsToGlossaryResult {
+  added: number;
+  skipped: number;
+  empty: number;
+  entries: { id: number; sourceText: string; pos: string; added: boolean }[];
+}
+
+/**
+ * Add translation units to the glossary (terminology, pos IS NOT NULL).
+ * Does not overwrite existing glossary terms (INSERT OR IGNORE).
+ */
+export function addUnitsToGlossary(
+  db: Db,
+  projectId: number,
+  target: BulkTarget,
+  options: {
+    pos?: string | undefined;
+    translation?: string | undefined;
+    translationPlural?: string | undefined;
+  } = {},
+): AddUnitsToGlossaryResult {
+  const { clause, params } = targetClause(projectId, target);
+
+  const projectTagRow = db
+    .prepare(`SELECT tag_id FROM project_tags WHERE project_id = ? LIMIT 1`)
+    .get(projectId) as { tag_id: number } | undefined;
+  const tagId = projectTagRow?.tag_id ?? defaultTagId(db);
+
+  const fixedPos = options.pos && options.pos !== 'auto' ? options.pos.trim() : null;
+
+  const units = db
+    .prepare(
+      `SELECT u.id, u.source_hash AS sourceHash, u.msgid AS sourceText,
+              u.msgid_plural AS sourcePlural, u.msgstr AS translation,
+              u.msgstr_plural AS translationPlural
+         FROM translation_units u
+        WHERE ${clause}`,
+    )
+    .all(...params) as {
+      id: number;
+      sourceHash: string;
+      sourceText: string;
+      sourcePlural: string | null;
+      translation: string | null;
+      translationPlural: string | null;
+    }[];
+
+  const insert = db.prepare(
+    `INSERT OR IGNORE INTO glossary_entries
+       (source_hash, source_text, source_plural, msgctxt, tag_id,
+        translation, translation_plural, pos, note, origin, is_official)
+     VALUES (?, ?, ?, NULL, ?, ?, ?, ?, NULL, 'owner', 0)`,
+  );
+
+  return db.transaction(() => {
+    let added = 0;
+    let skipped = 0;
+    let empty = 0;
+    const entries: { id: number; sourceText: string; pos: string; added: boolean }[] = [];
+
+    for (const unit of units) {
+      const translation =
+        options.translation !== undefined && units.length === 1
+          ? options.translation.trim()
+          : (unit.translation ?? '').trim();
+      const translationPlural =
+        options.translationPlural !== undefined && units.length === 1
+          ? options.translationPlural.trim()
+          : (unit.translationPlural ?? '').trim();
+
+      if (!translation) {
+        empty += 1;
+        continue;
+      }
+
+      const itemPos = fixedPos ?? inferPos(db, unit.sourceText, translation);
+      const res = insert.run(
+        unit.sourceHash,
+        unit.sourceText,
+        unit.sourcePlural,
+        tagId,
+        translation,
+        translationPlural || null,
+        itemPos,
+      );
+
+      if (res.changes > 0) {
+        added += 1;
+        entries.push({ id: unit.id, sourceText: unit.sourceText, pos: itemPos, added: true });
+      } else {
+        skipped += 1;
+        entries.push({ id: unit.id, sourceText: unit.sourceText, pos: itemPos, added: false });
+      }
+    }
+
+    return { added, skipped, empty, entries };
+  })();
+}
+
+export interface TmSuggestion {
+  source: string;
+  translation: string;
+  translationPlural: string | null;
+  similarity: number;
+  tag?: string;
+}
+
+export interface GlossarySuggestion {
+  id: number;
+  source: string;
+  translation: string;
+  translationPlural: string | null;
+  pos: string | null;
+  note: string | null;
+  tag: string | null;
+  isOfficial: boolean;
+}
+
 /** What the detail panel shows for one unit. */
 export interface UnitDetail {
+  msgid: string;
   refs: string | null;
   extractedComments: string | null;
   usageSurface: string | null;
+  suggestions: TmSuggestion[];
   terms: Term[];
+  glossaryTerms: GlossarySuggestion[];
+}
+
+function calculateSimilarity(a: string, b: string): number {
+  if (a === b) return 1.0;
+  const la = a.length;
+  const lb = b.length;
+  if (la === 0 || lb === 0) return 0;
+  const maxL = Math.max(la, lb);
+  const minL = Math.min(la, lb);
+  if (minL / maxL < 0.65) return 0;
+
+  let prev = new Int32Array(lb + 1);
+  let curr = new Int32Array(lb + 1);
+  for (let j = 0; j <= lb; j++) prev[j] = j;
+
+  for (let i = 1; i <= la; i++) {
+    curr[0] = i;
+    const codeA = a.charCodeAt(i - 1);
+    for (let j = 1; j <= lb; j++) {
+      const cost = codeA === b.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j]! + 1,
+        curr[j - 1]! + 1,
+        prev[j - 1]! + cost,
+      );
+    }
+    const temp = prev;
+    prev = curr;
+    curr = temp;
+  }
+  return Math.max(0, (maxL - prev[lb]!) / maxL);
+}
+
+export function findTmSuggestions(db: Db, projectId: number, msgid: string): TmSuggestion[] {
+  const normTarget = msgid.trim().toLowerCase();
+  const cleanTarget = normTarget.replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, '');
+
+  const suggestions: TmSuggestion[] = [];
+  const seen = new Set<string>();
+
+  // 1. Exact matches for the whole string (%100)
+  const exactRows = db
+    .prepare(
+      `SELECT g.source_text AS source, g.translation, g.translation_plural AS translationPlural,
+              t.name AS tag
+         FROM glossary_entries g
+         JOIN tags t ON t.id = g.tag_id
+        WHERE g.source_text = ? AND g.pos IS NULL
+          AND g.tag_id IN (SELECT tag_id FROM project_tags WHERE project_id = ?)
+        GROUP BY g.translation, ifnull(g.translation_plural, '')
+        ORDER BY (g.origin = 'owner') DESC, g.id ASC`,
+    )
+    .all(msgid, projectId) as { source: string; translation: string; translationPlural: string | null; tag: string }[];
+
+  for (const r of exactRows) {
+    const key = `${r.translation}\u0000${r.translationPlural ?? ''}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      suggestions.push({
+        source: r.source,
+        translation: r.translation,
+        translationPlural: r.translationPlural,
+        similarity: 100,
+        tag: r.tag,
+      });
+    }
+  }
+
+  // 2. Fuzzy matches (>= 85% similarity) for the whole string
+  if (msgid.length >= 3) {
+    const minLen = Math.floor(msgid.length * 0.70);
+    const maxLen = Math.ceil(msgid.length / 0.70);
+
+    const words = (msgid.match(/[A-Za-z0-9]+/g) || [])
+      .filter((w) => w.length >= 3)
+      .sort((a, b) => b.length - a.length)
+      .slice(0, 3);
+
+    let query = `
+      SELECT g.source_text AS source, g.translation, g.translation_plural AS translationPlural,
+             t.name AS tag
+        FROM glossary_entries g
+        JOIN tags t ON t.id = g.tag_id
+       WHERE g.pos IS NULL
+         AND g.tag_id IN (SELECT tag_id FROM project_tags WHERE project_id = ?)
+         AND length(g.source_text) BETWEEN ? AND ?
+    `;
+    const params: (number | string)[] = [projectId, minLen, maxLen];
+
+    if (words.length > 0) {
+      const likeClauses = words.map(() => 'g.source_text LIKE ?').join(' OR ');
+      query += ` AND (${likeClauses})`;
+      for (const w of words) params.push(`%${w}%`);
+    }
+    query += ' LIMIT 400';
+
+    const fuzzyCandidates = db.prepare(query).all(...params) as {
+      source: string;
+      translation: string;
+      translationPlural: string | null;
+      tag: string;
+    }[];
+
+    for (const r of fuzzyCandidates) {
+      const normSource = r.source.trim().toLowerCase();
+      const cleanSource = normSource.replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, '');
+
+      let sim = calculateSimilarity(normTarget, normSource);
+      if (cleanTarget === cleanSource && sim < 0.90) {
+        sim = 0.92;
+      }
+      const pct = Math.round(sim * 100);
+      if (pct >= 85) {
+        const key = `${r.translation}\u0000${r.translationPlural ?? ''}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          suggestions.push({
+            source: r.source,
+            translation: r.translation,
+            translationPlural: r.translationPlural,
+            similarity: pct,
+            tag: r.tag,
+          });
+        }
+      }
+    }
+  }
+
+  suggestions.sort((a, b) => b.similarity - a.similarity);
+  return suggestions.slice(0, 8);
+}
+
+export function findGlossarySuggestions(db: Db, projectId: number, msgid: string): GlossarySuggestion[] {
+  const norm = msgid.trim();
+  const clean = norm.replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, '');
+
+  const query = `
+    SELECT g.id, g.source_text AS source, g.translation,
+           g.translation_plural AS translationPlural,
+           g.pos, g.note, t.name AS tag, g.is_official AS isOfficial
+      FROM glossary_entries g
+      LEFT JOIN tags t ON t.id = g.tag_id
+     WHERE g.pos IS NOT NULL
+       AND (
+         g.source_text = ?
+         OR fold(g.source_text) = fold(?)
+         ${clean && clean !== norm ? 'OR fold(g.source_text) = fold(?)' : ''}
+       )
+       AND (
+         g.tag_id IS NULL
+         OR (SELECT count(*) FROM project_tags WHERE project_id = ?) = 0
+         OR g.tag_id IN (SELECT tag_id FROM project_tags WHERE project_id = ?)
+         OR g.is_official = 1
+       )
+     ORDER BY (g.source_text = ?) DESC, (g.is_official = 1) DESC, g.id ASC
+  `;
+
+  const params: (string | number)[] = [
+    norm,
+    norm,
+    ...(clean && clean !== norm ? [clean] : []),
+    projectId,
+    projectId,
+    norm,
+  ];
+
+  const rows = db.prepare(query).all(...params) as {
+    id: number;
+    source: string;
+    translation: string;
+    translationPlural: string | null;
+    pos: string | null;
+    note: string | null;
+    tag: string | null;
+    isOfficial: number;
+  }[];
+
+  return rows.map((r) => ({
+    ...r,
+    isOfficial: r.isOfficial === 1,
+  }));
 }
 
 export function unitDetail(db: Db, unitId: number): UnitDetail {
@@ -280,10 +584,13 @@ export function unitDetail(db: Db, unitId: number): UnitDetail {
   if (!row) throw new Error(`No translation unit with id ${unitId}.`);
 
   return {
+    msgid: row.msgid,
     refs: row.refs,
     extractedComments: row.extractedComments,
     usageSurface: row.usageSurface,
-    terms: collectTerms(db, row.projectId, [row.msgid]),
+    suggestions: findTmSuggestions(db, row.projectId, row.msgid),
+    terms: [],
+    glossaryTerms: findGlossarySuggestions(db, row.projectId, row.msgid),
   };
 }
 
@@ -391,6 +698,12 @@ export interface ReplaceResult {
  *
  * @param preview counts without writing, so the size of the change is known first.
  */
+function turkishRegex(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const trFolded = escaped.replace(/[iİıI]/g, '[iİıI]');
+  return new RegExp(trFolded, 'gui');
+}
+
 export function replaceInTranslations(
   db: Db,
   projectId: number,
@@ -398,8 +711,13 @@ export function replaceInTranslations(
   find: string,
   replace: string,
   preview = false,
+  caseSensitive = true,
 ): ReplaceResult {
   if (find === '') throw new Error('Aranacak metin boş olamaz.');
+
+  const regex = caseSensitive ? null : turkishRegex(find);
+  const doReplace = (text: string): string =>
+    caseSensitive ? text.replaceAll(find, replace) : text.replace(regex!, replace);
 
   const { clause, params } = targetClause(projectId, target);
   const rows = db
@@ -431,8 +749,8 @@ export function replaceInTranslations(
     let blocked = 0;
 
     for (const row of rows) {
-      const msgstr = row.msgstr.replaceAll(find, replace);
-      const msgstrPlural = row.msgstrPlural?.replaceAll(find, replace) ?? null;
+      const msgstr = doReplace(row.msgstr);
+      const msgstrPlural = row.msgstrPlural ? doReplace(row.msgstrPlural) : null;
       if (msgstr === row.msgstr && msgstrPlural === row.msgstrPlural) continue;
 
       matched += 1;

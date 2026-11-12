@@ -71,6 +71,13 @@ function stop(): void {
       </p>
       <progress :value="progress.done" :max="progress.total || 1" />
 
+      <p v-if="progress.currentChunk" class="waiting" style="color: var(--accent-warm); font-weight: 600; margin: 6px 0;">
+        ⚡ Küme: {{ progress.currentChunk.current }} / {{ progress.currentChunk.total }}
+        <span v-if="progress.currentChunk.sample" class="muted" style="font-weight: normal; color: var(--text-muted);">
+          ({{ progress.currentChunk.sample }})
+        </span>
+      </p>
+
       <p class="waiting">
         <template v-if="waited === null">Küme hazırlanıyor…</template>
         <template v-else>

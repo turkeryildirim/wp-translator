@@ -39,6 +39,32 @@ export function renameTag(db: Db, id: number, name: string): void {
   db.prepare(`UPDATE tags SET name = ? WHERE id = ?`).run(normaliseTagName(name), id);
 }
 
+export function deleteTag(db: Db, id: number, force = false): void {
+  const entryCount = (
+    db.prepare(`SELECT count(*) AS n FROM glossary_entries WHERE tag_id = ?`).get(id) as { n: number }
+  ).n;
+  const projectCount = countLinks(db, 'project_tags', id);
+  const sourceCount = countLinks(db, 'trusted_source_tags', id);
+
+  if (!force && (entryCount > 0 || projectCount > 0 || sourceCount > 0)) {
+    const reasons: string[] = [];
+    if (entryCount > 0) reasons.push(`${entryCount} sözlük girdisi`);
+    if (projectCount > 0) reasons.push(`${projectCount} proje`);
+    if (sourceCount > 0) reasons.push(`${sourceCount} güvenilir kaynak`);
+    throw new Error(
+      `Bu etiket boş değil (${reasons.join(', ')} bağlı). Girdileri korumak için 'Etiketleri Birleştir' özelliğini kullanın.`,
+    );
+  }
+
+  db.transaction(() => {
+    db.prepare(`DELETE FROM project_tags WHERE tag_id = ?`).run(id);
+    db.prepare(`DELETE FROM trusted_source_tags WHERE tag_id = ?`).run(id);
+    db.prepare(`DELETE FROM style_rules WHERE tag_id = ?`).run(id);
+    db.prepare(`DELETE FROM glossary_entries WHERE tag_id = ?`).run(id);
+    db.prepare(`DELETE FROM tags WHERE id = ?`).run(id);
+  })();
+}
+
 /** What a merge would do, so the owner sees the collision count before choosing. */
 export function previewMerge(db: Db, fromId: number, toId: number): MergePreview {
   if (fromId === toId) throw new Error('A tag cannot be merged into itself.');

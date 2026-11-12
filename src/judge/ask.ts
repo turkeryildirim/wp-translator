@@ -4,8 +4,11 @@ import { join } from 'node:path';
 import type { Db } from '../db/open.ts';
 import { questionKey, recall, remember, rulesKey } from '../ai/memory.ts';
 import { agyItems, invokeAgy } from '../translate/agy.ts';
+import { invokeClaude } from '../translate/claude.ts';
+import { invokeCodex } from '../translate/codex.ts';
 import { collectText, invokeOpencode, jsonArray, providerError } from '../translate/opencode.ts';
 import { unescapeEchoedQuotes } from '../text/escapes.ts';
+import type { Engine } from '../server/translate.ts';
 import { buildJudgePrompt, toJudgeItems, type JudgeContext } from './prompt.ts';
 import { proposalFor, type Judgement, type Submission } from './verdict.ts';
 
@@ -72,8 +75,8 @@ export interface AskResult {
 }
 
 export interface AskOptions {
-  /** Which CLI to ask. agy enforces the answer's shape; opencode is parsed. */
-  engine?: 'opencode' | 'agy';
+  /** Which CLI to ask. agy/codex enforces the answer's shape; opencode/claude is parsed. */
+  engine?: Engine;
   model?: string;
   /** opencode only: the tool-free agent. */
   agent?: string;
@@ -197,6 +200,27 @@ async function opinionsFrom(
   schemaPath: string,
   options: AskOptions,
 ): Promise<unknown[]> {
+  if (options.engine === 'claude') {
+    const stdout = await invokeClaude({
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+      prompt,
+    });
+    return jsonArray(stdout);
+  }
+
+  if (options.engine === 'codex') {
+    const stdout = await invokeCodex({
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+      schemaPath,
+      prompt,
+    });
+    return jsonArray(stdout);
+  }
+
   if (options.engine === 'opencode') {
     const stdout = await invokeOpencode({
       ...(options.model ? { model: options.model } : {}),

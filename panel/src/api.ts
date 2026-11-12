@@ -31,6 +31,7 @@ export interface Project {
   id: number;
   name: string | null;
   projectPath: string;
+  subProject?: string | null;
   translateUrl: string;
   total: number;
   ok: number;
@@ -44,11 +45,33 @@ export interface TermReading {
   note?: string;
 }
 
+export interface TmSuggestion {
+  source: string;
+  translation: string;
+  translationPlural?: string | null;
+  similarity: number;
+  tag?: string;
+}
+
+export interface GlossarySuggestion {
+  id: number;
+  source: string;
+  translation: string;
+  translationPlural?: string | null;
+  pos?: string | null;
+  note?: string | null;
+  tag?: string | null;
+  isOfficial?: boolean;
+}
+
 export interface UnitDetail {
+  msgid?: string;
   refs: string | null;
   extractedComments: string | null;
   usageSurface: string | null;
-  terms: { source: string; readings: TermReading[] }[];
+  suggestions?: TmSuggestion[];
+  terms?: { source: string; readings: TermReading[] }[];
+  glossaryTerms?: GlossarySuggestion[];
 }
 
 /**
@@ -75,8 +98,9 @@ const json = async <T>(input: string, init?: RequestInit, label?: string): Promi
   withdraw(OFFLINE);
 
   if (!response.ok) {
-    notify('error', `${label ?? 'İstek'} başarısız: ${await reason(response)}`);
-    throw new Error(`${response.status} ${response.statusText}`);
+    const errorReason = await reason(response);
+    notify('error', `${label ?? 'İstek'} başarısız: ${errorReason}`);
+    throw new Error(errorReason);
   }
 
   if (label) notify('ok', label);
@@ -150,7 +174,32 @@ export const listUnits = (projectId: number, params: Record<string, string> = {}
  * Apply an action to the ticked rows, or to everything a filter matches. The
  * filter travels as a query string rather than as the ids it stands for.
  */
-export type BulkAction = 'approve' | 'clear' | 'glossary';
+export type BulkAction = 'approve' | 'clear' | 'glossary' | 'add_to_glossary';
+
+export interface AddUnitsToGlossaryResult {
+  added: number;
+  skipped: number;
+  empty: number;
+  entries: { id: number; sourceText: string; pos: string; added: boolean }[];
+}
+
+export const addUnitsToGlossary = (
+  projectId: number,
+  target: { ids: number[] } | { params: Record<string, string> },
+  pos = 'auto',
+  override?: { translation?: string; translationPlural?: string },
+) =>
+  post<AddUnitsToGlossaryResult>(
+    `/api/projects/${projectId}/add-to-glossary`,
+    {
+      ...('ids' in target
+        ? { ids: target.ids }
+        : { filter: new URLSearchParams(target.params).toString() }),
+      pos,
+      ...(override ?? {}),
+    },
+    'Sözlüğe ekle',
+  );
 
 export const bulkSetState = (
   projectId: number,
@@ -189,6 +238,7 @@ export const replaceInTranslations = (
   replace: string,
   target: { ids: number[] } | { params: Record<string, string> },
   preview = false,
+  caseSensitive = true,
 ) =>
   post<ReplaceResult>(
     `/api/projects/${projectId}/replace`,
@@ -196,6 +246,7 @@ export const replaceInTranslations = (
       find,
       replace,
       preview,
+      caseSensitive,
       ...('ids' in target
         ? { ids: target.ids }
         : { filter: new URLSearchParams(target.params).toString() }),
@@ -245,6 +296,13 @@ export interface TrustedSource {
   lastSyncedAt: string | null;
   entries: number;
   tagIds: number[];
+  translated: number;
+  fuzzy: number;
+  waiting: number;
+  untranslated: number;
+  totalStrings: number;
+  percent: number;
+  existingProjectId?: number | null;
 }
 
 export interface SyncProgress {
@@ -271,6 +329,7 @@ export interface GlossaryEntry {
   translation: string;
   translationPlural: string | null;
   origin: 'trusted' | 'owner';
+  isOfficial?: number;
   tag: string;
   sources: number;
   /** Contexts this translation has been seen under; not part of its identity. */
@@ -307,6 +366,8 @@ export const reorderSources = (ids: number[]) => post<{ ok: true }>('/api/source
 export const startSync = (ids?: number[]) =>
   post<SyncProgress>('/api/sources/sync', ids ? { ids } : {}, 'Güncelleme başlatıldı');
 export const syncProgress = () => json<SyncProgress>('/api/sources/sync');
+export const refreshSourcesStats = (ids?: number[], label?: string) =>
+  post<{ updated: number }>('/api/sources/stats', ids ? { ids } : {}, label);
 
 export const searchGlossary = (params: Record<string, string>) =>
   json<{ rows: GlossaryEntry[]; total: number }>(`/api/glossary?${new URLSearchParams(params)}`);
@@ -323,7 +384,9 @@ export interface NewEntry {
   sourcePlural?: string;
   translation: string;
   translationPlural?: string;
-  tagId: number;
+  tagId?: number;
+  pos?: string;
+  note?: string;
 }
 
 export const createEntry = (entry: NewEntry) =>
@@ -337,16 +400,46 @@ export const deleteEntry = (id: number) =>
  * Whether this entry is the owner's own to remove. Mirrors `isOwnEntry` on the
  * server, so the button is disabled rather than refused after the click.
  */
-export const isOwnEntry = (entry: GlossaryEntry): boolean =>
-  entry.origin === 'owner' && entry.pos === null && entry.sources === 0;
+export const isOwnEntry = (entry: GlossaryEntry): boolean => {
+  if (entry.pos === null) {
+    return entry.origin === 'owner' && entry.sources === 0;
+  }
+  return true;
+};
+
+export const bulkDeleteEntries = (ids: number[]) =>
+  post<{ removed: number }>('/api/glossary/bulk-delete', { ids }, 'Seçilen terimler silindi');
+
+export interface CopyMemoryResult {
+  added: number;
+  skipped: number;
+  entries: { id: number; sourceText: string; pos: string; added: boolean }[];
+}
+
+export const copyMemoryToTerms = (ids: number[], pos?: string) =>
+  post<CopyMemoryResult>(
+    '/api/glossary/copy-from-memory',
+    { ids, ...(pos && pos !== 'auto' ? { pos } : {}) },
+    'Terimler sözlüğe aktarıldı',
+  );
+
 export const updateEntry = (
   id: number,
   translation: string,
   translationPlural?: string,
+  note?: string,
+  pos?: string,
+  sourceText?: string,
 ) =>
   post<{ entry: GlossaryEntry; sourceWordingReturns: boolean }>(
     `/api/glossary/${id}`,
-    translationPlural === undefined ? { translation } : { translation, translationPlural },
+    {
+      translation,
+      ...(translationPlural !== undefined ? { translationPlural } : {}),
+      ...(note !== undefined ? { note } : {}),
+      ...(pos !== undefined ? { pos } : {}),
+      ...(sourceText !== undefined ? { sourceText } : {}),
+    },
     'Sözlük girdisi kaydedildi',
   );
 
@@ -373,6 +466,8 @@ export interface AddProjectResult {
 
 export const createTag = (name: string) => post<{ id: number }>('/api/tags', { name }, 'Etiket oluşturuldu');
 export const renameTag = (id: number, name: string) => post<{ ok: true }>(`/api/tags/${id}`, { name }, 'Etiket adı değiştirildi');
+export const deleteTag = (id: number, force = false) =>
+  json<{ ok: true }>(`/api/tags/${id}${force ? '?force=true' : ''}`, { method: 'DELETE' }, 'Etiket silindi');
 export const previewMerge = (from: number, to: number) =>
   post<MergePreview>('/api/tags/merge', { from, to, preview: true });
 export const mergeTags = (from: number, to: number, policy: 'keep-target' | 'take-source') =>
@@ -419,15 +514,34 @@ export interface TranslateProgress {
   reused: number;
   timeoutMs: number;
   /** Which CLI and model the run actually chose. */
-  engine: 'opencode' | 'agy';
+  engine: Engine;
   model: string | null;
   finishedAt: string | null;
+  currentChunk?: { current: number; total: number; sample?: string | undefined } | null;
 }
 
 export type TranslateScope = 'untranslated' | 'waiting' | 'selected' | 'all';
 
 /** Which CLI does the translating. */
-export type Engine = 'opencode' | 'agy';
+export type Engine = 'opencode' | 'agy' | 'claude' | 'codex';
+
+export interface AiAgent {
+  id: string;
+  name: string;
+  command: string;
+  model: string;
+  defaultModel: string;
+  enabled: boolean;
+  icon: string;
+  bashSample: string;
+  description: string;
+}
+
+export const fetchAiSettings = () =>
+  json<{ agents: AiAgent[] }>('/api/settings/ai');
+
+export const saveAiSettings = (agents: AiAgent[]) =>
+  post<{ ok: true; agents: AiAgent[] }>('/api/settings/ai', { agents }, 'AI ayarları kaydedildi');
 
 export const startTranslation = (
   projectId: number,
@@ -459,3 +573,53 @@ export const bulkDeleteSources = (ids: number[]) =>
 
 export const bulkTagSources = (ids: number[], change: { add?: number[]; remove?: number[] }) =>
   post<{ changed: number }>('/api/sources/bulk-tags', { ids, ...change });
+
+export interface ImportSourcesResult {
+  added: Array<{ id: number; name: string; strings: number }>;
+  skipped: Array<{ id: number; name: string; reason: string }>;
+  errors: Array<{ id: number; name: string; error: string }>;
+}
+
+export const importSourcesToProjects = (ids: number[]) =>
+  post<ImportSourcesResult>('/api/sources/import-to-projects', { ids }, 'Projeler aktarıldı');
+
+export interface SingleProposal {
+  id: number;
+  translation?: string;
+  translationPlural?: string;
+  from?: 'glossary' | 'memory' | 'model';
+  reason?: string;
+}
+
+export async function requestSingleProposal(
+  projectPath: string | undefined,
+  unit: { id: number; msgid: string; msgidPlural?: string | null; msgctxt?: string | null },
+  engine?: string,
+): Promise<SingleProposal> {
+  const { job } = await post<{ job: string }>('/api/propose', {
+    projectPath,
+    engine,
+    items: [
+      {
+        id: unit.id,
+        source: unit.msgid,
+        ...(unit.msgidPlural ? { sourcePlural: unit.msgidPlural } : {}),
+        ...(unit.msgctxt ? { context: unit.msgctxt } : {}),
+      },
+    ],
+  });
+
+  const pollInterval = 1000;
+  for (let i = 0; i < 60; i++) {
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+    const state = await json<{ done: boolean; error?: string; result?: { proposals: SingleProposal[] } }>(
+      `/api/jobs/${job}`,
+    );
+    if (!state.done) continue;
+    if (state.error) throw new Error(state.error);
+    const proposal = state.result?.proposals?.[0];
+    if (!proposal) throw new Error('Modelden bir öneri gelmedi.');
+    return proposal;
+  }
+  throw new Error('AI öneri zaman aşımına uğradı.');
+}

@@ -8,6 +8,7 @@ import { syncTrustedSource } from '../glossary/sync.ts';
 import { parsePo } from '../po/parse.ts';
 import { fetchExport } from '../wporg/fetch.ts';
 import { exportUrl, parseProjectUrl } from '../wporg/project.ts';
+import { fetchProjectStats, type GlotPressStats } from '../wporg/stats.ts';
 
 export interface TrustedSourceRow {
   id: number;
@@ -20,6 +21,13 @@ export interface TrustedSourceRow {
   lastSyncedAt: string | null;
   entries: number;
   tagIds: number[];
+  translated: number;
+  fuzzy: number;
+  waiting: number;
+  untranslated: number;
+  totalStrings: number;
+  percent: number;
+  existingProjectId?: number | null;
 }
 
 export function listSources(db: Db): TrustedSourceRow[] {
@@ -27,13 +35,19 @@ export function listSources(db: Db): TrustedSourceRow[] {
     .prepare(
       `SELECT s.id, s.translate_url AS translateUrl, s.project_path AS projectPath,
               s.family, s.label, s.rank, s.last_synced_at AS lastSyncedAt,
+              ifnull(s.translated, 0) AS translated,
+              ifnull(s.fuzzy, 0) AS fuzzy,
+              ifnull(s.waiting, 0) AS waiting,
+              ifnull(s.untranslated, 0) AS untranslated,
+              ifnull(s.total_strings, 0) AS totalStrings,
+              ifnull(s.percent, 0) AS percent,
               count(DISTINCT l.entry_id) AS entries
          FROM trusted_sources s
          LEFT JOIN glossary_entry_sources l ON l.trusted_source_id = s.id
         GROUP BY s.id
         ORDER BY s.rank, s.id`,
     )
-    .all() as Omit<TrustedSourceRow, 'tagIds'>[];
+    .all() as Omit<TrustedSourceRow, 'tagIds' | 'existingProjectId'>[];
 
   const tags = db.prepare(`SELECT trusted_source_id AS id, tag_id AS tagId FROM trusted_source_tags`)
     .all() as { id: number; tagId: number }[];
@@ -41,7 +55,32 @@ export function listSources(db: Db): TrustedSourceRow[] {
   const bySource = new Map<number, number[]>();
   for (const tag of tags) bySource.set(tag.id, [...(bySource.get(tag.id) ?? []), tag.tagId]);
 
-  return rows.map((row) => ({ ...row, tagIds: bySource.get(row.id) ?? [] }));
+  const projects = db
+    .prepare(
+      `SELECT id, translate_url AS translateUrl, project_path AS projectPath, sub_project AS subProject
+         FROM projects`,
+    )
+    .all() as { id: number; translateUrl: string; projectPath: string; subProject: string | null }[];
+
+  const projectByUrl = new Map<string, number>();
+  const projectByPath = new Map<string, number>();
+  for (const p of projects) {
+    projectByUrl.set(p.translateUrl, p.id);
+    projectByPath.set(`${p.projectPath}:${p.subProject ?? ''}`, p.id);
+  }
+
+  return rows.map((row) => {
+    let existingProjectId: number | null = projectByUrl.get(row.translateUrl) ?? null;
+    if (existingProjectId === null) {
+      const ref = parseProjectUrl(row.translateUrl);
+      existingProjectId = projectByPath.get(`${ref.projectPath}:${ref.subProject ?? ''}`) ?? null;
+    }
+    return {
+      ...row,
+      existingProjectId,
+      tagIds: bySource.get(row.id) ?? [],
+    };
+  });
 }
 
 /** Where the official glossary's terms land. The seeded tag, or the first one. */
@@ -190,6 +229,15 @@ export function removeSources(db: Db, ids: readonly number[]): number {
         WHERE origin = 'trusted' AND id NOT IN (SELECT entry_id FROM glossary_entry_sources)`,
     ).run();
 
+    // Renumber remaining ranks 1..N so gaps are eliminated in DB
+    const remaining = db.prepare(`SELECT id FROM trusted_sources ORDER BY rank ASC, id ASC`).all() as {
+      id: number;
+    }[];
+    const updateRank = db.prepare(`UPDATE trusted_sources SET rank = ? WHERE id = ?`);
+    remaining.forEach((row, idx) => {
+      updateRank.run(idx + 1, row.id);
+    });
+
     return removed;
   })();
 }
@@ -200,6 +248,40 @@ export function reorderSources(db: Db, ids: readonly number[]): void {
   db.transaction(() => {
     ids.forEach((id, index) => update.run(index + 1, id));
   })();
+}
+
+/** Update GlotPress live statistics for a specific source. */
+export async function updateSourceStats(db: Db, id: number, url?: string): Promise<GlotPressStats | null> {
+  const row = db.prepare(`SELECT translate_url AS url FROM trusted_sources WHERE id = ?`).get(id) as
+    | { url: string }
+    | undefined;
+  const targetUrl = url ?? row?.url;
+  if (!targetUrl) return null;
+
+  try {
+    const stats = await fetchProjectStats(targetUrl);
+    db.prepare(
+      `UPDATE trusted_sources
+          SET translated = ?, fuzzy = ?, waiting = ?, untranslated = ?, total_strings = ?, percent = ?, last_synced_at = datetime('now')
+        WHERE id = ?`,
+    ).run(stats.translated, stats.fuzzy, stats.waiting, stats.untranslated, stats.total, stats.percent, id);
+    return stats;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Refresh stats across all or selected sources without re-downloading entire POs.
+ */
+export async function refreshSourcesStats(db: Db, ids?: readonly number[]): Promise<{ updated: number }> {
+  const sources = listSources(db).filter((s) => ids === undefined || ids.includes(s.id));
+  let updated = 0;
+  for (const s of sources) {
+    const res = await updateSourceStats(db, s.id, s.translateUrl);
+    if (res !== null) updated += 1;
+  }
+  return { updated };
 }
 
 export interface SyncProgress {

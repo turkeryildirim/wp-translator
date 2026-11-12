@@ -35,10 +35,10 @@ goes through Vite.
 ## Checks
 
 ```bash
-npm test                              # vitest
-npm run typecheck                     # tsc --noEmit
-npx vue-tsc --noEmit -p tsconfig.json # includes the .vue files
-npx vite build                        # the panel
+pnpm test                                  # vitest
+pnpm run typecheck                         # tsc --noEmit
+pnpm exec vue-tsc --noEmit -p tsconfig.json # includes the .vue files
+pnpm run build:panel                       # the panel (or pnpm exec vite build)
 ```
 
 `vite.config.ts` sets `root: 'panel'` for the UI build, which is why tests have
@@ -286,7 +286,7 @@ measurement if one drove it.
   source column is English and `item` has to find `ITEM`.
 - **The style guide is seeded once**, from `style-guide/tr-genel.md`, on a
   database's first open. Editing the file does not reach existing databases —
-  `npm run style-guide:sync` does that, and refuses when the stored text looks
+  `pnpm run style-guide:sync` does that, and refuses when the stored text looks
   hand-edited.
 - **The quality checks and the AI prompt must agree.** The checks allow a
   translated `title` and any ordering; the prompt has to say so, or the model

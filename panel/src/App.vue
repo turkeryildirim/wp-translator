@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import {
+  addUnitsToGlossary,
   bulkSetState,
   exportPo as fetchExport,
+  fetchAiSettings,
   replaceInTranslations,
   listProjects,
   listUnits,
@@ -12,6 +14,7 @@ import {
   removeProject,
   startTranslation,
   translateProgress,
+  type AiAgent,
   type BulkAction,
   type Engine,
   type Project,
@@ -20,19 +23,26 @@ import {
   type TranslateScope,
   type Unit,
 } from './api.ts';
-import Legend from './Legend.vue';
-import Pager from './Pager.vue';
 import ReviewTable from './ReviewTable.vue';
 import TrustedSources from './TrustedSources.vue';
 import GlossaryBrowser from './GlossaryBrowser.vue';
+import TranslationMemoryBrowser from './TranslationMemoryBrowser.vue';
 import Toasts from './Toasts.vue';
 import TranslateModal from './TranslateModal.vue';
 import { notify } from './notify.ts';
 import TagsAndStyle from './TagsAndStyle.vue';
 import AddProject from './AddProject.vue';
+import Settings from './Settings.vue';
 
-type Screen = 'review' | 'add' | 'sources' | 'glossary' | 'tags';
+type Screen = 'review' | 'add' | 'sources' | 'glossary' | 'tm' | 'tags' | 'settings';
 const screen = ref<Screen>('review');
+
+const isSidebarCollapsed = ref(localStorage.getItem('wp_translator_sidebar_collapsed') === 'true');
+
+function toggleSidebar(): void {
+  isSidebarCollapsed.value = !isSidebarCollapsed.value;
+  localStorage.setItem('wp_translator_sidebar_collapsed', String(isSidebarCollapsed.value));
+}
 
 const projects = ref<Project[]>([]);
 const selected = ref<number | null>(null);
@@ -58,6 +68,9 @@ const loading = ref(false);
 const translating = ref<TranslateProgress | null>(null);
 let translatePoll: ReturnType<typeof setInterval> | null = null;
 
+const showFindReplaceDrawer = ref(false);
+const showTranslateDialog = ref(false);
+
 // Everything the glossary could not fill.
 const pending = computed(() => project.value?.untranslated ?? 0);
 
@@ -70,20 +83,69 @@ const VIEWS: { view: QueueView; label: string; hint: string }[] = [
   { view: 'all', label: 'Tümü', hint: 'Katalogdaki her dizge' },
 ];
 
+const navItems = computed(() => [
+  {
+    screen: 'review' as const,
+    label: 'Çeviri İnceleme',
+    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`,
+    badge: counts.value.waiting > 0 ? counts.value.waiting.toLocaleString('tr') : undefined,
+  },
+  {
+    screen: 'glossary' as const,
+    label: 'Sözlük',
+    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`,
+  },
+  {
+    screen: 'tm' as const,
+    label: 'Terim Bankası',
+    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>`,
+  },
+  {
+    screen: 'sources' as const,
+    label: 'Güvenilir Projeler',
+    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`,
+  },
+  {
+    screen: 'tags' as const,
+    label: 'Etiketler & Üslup',
+    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>`,
+  },
+  {
+    screen: 'add' as const,
+    label: 'Proje Ekle',
+    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>`,
+  },
+  {
+    screen: 'settings' as const,
+    label: 'Genel Ayarlar (AI)',
+    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`,
+  },
+]);
+
 const translateScope = ref<TranslateScope>('untranslated');
 const engine = ref<Engine>('opencode');
+const aiAgents = ref<AiAgent[]>([]);
 
-/** Each CLI is configured its own way, so the agent only means anything to one. */
-/**
- * Which CLI is asked, and with what.
- *
- * opencode's own default is one of its free models, and those refuse CLI requests
- * without warning — the owner's z.ai plan is asked for by name instead.
- */
-const ENGINE_ARGS: Record<Engine, { agent?: string; model?: string }> = {
-  opencode: { agent: 'wp-translator', model: 'zai-coding-plan/glm-5.3-flash' },
-  agy: { model: 'gemini-3.8-flash-low' },
-};
+async function loadAiAgents(): Promise<void> {
+  try {
+    const res = await fetchAiSettings();
+    aiAgents.value = res.agents;
+  } catch {
+    // Keep silent if server is restarting or offline
+  }
+}
+
+const activeAiAgents = computed(() => aiAgents.value.filter((a) => a.enabled));
+
+watch(
+  activeAiAgents,
+  (list) => {
+    if (list.length > 0 && !list.some((a) => a.id === engine.value)) {
+      engine.value = list[0].id as Engine;
+    }
+  },
+  { immediate: true },
+);
 
 async function translate(): Promise<void> {
   if (selected.value === null) return;
@@ -93,9 +155,13 @@ async function translate(): Promise<void> {
   )
     return;
 
+  const currentAgent = aiAgents.value.find((a) => a.id === engine.value);
+  const modelToUse = currentAgent?.model?.trim() || currentAgent?.defaultModel?.trim() || undefined;
+
   translating.value = await startTranslation(selected.value, {
     engine: engine.value,
-    ...ENGINE_ARGS[engine.value],
+    model: modelToUse,
+    agent: engine.value === 'opencode' ? 'wp-translator' : undefined,
     scope: translateScope.value,
     ...(translateScope.value === 'selected' ? { ids: picked.value } : {}),
   });
@@ -130,6 +196,7 @@ const project = computed(() => projects.value.find((p) => p.id === selected.valu
 
 const findText = ref('');
 const replaceText = ref('');
+const replaceCaseSensitive = ref(true);
 const replacing = ref(false);
 
 /**
@@ -156,7 +223,7 @@ async function runReplace(): Promise<void> {
   replacing.value = true;
   try {
     const { matched } = await replaceInTranslations(
-      selected.value, findText.value, replaceText.value, target, true,
+      selected.value, findText.value, replaceText.value, target, true, replaceCaseSensitive.value,
     );
     if (matched === 0) {
       notify('error', `"${findText.value}" bu kapsamda hiçbir çeviride geçmiyor.`);
@@ -171,7 +238,7 @@ async function runReplace(): Promise<void> {
       return;
 
     const done = await replaceInTranslations(
-      selected.value, findText.value, replaceText.value, target,
+      selected.value, findText.value, replaceText.value, target, false, replaceCaseSensitive.value,
     );
     notify(
       done.blocked > 0 ? 'error' : 'ok',
@@ -234,6 +301,7 @@ function show(view: QueueView): void {
 type BulkChoice = BulkAction | 'translate';
 
 const bulkAction = ref<BulkChoice | ''>('');
+const bulkPos = ref('auto');
 /** True while the owner means "the whole filter", not the rows on this page. */
 const wholeFilter = ref(false);
 
@@ -244,6 +312,7 @@ const BULK_LABEL: Record<BulkChoice, string> = {
   clear: 'Çeviriyi sil',
   glossary: 'Sözlükten doldur',
   translate: 'AI ile çevir',
+  add_to_glossary: 'Sözlüğe ekle',
 };
 
 /**
@@ -260,14 +329,29 @@ async function runBulk(): Promise<void> {
   const target = wholeFilter.value ? { params: queryParams(false) } : { ids: picked.value };
 
   if (action === 'translate') {
+    const currentAgent = aiAgents.value.find((a) => a.id === engine.value);
+    const modelToUse = currentAgent?.model?.trim() || currentAgent?.defaultModel?.trim() || undefined;
     const ids = wholeFilter.value ? undefined : picked.value;
     translating.value = await startTranslation(selected.value, {
       engine: engine.value,
-      ...ENGINE_ARGS[engine.value],
+      model: modelToUse,
+      agent: engine.value === 'opencode' ? 'wp-translator' : undefined,
       scope: ids ? 'selected' : filter.value === 'waiting' ? 'waiting' : 'untranslated',
       ...(ids ? { ids } : {}),
     });
     pollTranslation();
+    return;
+  }
+
+  if (action === 'add_to_glossary') {
+    const res = await addUnitsToGlossary(selected.value, target, bulkPos.value);
+    let msg = `${res.added} dizge sözlüğe eklendi.`;
+    const details: string[] = [];
+    if (res.skipped > 0) details.push(`${res.skipped} tanesi zaten mevcuttu (korundu)`);
+    if (res.empty > 0) details.push(`${res.empty} tanesinin çevirisi boş olduğu için atlandı`);
+    if (details.length > 0) msg += ` (${details.join(', ')})`;
+    notify(res.added > 0 ? 'ok' : 'error', msg);
+    clearSelection();
     return;
   }
 
@@ -335,10 +419,16 @@ async function reload(): Promise<void> {
   }
 }
 
+function formatProjectName(p: Project): string {
+  const sub = p.subProject || (p.projectPath.split('/').pop()?.match(/^(dev|stable|dev-readme|stable-readme|release-notes)$/)?.[0]);
+  const baseName = p.name ?? (sub && p.projectPath.endsWith(`/${sub}`) ? p.projectPath.slice(0, -(sub.length + 1)) : p.projectPath);
+  return sub ? `${baseName} (${sub})` : baseName;
+}
+
 async function dropProject(): Promise<void> {
   const current = project.value;
   if (!current) return;
-  if (!confirm(`"${current.name ?? current.projectPath}" ve tüm çevirileri silinsin mi?`)) return;
+  if (!confirm(`"${formatProjectName(current)}" ve tüm çevirileri silinsin mi?`)) return;
 
   await removeProject(current.id);
   projects.value = await listProjects();
@@ -383,12 +473,38 @@ async function downloadPo(): Promise<void> {
 
 function onChanged(saved: Unit): void {
   const index = units.value.findIndex((u) => u.id === saved.id);
+  const previous = index >= 0 ? units.value[index] : null;
+
   // Replace in place. Re-fetching would move every row under the cursor.
   if (index >= 0) units.value[index] = saved;
+
+  if (previous) {
+    // 1. Decrement old state
+    if (previous.state === 'untranslated') counts.value.untranslated = Math.max(0, counts.value.untranslated - 1);
+    else if (previous.state === 'review') counts.value.waiting = Math.max(0, counts.value.waiting - 1);
+    else if (previous.state === 'ok') counts.value.translated = Math.max(0, counts.value.translated - 1);
+
+    // 2. Increment new state
+    if (saved.state === 'untranslated') counts.value.untranslated += 1;
+    else if (saved.state === 'review') counts.value.waiting += 1;
+    else if (saved.state === 'ok') counts.value.translated += 1;
+
+    // 3. Blocked status change
+    const prevBlocked = previous.blocked === 1 || previous.failures.length > 0;
+    const newBlocked = saved.blocked === 1 || saved.failures.length > 0;
+    if (prevBlocked && !newBlocked) counts.value.blocked = Math.max(0, counts.value.blocked - 1);
+    else if (!prevBlocked && newBlocked) counts.value.blocked += 1;
+  }
+
   const summary = project.value;
-  if (summary && saved.state === 'ok') {
-    summary.ok += 1;
-    summary.review = Math.max(0, summary.review - 1);
+  if (summary && previous) {
+    if (previous.state === 'untranslated') summary.untranslated = Math.max(0, summary.untranslated - 1);
+    else if (previous.state === 'review') summary.review = Math.max(0, summary.review - 1);
+    else if (previous.state === 'ok') summary.ok = Math.max(0, summary.ok - 1);
+
+    if (saved.state === 'untranslated') summary.untranslated += 1;
+    else if (saved.state === 'review') summary.review += 1;
+    else if (saved.state === 'ok') summary.ok += 1;
   }
 }
 
@@ -399,8 +515,15 @@ async function onProjectAdded(id: number): Promise<void> {
 }
 
 onMounted(async () => {
+  await loadAiAgents();
   projects.value = await listProjects();
   selected.value = projects.value[0]?.id ?? null;
+});
+
+watch(screen, async (s) => {
+  if (s === 'review') {
+    await loadAiAgents();
+  }
 });
 
 // A different project starts at the beginning with nothing selected: carrying a
@@ -418,206 +541,380 @@ watch(page, load);
 </script>
 
 <template>
-  <div class="app" :class="{ 'review-screen': screen === 'review' }">
-    <nav class="screens">
-      <button
-        v-for="option in (['review', 'add', 'sources', 'glossary', 'tags'] as const)"
-        :key="option"
-        :class="{ on: screen === option }"
-        @click="screen = option"
-      >
-        {{
-          {
-            review: 'İnceleme',
-            add: 'Proje ekle',
-            sources: 'Güvenilir kaynaklar',
-            glossary: 'Sözlük',
-            tags: 'Etiket ve üslup',
-          }[option]
-        }}
-      </button>
-    </nav>
+  <div class="app-layout" :class="{ 'sidebar-is-collapsed': isSidebarCollapsed }">
+    <main class="workspace" :class="{ 'review-screen': screen === 'review' }">
+      <TrustedSources v-if="screen === 'sources'" @open-project="onProjectAdded" />
+      <GlossaryBrowser v-else-if="screen === 'glossary'" />
+      <TranslationMemoryBrowser v-else-if="screen === 'tm'" />
+      <TagsAndStyle v-else-if="screen === 'tags'" />
+      <AddProject v-else-if="screen === 'add'" @added="onProjectAdded" />
+      <Settings v-else-if="screen === 'settings'" />
 
-    <TrustedSources v-if="screen === 'sources'" />
-    <GlossaryBrowser v-else-if="screen === 'glossary'" />
-    <TagsAndStyle v-else-if="screen === 'tags'" />
-    <AddProject v-else-if="screen === 'add'" @added="onProjectAdded" />
+      <template v-else>
+        <!-- Top Contextual Bar -->
+        <header class="review-topbar">
+          <div class="project-selector-wrap">
+            <label style="font-size: 11px; font-weight: 700; color: var(--text-subtle); text-transform: uppercase;">PROJE:</label>
+            <select v-model="selected" class="project-select" aria-label="Proje">
+              <option v-for="p in projects" :key="p.id" :value="p.id">
+                {{ formatProjectName(p) }}
+              </option>
+            </select>
+            <button
+              class="btn"
+              style="padding: 4px 8px; font-size: 11px;"
+              :disabled="!project || reloading"
+              title="Kataloğu wp.org'dan yeniden al"
+              @click="reload"
+            >
+              {{ reloading ? 'Yenileniyor…' : '🔄 Yenile' }}
+            </button>
+            <button
+              class="btn"
+              style="padding: 4px 8px; font-size: 11px; color: #f87171;"
+              :disabled="!project"
+              title="Projeyi ve çevirilerini sil"
+              @click="dropProject"
+            >
+              🗑️
+            </button>
+            <div v-if="project" class="progress-summary">
+              <span>İlerleme:</span>
+              <div
+                class="progress-track"
+                :title="`%${Math.round((project.ok / (project.total || 1)) * 100)} Tamamlandı`"
+              >
+                <div
+                  class="progress-fill"
+                  :style="{ width: `${Math.min(100, Math.round((project.ok / (project.total || 1)) * 100))}%` }"
+                ></div>
+              </div>
+              <span style="font-weight: 700; color: #fff;">
+                {{ project.ok.toLocaleString('tr') }} / {{ project.total.toLocaleString('tr') }}
+                (%{{ Math.round((project.ok / (project.total || 1)) * 100) }})
+              </span>
+            </div>
+          </div>
 
-    <template v-else>
-    <!-- Reading order: what the markers mean, what the project is, what to run
-         on it, what to look at, what to do with the selection, then the rows. -->
-    <Legend />
-    <p class="legend">
-      <span class="muted">Satır:</span>
-      <span><b>✓</b> onaylı</span>
-      <span><b>!</b> kalite kontrolü engelliyor</span>
-      <span><b>·</b> bekliyor</span>
-      <span class="muted">Kısayol:</span>
-      <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> onayla, ilerle</span>
-      <span><kbd>Shift</kbd>+<kbd>Enter</kbd> reddet, ilerle</span>
-      <span><kbd>Ctrl</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> satır</span>
-      <span><kbd>j</kbd>/<kbd>k</kbd> gez</span>
-      <span><kbd>e</kbd> düzenle</span>
-      <span><kbd>x</kbd> seç</span>
-      <span><kbd>1</kbd>–<kbd>9</kbd> aday seç</span>
-    </p>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <a
+              v-if="project"
+              class="btn"
+              :href="project.translateUrl"
+              target="_blank"
+              rel="noreferrer"
+              :title="project.translateUrl"
+            >
+              🌐 wp.org’da Aç
+            </a>
+            <button
+              class="btn"
+              :class="{ primary: showFindReplaceDrawer }"
+              title="Çeviriler içinde bul ve değiştir panelini aç/kapat"
+              @click="showFindReplaceDrawer = !showFindReplaceDrawer"
+            >
+              🔍 Bul & Değiştir
+            </button>
+            <button
+              class="btn success"
+              :disabled="!project || project.ok === 0"
+              :title="
+                !project || project.ok === 0
+                  ? 'Onaylanmış dizge yok; PO yalnızca onaylananları taşır'
+                  : `${project.ok} onaylı dizgeyi PO olarak indir`
+              "
+              @click="downloadPo"
+            >
+              ⬇️ PO İndir ({{ project?.ok ?? 0 }})
+            </button>
+            <button
+              class="btn primary"
+              :disabled="translating?.running || !project"
+              title="Toplu AI çevirisi yap"
+              @click="showTranslateDialog = true"
+            >
+              ⚡ AI ile Çevir ({{ pending }})
+            </button>
+          </div>
+        </header>
 
-    <div class="toolbar">
-      <select v-model="selected" class="grow" aria-label="Proje">
-        <option v-for="p in projects" :key="p.id" :value="p.id">
-          {{ p.name ?? p.projectPath }}
-        </option>
-      </select>
-      <button :disabled="!project" title="Projeyi ve çevirilerini sil" @click="dropProject">
-        Projeyi sil
-      </button>
-      <button
-        :disabled="!project || reloading"
-        title="Kataloğu wp.org'dan yeniden al"
-        @click="reload"
-      >
-        {{ reloading ? 'Yenileniyor…' : 'Yenile' }}
-      </button>
-      <!-- Gated on approved, not on translated: the file carries only approved
-           strings, so a project mid-review would otherwise download empty. -->
-      <button
-        :disabled="!project || project.ok === 0"
-        :title="
-          !project || project.ok === 0
-            ? 'Onaylanmış dizge yok; PO yalnızca onaylananları taşır'
-            : `${project.ok} onaylı dizgeyi PO olarak indir`
-        "
-        @click="downloadPo"
-      >
-        PO indir
-      </button>
-      <a
-        v-if="project"
-        class="button"
-        :href="project.translateUrl"
-        target="_blank"
-        rel="noreferrer"
-        :title="project.translateUrl"
-      >
-        wp.org’da aç
-      </a>
-      <span v-if="project" class="progress">{{ project.ok }} / {{ project.total }} tamam</span>
-    </div>
+        <!-- Unified Control Deck -->
+        <div class="unified-toolbar">
+          <div class="filter-tabs">
+            <button
+              v-for="option in VIEWS"
+              :key="option.view"
+              class="filter-tab"
+              :class="{
+                active: filter === option.view,
+                danger: option.view === 'blocked' && counts.blocked > 0
+              }"
+              :title="option.hint"
+              @click="show(option.view)"
+            >
+              <span>{{ option.view === 'blocked' && counts.blocked > 0 ? '⛔ ' : '' }}{{ option.label }}</span>
+              <span class="badge">{{ counts[option.view].toLocaleString('tr') }}</span>
+            </button>
+          </div>
 
-    <div class="toolbar">
-      <select v-model="engine" aria-label="Hangi CLI" :disabled="translating?.running">
-        <option value="opencode">opencode · GLM 5.3 Flash</option>
-        <option value="agy">agy · Gemini 3.8 Flash (low)</option>
-      </select>
-      <select v-model="translateScope" aria-label="Neler çevrilsin" :disabled="translating?.running">
-        <option value="untranslated">Çevrilmemişler ({{ counts.untranslated }})</option>
-        <option value="waiting">Bekleyenler ({{ counts.waiting }})</option>
-        <option value="selected">Seçililer ({{ picked.length }})</option>
-        <option value="all">Tümü, baştan ({{ counts.all }})</option>
-      </select>
-      <button
-        class="translate"
-        :disabled="translating?.running || (translateScope === 'selected' && picked.length === 0)"
-        @click="translate"
-      >
-        {{
-          translating?.running
-            ? `Çevriliyor — ${translating.done} / ${translating.total}`
-            : 'AI ile çevir'
-        }}
-      </button>
-      <!-- Failures are shown while the run is going, not only at the end: a
-           stalled chunk costs minutes, and the owner has to know it is
-           happening to decide whether to let it continue. -->
-      <span v-if="translating?.running && translating.errors.length" class="failure-inline">
-        {{ translating.errors.length }} küme başarısız —
-        {{ translating.errors[translating.errors.length - 1]!.message }}
-      </span>
-      <span v-else-if="translating && !translating.running && translating.finishedAt" class="muted">
-        Son çeviri: {{ translating.translated }} dizge<span v-if="translating.flagged">
-          , {{ translating.flagged }} tanesi işaretli</span
-        ><span v-if="translating.errors.length">
-          , {{ translating.errors.length }} küme başarısız</span
-        >.
-      </span>
-    </div>
+          <div class="filter-controls-row">
+            <div class="search-box">
+              <span class="search-icon">🔍</span>
+              <input
+                v-model="search"
+                class="search-input"
+                placeholder="Dizgelerde ara... (Enter ile filtrele, boş karakterler aranabilir)"
+                @keyup.enter="show(filter)"
+              />
+            </div>
+            <select
+              v-model="scope"
+              class="btn"
+              style="padding: 6px 10px; font-size: 12px;"
+              aria-label="Nerede aransın"
+              @change="show(filter)"
+            >
+              <option value="">Kaynak + Çeviri</option>
+              <option value="source">Yalnızca Kaynak</option>
+              <option value="translation">Yalnızca Çeviri</option>
+            </select>
+            <label
+              class="check"
+              style="font-size: 12px; cursor: pointer;"
+              title="Kapalıyken İ/ı/I/i aynı sayılır ve büyük-küçük harf gözetilmez"
+            >
+              <input v-model="caseSensitive" type="checkbox" @change="show(filter)" />
+              Harf duyarlı
+            </label>
+            <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+              <span v-if="translating?.running" class="status-pill waiting" style="font-size: 11px;">
+                AI Çevirisi Sürüyor ({{ translating.done }}/{{ translating.total }})
+              </span>
+              <span v-else-if="translating && !translating.running && translating.finishedAt" class="muted" style="font-size: 11px;">
+                Son çeviri: {{ translating.translated }} dizge
+              </span>
+            </div>
+          </div>
+        </div>
 
-    <div class="toolbar">
-      <nav>
+        <!-- Collapsible Drawer 1: Bul & Değiştir -->
+        <div v-if="showFindReplaceDrawer" class="drawer-panel">
+          <span style="font-size: 11px; font-weight: 700; color: var(--text-subtle); text-transform: uppercase;">
+            Bul & Değiştir:
+          </span>
+          <input
+            v-model="findText"
+            class="search-input"
+            style="flex: 1; min-width: 180px;"
+            :placeholder="replaceCaseSensitive ? 'Çevirilerde bul (harf duyarlı)…' : 'Çevirilerde bul (harf gözetilmez)…'"
+          />
+          <input
+            v-model="replaceText"
+            class="search-input"
+            style="flex: 1; min-width: 180px;"
+            placeholder="Şununla değiştir…"
+          />
+          <label class="check" style="font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;" title="İşaretliyken büyük-küçük harf birebir eşleşmeli, kapalıyken harf farkı gözetilmez">
+            <input v-model="replaceCaseSensitive" type="checkbox" />
+            Harf duyarlı
+          </label>
+          <button
+            class="btn primary"
+            :disabled="!findText || replacing"
+            @click="runReplace"
+          >
+            {{ replacing ? 'Değiştiriliyor…' : `Değiştir (${replaceScopeCount.toLocaleString('tr')})` }}
+          </button>
+          <span class="muted" style="font-size: 11px;">{{ replaceScope }}</span>
+          <button class="btn" style="padding: 2px 8px; margin-left: auto;" @click="showFindReplaceDrawer = false">✕</button>
+        </div>
+
+        <!-- Toplu İşlemler Şeridi (Kalıcı / Always visible) -->
+        <div class="bulk-actions-bar">
+          <span style="font-size: 11px; font-weight: 700; color: var(--text-subtle); text-transform: uppercase; letter-spacing: 0.5px;">
+            Toplu İşlem:
+          </span>
+          <select v-model="bulkAction" class="btn" style="padding: 5px 10px; font-size: 12px;" aria-label="Toplu işlem">
+            <option value="">İşlem seçin…</option>
+            <option v-for="(label, key) in BULK_LABEL" :key="key" :value="key">{{ label }}</option>
+          </select>
+          <select
+            v-if="bulkAction === 'add_to_glossary'"
+            v-model="bulkPos"
+            class="btn"
+            style="padding: 5px 8px; font-size: 12px;"
+            title="Sözlüğe eklenecek kelime türü"
+          >
+            <option value="auto">✨ Otomatik Belirle</option>
+            <option value="noun">İsim (Noun)</option>
+            <option value="verb">Fiil (Verb)</option>
+            <option value="adjective">Sıfat (Adjective)</option>
+            <option value="adverb">Zarf (Adverb)</option>
+            <option value="expression">Deyim (Expression)</option>
+            <option value="abbreviation">Kısaltma (Abbreviation)</option>
+          </select>
+          <button
+            class="btn primary"
+            :disabled="!bulkAction || bulkCount === 0"
+            @click="runBulk"
+          >
+            Uygula{{ bulkCount ? ` (${bulkCount.toLocaleString('tr')})` : '' }}
+          </button>
+          <label class="check" style="font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+            <input type="checkbox" :checked="allOnPage" @change="togglePage" />
+            Sayfadakiler
+          </label>
+          <label class="check" style="font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+            <input v-model="wholeFilter" type="checkbox" />
+            Filtredeki {{ total.toLocaleString('tr') }} kaydın tümü
+          </label>
+          <span v-if="bulkCount > 0" class="status-pill waiting" style="font-size: 11px;">
+            {{ bulkCount.toLocaleString('tr') }} satır seçili
+          </span>
+          <button v-if="picked.length || wholeFilter" class="btn" style="font-size: 11px; padding: 3px 8px;" @click="clearSelection">
+            Seçimi bırak
+          </button>
+        </div>
+
+        <!-- Batch Translation Dialog Modal -->
+        <div v-if="showTranslateDialog" class="backdrop" @click.self="showTranslateDialog = false">
+          <div class="modal" style="max-width: 480px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-default); padding-bottom: 10px;">
+              <h3 style="margin: 0; color: #fff; font-size: 16px;">Toplu AI Çevirisi Başlat</h3>
+              <button class="btn" style="padding: 2px 8px;" @click="showTranslateDialog = false">✕</button>
+            </div>
+
+            <div style="margin: 14px 0; display: flex; flex-direction: column; gap: 12px;">
+              <div>
+                <label style="font-size: 11px; font-weight: 700; color: var(--text-subtle); text-transform: uppercase; display: block; margin-bottom: 6px;">
+                  CLI AI Motoru & Model:
+                </label>
+                <select v-model="engine" class="search-input" style="padding: 8px 10px;">
+                  <option
+                    v-for="agent in (activeAiAgents.length ? activeAiAgents : aiAgents)"
+                    :key="agent.id"
+                    :value="agent.id"
+                  >
+                    {{ agent.name }} · {{ agent.model || agent.defaultModel }}
+                  </option>
+                </select>
+              </div>
+
+              <div>
+                <label style="font-size: 11px; font-weight: 700; color: var(--text-subtle); text-transform: uppercase; display: block; margin-bottom: 6px;">
+                  Çevrilecek Kapsam:
+                </label>
+                <select v-model="translateScope" class="search-input" style="padding: 8px 10px;">
+                  <option value="untranslated">Çevrilmemişler ({{ counts.untranslated }})</option>
+                  <option value="waiting">Bekleyenler ({{ counts.waiting }})</option>
+                  <option value="selected">Seçililer ({{ picked.length }})</option>
+                  <option value="all">Tümü, baştan ({{ counts.all }})</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--border-default); padding-top: 12px;">
+              <button class="btn" @click="showTranslateDialog = false">İptal</button>
+              <button
+                class="btn primary"
+                :disabled="translateScope === 'selected' && picked.length === 0"
+                @click="showTranslateDialog = false; translate();"
+              >
+                Çeviriyi Başlat
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Table and Inspector -->
+        <p v-if="loading" class="status">Yükleniyor…</p>
+        <p v-else-if="!units.length && total > 0" class="status">
+          Bu sayfa boş — filtrede {{ total.toLocaleString('tr') }} kayıt var.
+          <button class="btn" style="margin-left: 8px;" @click="goTo(0)">Başa dön</button>
+        </p>
+        <p v-else-if="!units.length" class="status">
+          Bu filtrede bir şey yok. Dışa aktarmaya hazır olabilirsiniz.
+        </p>
+        <ReviewTable
+          v-else
+          v-model:picked="picked"
+          :project-id="selected!"
+          :units="units"
+          :project-path="project?.projectPath"
+          :active-engine="engine"
+          @changed="onChanged"
+          @bulk="load"
+          @page="goTo(page + 1)"
+        />
+
+        <!-- Pager Footer -->
+        <div class="pager-footer">
+          <div>
+            Toplam <b>{{ total.toLocaleString('tr') }}</b> dizgeden
+            <b>{{ Math.min(page * PAGE + 1, total) }} - {{ Math.min((page + 1) * PAGE, total) }}</b> arası
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button class="btn" :disabled="page === 0" @click="goTo(page - 1)">« Önceki</button>
+            <span style="font-weight: 700; color: #fff;">
+              Sayfa {{ page + 1 }} / {{ Math.max(1, Math.ceil(total / PAGE)) }}
+            </span>
+            <button class="btn" :disabled="(page + 1) * PAGE >= total" @click="goTo(page + 1)">Sonraki »</button>
+          </div>
+          <div style="font-size: 11px; color: var(--text-subtle);">
+            Kısayollar: <kbd style="background: var(--bg-elevated); padding: 2px 5px; border-radius: 3px;">J/K</kbd> Gezin · <kbd style="background: var(--bg-elevated); padding: 2px 5px; border-radius: 3px;">Enter</kbd> Onayla · <kbd style="background: var(--bg-elevated); padding: 2px 5px; border-radius: 3px;">E</kbd> Düzenle · <kbd style="background: var(--bg-elevated); padding: 2px 5px; border-radius: 3px;">R</kbd> Reddet · <kbd style="background: var(--bg-elevated); padding: 2px 5px; border-radius: 3px;">X</kbd> Seç
+          </div>
+        </div>
+      </template>
+    </main>
+
+    <!-- ── Right-Side Collapsible Navigation Sidebar ── -->
+    <aside class="sidebar" :class="{ collapsed: isSidebarCollapsed }">
+      <div class="sidebar-header">
         <button
-          v-for="option in VIEWS"
-          :key="option.view"
-          :class="{ on: filter === option.view }"
-          :title="option.hint"
-          @click="show(option.view)"
+          class="collapse-btn"
+          :title="isSidebarCollapsed ? 'Menüyü Genişlet' : 'Menüyü Daralt'"
+          @click="toggleSidebar"
         >
-          {{ option.label }} <b>{{ counts[option.view].toLocaleString('tr') }}</b>
+          <svg v-if="isSidebarCollapsed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+        <div class="brand-icon">WP</div>
+        <div class="brand-text">
+          <span class="brand-name">wp-translator</span>
+          <span class="brand-sub">GlotPress & AI</span>
+        </div>
+      </div>
+
+      <div class="nav-section-title">Navigasyon</div>
+      <nav class="nav-list">
+        <button
+          v-for="item in navItems"
+          :key="item.screen"
+          class="nav-item"
+          :class="{ active: screen === item.screen }"
+          :title="item.label"
+          @click="screen = item.screen"
+        >
+          <span class="nav-icon" v-html="item.icon"></span>
+          <span class="nav-label">{{ item.label }}</span>
+          <span v-if="item.badge" class="nav-badge">{{ item.badge }}</span>
         </button>
       </nav>
-      <input v-model="search" class="grow" placeholder="Ara…" @keyup.enter="show(filter)" />
-      <select v-model="scope" aria-label="Nerede aransın" @change="show(filter)">
-        <option value="">Kaynak + çeviri</option>
-        <option value="source">Yalnızca kaynak</option>
-        <option value="translation">Yalnızca çeviri</option>
-      </select>
-      <label class="check" title="Kapalıyken İ/ı/I/i aynı sayılır ve büyük-küçük harf gözetilmez">
-        <input v-model="caseSensitive" type="checkbox" @change="show(filter)" />
-        Harf duyarlı
-      </label>
-    </div>
 
-    <div class="toolbar">
-      <select v-model="bulkAction" aria-label="Toplu işlem">
-        <option value="">Toplu işlem…</option>
-        <option v-for="(label, key) in BULK_LABEL" :key="key" :value="key">{{ label }}</option>
-      </select>
-      <!-- Dead until both a target and an action exist. -->
-      <button class="primary" :disabled="!bulkAction || bulkCount === 0" @click="runBulk">
-        Uygula{{ bulkCount ? ` (${bulkCount.toLocaleString('tr')})` : '' }}
-      </button>
-      <label class="check">
-        <input type="checkbox" :checked="allOnPage" @change="togglePage" />
-        Sayfadakiler
-      </label>
-      <label class="check">
-        <input v-model="wholeFilter" type="checkbox" />
-        Filtredeki {{ total.toLocaleString('tr') }} kaydın tümü
-      </label>
-      <span v-if="picked.length && !wholeFilter" class="muted">{{ picked.length }} satır seçili</span>
-      <button v-if="picked.length || wholeFilter" @click="clearSelection">Seçimi bırak</button>
-    </div>
-
-    <!-- Above the pager because it acts on the whole filter, not on the page. -->
-    <div class="toolbar">
-      <input v-model="findText" class="grow" placeholder="Çevirilerde bul (harf duyarlı)…" />
-      <input v-model="replaceText" class="grow" placeholder="Şununla değiştir…" />
-      <button :disabled="!findText || replacing" @click="runReplace">
-        {{ replacing ? 'Değiştiriliyor…' : `Değiştir (${replaceScopeCount.toLocaleString('tr')})` }}
-      </button>
-      <span class="muted">{{ replaceScope }}</span>
-    </div>
-
-    <Pager :page="page" :total="total" :page-size="PAGE" :busy="loading" @go="goTo" />
-
-    <p v-if="loading" class="status">Yükleniyor…</p>
-    <p v-else-if="!units.length && total > 0" class="status">
-      Bu sayfa boş — filtrede {{ total.toLocaleString('tr') }} kayıt var.
-      <button @click="goTo(0)">Başa dön</button>
-    </p>
-    <p v-else-if="!units.length" class="status">
-      Bu filtrede bir şey yok. Dışa aktarmaya hazır olabilirsiniz.
-    </p>
-    <ReviewTable
-      v-else
-      v-model:picked="picked"
-      :units="units"
-      @changed="onChanged"
-      @bulk="load"
-      @page="goTo(page + 1)"
-    />
-
-    <Pager :page="page" :total="total" :page-size="PAGE" :busy="loading" @go="goTo" />
-    </template>
+      <div class="sidebar-footer">
+        <div
+          class="agent-status-badge"
+          :title="`${activeAiAgents.length} CLI Motoru Aktif: ${activeAiAgents.map((a) => a.id).join(', ')}`"
+        >
+          <span class="agent-dot"></span>
+          <span class="sidebar-footer-info">CLI AI: {{ activeAiAgents.length }} Aktif</span>
+        </div>
+      </div>
+    </aside>
 
     <TranslateModal
       v-if="translating?.running"

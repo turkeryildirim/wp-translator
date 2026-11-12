@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDb, type Db } from '../src/db/open.ts';
 import { importProject } from '../src/project/import.ts';
-import { bulkSetState, listUnits, saveUnit } from '../src/server/review.ts';
+import { addUnitsToGlossary, bulkSetState, listUnits, saveUnit, unitDetail } from '../src/server/review.ts';
 import type { Catalogue, TranslationUnit } from '../src/po/types.ts';
 
 const catalogue = (units: Partial<TranslationUnit>[]): Catalogue => ({
@@ -183,5 +183,49 @@ describe('the blocked column', () => {
 
     saveUnit(db, unitId, { msgstr: 'yeniden %1$s ve %2$s' });
     expect(listUnits(db, projectId, { view: 'blocked' }).total).toBe(0);
+  });
+});
+
+describe('adding units to the glossary from review', () => {
+  it('adds translated units and skips untranslated ones', () => {
+    projectId = add([
+      { msgid: 'Post', msgstr: 'Yazı' },
+      { msgid: 'Draft', msgstr: 'Taslak' },
+      { msgid: 'Publish' }, // untranslated
+    ]);
+
+    const res = addUnitsToGlossary(db, projectId, { filter: { view: 'all' } });
+    expect(res.added).toBe(2);
+    expect(res.empty).toBe(1);
+    expect(res.skipped).toBe(0);
+
+    // Verify stored entries
+    const postEntry = db
+      .prepare(`SELECT * FROM glossary_entries WHERE source_text = 'Post' AND pos IS NOT NULL`)
+      .get() as { translation: string; pos: string; origin: string; is_official: number };
+    expect(postEntry).toBeDefined();
+    expect(postEntry.translation).toBe('Yazı');
+    expect(postEntry.origin).toBe('owner');
+    expect(postEntry.is_official).toBe(0);
+
+    // Adding again skips without overwriting
+    const res2 = addUnitsToGlossary(db, projectId, { filter: { view: 'all' } });
+    expect(res2.added).toBe(0);
+    expect(res2.skipped).toBe(2);
+    expect(res2.empty).toBe(1);
+  });
+
+  it('provides glossary terms in unitDetail for matching strings', () => {
+    projectId = add([{ msgid: 'Post', msgstr: 'Yazı' }]);
+    const unitId = listUnits(db, projectId).rows[0]!.id;
+
+    // Add term to glossary
+    addUnitsToGlossary(db, projectId, { ids: [unitId] }, { pos: 'noun' });
+
+    const detail = unitDetail(db, unitId);
+    expect(detail.glossaryTerms).toHaveLength(1);
+    expect(detail.glossaryTerms[0]?.source).toBe('Post');
+    expect(detail.glossaryTerms[0]?.translation).toBe('Yazı');
+    expect(detail.glossaryTerms[0]?.pos).toBe('noun');
   });
 });

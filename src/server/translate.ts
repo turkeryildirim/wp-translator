@@ -1,9 +1,10 @@
 import type { Db } from '../db/open.ts';
 import { collectTerms } from '../glossary/terminology.ts';
 import { checkTranslation } from '../quality/check.ts';
-import { memoryCounts } from '../ai/memory.ts';
 import { rememberTranslations, reshape, splitByMemory } from '../ai/translationMemory.ts';
 import { AgyProvider } from '../translate/agy.ts';
+import { ClaudeProvider } from '../translate/claude.ts';
+import { CodexProvider } from '../translate/codex.ts';
 import { DEFAULT_TIMEOUT_MS, OpencodeProvider } from '../translate/opencode.ts';
 import type { RequestItem, TranslationProvider } from '../translate/types.ts';
 import { styleGuideFor } from './tags.ts';
@@ -71,6 +72,7 @@ export interface TranslateProgress {
   engine: Engine;
   model: string | null;
   finishedAt: string | null;
+  currentChunk?: { current: number; total: number; sample?: string | undefined } | null;
 }
 
 /** Enough to see what a request is doing without the payload becoming the page. */
@@ -93,6 +95,7 @@ const idle = (): TranslateProgress => ({
   engine: 'opencode',
   model: null,
   finishedAt: null,
+  currentChunk: null,
 });
 
 let progress: TranslateProgress = idle();
@@ -120,7 +123,7 @@ export function stopTranslation(): TranslateProgress {
 export type TranslateScope = 'untranslated' | 'waiting' | 'selected' | 'all';
 
 /** Which CLI does the translating. */
-export type Engine = 'opencode' | 'agy';
+export type Engine = 'opencode' | 'agy' | 'claude' | 'codex';
 
 export interface TranslateOptions {
   chunkSize?: number;
@@ -189,6 +192,22 @@ export function providerFor(
 ): TranslationProvider {
   if (options.engine === 'agy') {
     return new AgyProvider({
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+      onLine,
+    });
+  }
+
+  if (options.engine === 'claude') {
+    return new ClaudeProvider({
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+      onLine,
+    });
+  }
+
+  if (options.engine === 'codex') {
+    return new CodexProvider({
       ...(options.model ? { model: options.model } : {}),
       ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
       onLine,
@@ -278,6 +297,7 @@ export function startTranslation(
   const runChunk = async (
     slice: typeof pending,
     number: number,
+    totalBatches: number,
     send: TranslationProvider,
     mark: (chunk: number) => void,
   ): Promise<void> => {
@@ -297,6 +317,11 @@ export function startTranslation(
 
       const terms = collectTerms(db, projectId, ask.map((item) => item.s));
       mark(number);
+      progress.currentChunk = {
+        current: number,
+        total: totalBatches,
+        sample: slice[0]?.msgid ? `${slice[0].msgid.slice(0, 30)}…` : undefined,
+      };
       const fresh = ask.length === 0 ? [] : await attempt(ATTEMPTS, () => {
         inFlight.set(number, Date.now());
         oldestWait();
@@ -357,6 +382,7 @@ export function startTranslation(
     } finally {
       inFlight.delete(number);
       oldestWait();
+      if (progress.currentChunk?.current === number) progress.currentChunk = null;
       progress.done = Math.min(progress.done + slice.length, pending.length);
     }
   };
@@ -377,7 +403,7 @@ export function startTranslation(
         const mine = next;
         next += 1;
         if (mine >= batches.length) return;
-        await runChunk(batches[mine]!, mine + 1, send, (chunk) => (current.chunk = chunk));
+        await runChunk(batches[mine]!, mine + 1, batches.length, send, (chunk) => (current.chunk = chunk));
       }
     };
 

@@ -26,6 +26,31 @@ export async function addProject(
 ): Promise<AddProjectResult> {
   const ref = parseProjectUrl(url);
 
+  const already = db
+    .prepare(
+      `SELECT id, name, project_path, sub_project, translate_url
+         FROM projects
+        WHERE translate_url = ?
+           OR (project_path = ? AND ifnull(sub_project, '') = ifnull(?, ''))`,
+    )
+    .get(url, ref.projectPath, ref.subProject ?? '') as
+    | {
+        id: number;
+        name: string | null;
+        project_path: string;
+        sub_project: string | null;
+        translate_url: string;
+      }
+    | undefined;
+
+  if (already) {
+    const displayName = already.name ?? already.project_path;
+    const sub = already.sub_project ? ` (${already.sub_project})` : '';
+    throw new Error(
+      `Bu proje zaten eklenmiş: "${displayName}${sub}". Kataloğu güncellemek için Çeviri ekranından bu projeyi seçip "Yenile" butonunu kullanabilirsiniz.`,
+    );
+  }
+
   // The whole catalogue in one request. GlotPress puts status in an export
   // filter rather than in the PO, and a fuzzy entry reaches us untranslated.
   const [po, metadata] = await Promise.all([
@@ -72,6 +97,136 @@ export async function addProject(
 
 export function removeProject(db: Db, projectId: number): void {
   db.prepare(`DELETE FROM projects WHERE id = ?`).run(projectId);
+}
+
+export interface ImportSourcesResult {
+  added: Array<{ id: number; name: string; strings: number }>;
+  skipped: Array<{ id: number; name: string; reason: string }>;
+  errors: Array<{ id: number; name: string; error: string }>;
+}
+
+/**
+ * Import one or more trusted sources as active translation projects.
+ * Preserves the project's tags and uses its custom label when metadata has no name.
+ */
+export async function importSourcesToProjects(
+  db: Db,
+  sourceIds: readonly number[],
+): Promise<ImportSourcesResult> {
+  const result: ImportSourcesResult = {
+    added: [],
+    skipped: [],
+    errors: [],
+  };
+
+  for (const sourceId of sourceIds) {
+    const source = db
+      .prepare(
+        `SELECT id, translate_url AS translateUrl, project_path AS projectPath,
+                family, label
+           FROM trusted_sources
+          WHERE id = ?`,
+      )
+      .get(sourceId) as
+      | {
+          id: number;
+          translateUrl: string;
+          projectPath: string;
+          family: import('../wporg/project.ts').Family;
+          label: string | null;
+        }
+      | undefined;
+
+    if (!source) continue;
+
+    const displayName = source.label ?? source.projectPath;
+
+    try {
+      const ref = parseProjectUrl(source.translateUrl);
+
+      const already = db
+        .prepare(
+          `SELECT id, name, project_path, sub_project, translate_url
+             FROM projects
+            WHERE translate_url = ?
+               OR (project_path = ? AND ifnull(sub_project, '') = ifnull(?, ''))`,
+        )
+        .get(source.translateUrl, ref.projectPath, ref.subProject ?? '') as
+        | { id: number; name: string | null }
+        | undefined;
+
+      if (already) {
+        result.skipped.push({
+          id: already.id,
+          name: already.name ?? displayName,
+          reason: 'Bu proje zaten çeviri projelerinde ekli.',
+        });
+        continue;
+      }
+
+      const [po, metadata] = await Promise.all([
+        fetchExport(exportUrl(ref.projectPath, { status: 'all' })),
+        fetchMetadata(ref.family, ref.slug),
+      ]);
+
+      const catalogue = parsePo(po);
+      if (catalogue.units.length === 0) {
+        result.errors.push({
+          id: source.id,
+          name: displayName,
+          error: `${ref.projectPath} boş bir katalog döndürdü.`,
+        });
+        continue;
+      }
+
+      const projectName = source.label ?? metadata.name ?? undefined;
+
+      const projectId = importProject(
+        db,
+        {
+          family: ref.family,
+          projectPath: ref.projectPath,
+          translateUrl: source.translateUrl,
+          ...(ref.subProject ? { subProject: ref.subProject } : {}),
+          ...(ref.slug ? { slug: ref.slug } : {}),
+          ...(projectName ? { name: projectName } : {}),
+          ...(metadata.version ? { version: metadata.version } : {}),
+        },
+        catalogue,
+      );
+
+      const tagRows = db
+        .prepare(`SELECT tag_id AS tagId FROM trusted_source_tags WHERE trusted_source_id = ?`)
+        .all(source.id) as { tagId: number }[];
+      const tagIds = tagRows.map((r) => r.tagId);
+
+      setProjectTags(db, projectId, tagIds);
+
+      if (metadata.description || metadata.readme) {
+        db.prepare(`UPDATE projects SET description = ?, readme = ? WHERE id = ?`).run(
+          metadata.description ?? null,
+          metadata.readme ?? null,
+          projectId,
+        );
+      }
+
+      applyGlossary(db, projectId);
+
+      result.added.push({
+        id: projectId,
+        name: projectName ?? displayName,
+        strings: catalogue.units.length,
+      });
+    } catch (err: unknown) {
+      result.errors.push({
+        id: source.id,
+        name: displayName,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return result;
 }
 
 export interface ReloadResult {
