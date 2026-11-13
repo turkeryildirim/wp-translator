@@ -76,12 +76,12 @@ export interface AskResult {
 
 export interface AskOptions {
   /** Which CLI to ask. agy/codex enforces the answer's shape; opencode/claude is parsed. */
-  engine?: Engine;
-  model?: string;
+  engine?: Engine | undefined;
+  model?: string | undefined;
   /** opencode only: the tool-free agent. */
-  agent?: string;
-  timeoutMs?: number;
-  signal?: AbortSignal;
+  agent?: string | undefined;
+  timeoutMs?: number | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 /**

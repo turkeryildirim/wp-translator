@@ -33,9 +33,10 @@ import TranslateModal from './TranslateModal.vue';
 import { notify } from './notify.ts';
 import TagsAndStyle from './TagsAndStyle.vue';
 import AddProject from './AddProject.vue';
+import QueueReview from './QueueReview.vue';
 import Settings from './Settings.vue';
 
-type Screen = 'review' | 'add' | 'sources' | 'glossary' | 'tm' | 'tags' | 'settings';
+type Screen = 'review' | 'add' | 'sources' | 'glossary' | 'tm' | 'tags' | 'queue' | 'settings';
 const screen = ref<Screen>('review');
 
 const isSidebarCollapsed = ref(localStorage.getItem('wp_translator_sidebar_collapsed') === 'true');
@@ -90,6 +91,11 @@ const navItems = computed(() => [
     label: 'Çeviri İnceleme',
     icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`,
     badge: counts.value.waiting > 0 ? counts.value.waiting.toLocaleString('tr') : undefined,
+  },
+  {
+    screen: 'queue' as const,
+    label: 'Kuyruk Tarayıcısı',
+    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`,
   },
   {
     screen: 'glossary' as const,
@@ -600,6 +606,7 @@ watch(page, load);
       <TranslationMemoryBrowser v-else-if="screen === 'tm'" />
       <TagsAndStyle v-else-if="screen === 'tags'" />
       <AddProject v-else-if="screen === 'add'" @added="onProjectAdded" />
+      <QueueReview v-else-if="screen === 'queue'" />
       <Settings v-else-if="screen === 'settings'" />
 
       <template v-else>

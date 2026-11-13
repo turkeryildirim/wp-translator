@@ -655,3 +655,59 @@ export const publishToWporg = (
   options?: { ids?: number[]; filter?: string; status?: 'current' | 'waiting' },
 ) =>
   post<PublishResult>(`/api/projects/${projectId}/publish`, options ?? {}, 'wp.org’a yayınlandı');
+
+export interface QueueWorkerConfig {
+  family?: 'plugin' | 'theme' | 'all' | undefined;
+  mode?: 'dry_run' | 'apply' | undefined;
+  autoApprove?: boolean | undefined;
+  autoReject?: boolean | undefined;
+  engine?: string | undefined;
+  model?: string | undefined;
+  pauseMs?: number | undefined;
+}
+
+export interface QueueLog {
+  time: string;
+  level: 'info' | 'warn' | 'error' | 'success';
+  text: string;
+}
+
+export interface QueueWorkerState {
+  running: boolean;
+  phase: 'idle' | 'scanning' | 'working' | 'done' | 'stopped' | 'error';
+  mode: 'dry_run' | 'apply';
+  targetsTotal: number;
+  targetsCompleted: number;
+  currentProject: string;
+  currentQueue: string;
+  rowsTotal: number;
+  rowsProcessed: number;
+  approved: number;
+  rejected: number;
+  skipped: number;
+  logs: QueueLog[];
+  error?: string | undefined;
+}
+
+export interface QueueTargetPreview {
+  family: 'plugin' | 'theme';
+  slug: string;
+  name: string;
+  subProject?: string | undefined;
+  projectPath: string;
+  queueUrl: string;
+  status: 'waiting' | 'fuzzy';
+  count: number;
+}
+
+export const getQueueWorkerStatus = () =>
+  json<QueueWorkerState>('/api/queue-worker/status');
+
+export const startQueueWorker = (config: QueueWorkerConfig) =>
+  post<QueueWorkerState>('/api/queue-worker/start', config, 'Kuyruk inceleme başlatıldı');
+
+export const stopQueueWorker = () =>
+  post<QueueWorkerState>('/api/queue-worker/stop', {}, 'Kuyruk inceleme durduruldu');
+
+export const scanQueuePreview = (family?: 'plugin' | 'theme' | 'all') =>
+  post<{ targets: QueueTargetPreview[] }>('/api/queue-worker/scan', { family: family ?? 'all' });

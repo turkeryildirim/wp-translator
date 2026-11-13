@@ -10,6 +10,8 @@ import { readJob, startJob } from './jobs.ts';
 import { getAppSetting, setAppSetting } from '../db/appSettings.ts';
 import { exportProject } from '../project/export.ts';
 import { publishProjectToWporg, verifyWporgSession } from '../wporg/publish.ts';
+import { queueWorkerManager, type QueueWorkerConfig } from '../wporg/queueWorker.ts';
+import { scanQueueTargets } from '../wporg/scanner.ts';
 import {
   copyMemoryToTerms,
   createEntry,
@@ -481,6 +483,40 @@ async function api(
     const cookieToTest = body?.cookie?.trim() || getAppSetting(db, 'wporg_cookie') || '';
     const result = await verifyWporgSession(cookieToTest);
     return send(response, 200, result);
+  }
+
+  if (route === '/api/queue-worker/status' && method === 'GET') {
+    return send(response, 200, queueWorkerManager.getState());
+  }
+
+  if (route === '/api/queue-worker/start' && method === 'POST') {
+    try {
+      const body = ((await readJson(request)) as QueueWorkerConfig) ?? {};
+      const state = queueWorkerManager.start(db, body);
+      return send(response, 200, state);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return send(response, 400, { error: message });
+    }
+  }
+
+  if (route === '/api/queue-worker/stop' && method === 'POST') {
+    return send(response, 200, queueWorkerManager.stop());
+  }
+
+  if (route === '/api/queue-worker/scan' && method === 'POST') {
+    try {
+      const cookie = getAppSetting(db, 'wporg_cookie')?.trim();
+      if (!cookie) {
+        return send(response, 400, { error: 'WordPress.org oturum çerezi tanımlı değil.' });
+      }
+      const body = ((await readJson(request)) as { family?: 'plugin' | 'theme' | 'all' }) ?? {};
+      const targets = await scanQueueTargets({ cookie, family: body.family ?? 'all' });
+      return send(response, 200, { targets });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return send(response, 400, { error: message });
+    }
   }
 
   if (method === 'POST' && route === '/api/projects') {
