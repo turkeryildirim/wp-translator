@@ -1,7 +1,8 @@
 import { openDb } from '../db/open.ts';
+import { resolveDbPath } from '../db/path.ts';
 import { startServer } from '../server/http.ts';
 
-const dbPath = process.env.WPT_DB ?? 'wp-translator.sqlite';
+const dbPath = resolveDbPath({ preferLocal: true });
 const port = Number(process.env.WPT_PORT ?? 4173);
 const panelDir = process.env.WPT_PANEL ?? 'dist/panel';
 

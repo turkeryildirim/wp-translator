@@ -75,6 +75,7 @@ export function invokeCodex(call: CodexCall): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const child = spawn(call.binary ?? 'codex', args, {
       stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32',
       ...(call.signal ? { signal: call.signal } : {}),
     });
 

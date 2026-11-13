@@ -6,8 +6,18 @@ export interface Migration {
   sql: string;
 }
 
+function readAsset(url: URL): string {
+  if (url.protocol === 'data:') {
+    const comma = url.pathname.indexOf(',');
+    const isBase64 = url.pathname.slice(0, comma).includes(';base64');
+    const data = url.pathname.slice(comma + 1);
+    return Buffer.from(data, isBase64 ? 'base64' : 'utf-8').toString('utf-8');
+  }
+  return readFileSync(fileURLToPath(url), 'utf-8');
+}
+
 const initialSchema = (): string =>
-  readFileSync(fileURLToPath(new URL('./schema.sql', import.meta.url)), 'utf-8');
+  readAsset(new URL('./schema.sql', import.meta.url));
 
 /**
  * The seeded Turkish style guide, read from `style-guide/tr-genel.md` so that
@@ -16,10 +26,7 @@ const initialSchema = (): string =>
  */
 const styleGuide = (): string => {
   try {
-    return readFileSync(
-      fileURLToPath(new URL('../../style-guide/tr-genel.md', import.meta.url)),
-      'utf-8',
-    );
+    return readAsset(new URL('../../style-guide/tr-genel.md', import.meta.url));
   } catch {
     return '';
   }
@@ -429,6 +436,22 @@ export const migrations: readonly Migration[] = [
 
       INSERT OR IGNORE INTO app_settings (key, value)
       VALUES ('wporg_cookie', 'wporg_locale=en_US; wporg_sec=trkr%7C1794852283%7CaWjZZEsoOynTJtql9WTBwfC30IqtutsebmkrRD5EPto%7C473ef2a9c43b791f8da3b4763258d17f6ad447af08e5f3f6cd17b36a1adb2da1; wporg_logged_in=trkr%7C1794852283%7CaWjZZEsoOynTJtql9WTBwfC30IqtutsebmkrRD5EPto%7C97fde79b2bad142e2a92aed87d8c8b6a5124b9a9f286ef8b1f236fc987d4eb22; wordpress_test_cookie=WP%20Cookie%20check');
+    `,
+  },
+  {
+    version: 18,
+    // System and GlotPress operational logs with 7-day retention.
+    sql: `
+      CREATE TABLE IF NOT EXISTS system_logs (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        level      TEXT NOT NULL CHECK (level IN ('error', 'warn', 'info')),
+        category   TEXT NOT NULL,
+        message    TEXT NOT NULL,
+        details    TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_system_logs_created_at ON system_logs(created_at);
+      CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level);
     `,
   },
 ];

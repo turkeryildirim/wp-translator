@@ -1,336 +1,149 @@
 # Working in this repository
 
-Read `README.md` for what the tool does and how to run it. This file is about
-how to change it.
+This document serves as the architectural and design guide for AI agents and developers modifying this codebase.
+Read `README.md` for user-facing features, installation, and general command usage.
 
-## Measure before deciding
+---
 
-This is the repository's habit, and most of its design came from it. Several
-decisions went the *opposite* way from the obvious guess, and only because
-someone checked:
+## 1. Core Architecture & Build Constraints
 
-- Normalising before matching looked obviously right. Most of the matches it
-  gains map to a *different* translation.
-- Keying the glossary on `msgctxt` looked like precision. Across real plugins it
-  decided none of the matches it could have.
-- Path heuristics for "is this an admin string" looked solid. They decide about
-  half of one large plugin and a fifth of another.
+### Source-Run Constraint
+The server and CLI tools execute directly from source using `node --experimental-strip-types` without an intermediate compilation step.
+* TypeScript syntax that emits runtime code is prohibited:
+  * No constructor parameter properties (`constructor(private readonly x: T)`).
+  * No `enum`, `namespace`, or decorators.
+  * Internal module imports must retain the `.ts` extension (supported via `allowImportingTsExtensions` in `tsconfig.json`).
+* Front-end and Electron builds are the only exceptions:
+  * Frontend panel bundles via Vite (`root: 'panel'`, config in `vite.config.ts`).
+  * Electron main process bundles via Vite SSR mode (`vite.electron.config.ts`).
+  * Test suites run in Vitest under `vitest.config.ts`. Do not merge Vite configs.
 
-So: before changing behaviour, check it against real data. The catalogues are a
-`curl` away and `data/trusted-sources.txt` lists them. Put what you found in the
-commit message — that is where the history lives.
+### Process & Single-Instance Model
+* Single-user, local-only daemon bound strictly to `127.0.0.1`.
+* In Electron desktop mode, `app.requestSingleInstanceLock()` guards the process. If another instance exists, the secondary instance immediately invokes `process.exit(0)` after `app.quit()` to avoid contesting port 4173 or the database.
+* The HTTP server attempts port 4173 by default and automatically falls back to an ephemeral port (`port: 0`) if port 4173 is occupied.
 
-## The build constraint
+---
 
-**The tool runs straight from source** — `node --experimental-strip-types`, no
-build step. That rules out TypeScript syntax that emits code:
+## 2. Database & Storage Architecture
 
-- no constructor parameter properties (`constructor(private readonly x: T)`)
-- no `enum`, `namespace`, or decorators
-- imports of `.ts` files keep the extension
+### Database Engine & Migrations
+* Database operations use `better-sqlite3` synchronously.
+* Storage directory resolution (`src/db/path.ts`):
+  * **Linux:** `~/.config/wp-translator/wp-translator.sqlite`
+  * **Windows:** `%APPDATA%\wp-translator\wp-translator.sqlite`
+  * **Development CLI:** Optional project-local directory via `preferLocal: true`.
+* Schema changes are strictly forward-only in `src/db/migrations.ts` tracked by `PRAGMA user_version`. `schema.sql` represents version 1 and must never be edited retroactively.
+* Inlined asset loading in migrations (`src/db/migrations.ts`) supports both `file://` URIs and `data:application/sql;base64` URLs emitted by Vite bundling.
 
-`tsconfig.json` has `allowImportingTsExtensions`. The panel is the exception: it
-goes through Vite.
+### Automated Backups
+* Implemented in `src/db/backup.ts`.
+* On Electron application quit (`before-quit`), an online SQLite snapshot is written to `backups/wp-translator-YYYY-MM-DD_HH-mm-ss.sqlite`.
+* Retention policy: Automatically purges older backup files, keeping only the most recent closing snapshots.
 
-## Checks
+### Query Performance & Indexing
+* `better-sqlite3` runs synchronously on the main event loop. Statements executed during HTTP requests must never trigger table scans.
+* Paged table queries use Common Table Expressions (CTEs) to isolate target row IDs before computing joins or status aggregations.
+* SQLite's `LIKE` and `NOCASE` fold ASCII only. Case-insensitive Turkish search is handled via the registered application function `fold` (`src/db/fold.ts`).
 
-```bash
-pnpm test                                  # vitest
-pnpm run typecheck                         # tsc --noEmit
-pnpm exec vue-tsc --noEmit -p tsconfig.json # includes the .vue files
-pnpm run build:panel                       # the panel (or pnpm exec vite build)
-```
+---
 
-`vite.config.ts` sets `root: 'panel'` for the UI build, which is why tests have
-their own `vitest.config.ts`. Do not merge them.
+## 3. Application Screens & Module Responsibilities
 
-## Tests
+The user interface is structured into dedicated screens managed in `panel/src/App.vue`:
 
-Assert the property the design argued for, not that the function runs. A good
-test names the failure it prevents:
+### 1. Çeviri İnceleme (`review`) — `panel/src/ReviewTable.vue`
+* Interactive workspace for project translation units.
+* Filter views: `waiting`, `untranslated`, `blocked`, `upstream`, `translated`, `all`.
+* Row detail inspection:
+  * Visual markers for invisible/non-rendering whitespace characters (`src/text/whitespace.ts`).
+  * Quality check violation reasons (`src/quality/`).
+  * Reason-based quality check override (`overrideCheck` in `src/server/review.ts`).
+* Find & Replace: Scope-aware, literal, and case-sensitive. Rewrites return modified rows to `review` state.
+* Export: Generates clean, Gettext-compliant PO files containing only approved (`ok`) translations.
 
-```ts
-it('keeps the two entries whose msgid is the string "0"', () => {
-  // A truthiness check drops these, because "0" is falsy.
-```
+### 2. Kuyruk Tarayıcısı (`queue`) — `panel/src/QueueReview.vue` & `src/wporg/queueWorker.ts`
+* Autonomous reviewer connecting directly to translate.wordpress.org queues.
+* Uses the saved WordPress.org authentication cookie (`app_settings` table).
+* Scans plugins and themes for pending (`waiting` / `fuzzy`) submissions (`src/wporg/scanner.ts`).
+* Processes queue rows:
+  1. Local glossary exact matching.
+  2. Local quality checks evaluation.
+  3. AI model judgement call (`src/server/judge.ts`).
+* Execution modes: `dry_run` (simulation without writes) and `apply` (executes status changes on translate.wordpress.org).
+* Detects GlotPress markup changes or missing action nonces and surfaces explicit error logs.
 
-Fixtures live in `test/fixtures/`. `edge-cases.po` carries the cases that break
-naive parsers — `msgid "0"`, `msgctxt`, plurals, significant trailing whitespace,
-escaped quotes. Add to it rather than inventing a new fixture.
+### 3. Sözlük (`glossary`) — `panel/src/GlossaryBrowser.vue`
+* Manages translation memory rows (`glossary_entries` where `pos IS NULL`).
+* Distinguishes owner entries (`origin = 'owner'`) from trusted source entries (`origin = 'source'`).
+* Matches are ranked by source authority; human-approved upstream translations take precedence.
 
-Some tests assert a **query plan** or a **time budget** rather than a result
-(`test/sync-plan.test.ts`, `test/glossary-paging.test.ts`), and some assert the
-**shape of a component** (`test/review-table.test.ts`). Those guard failures that
-are invisible in behaviour: the answer stays correct while the server stops
-answering, or the list quietly drifts a row out. Keep them.
+### 4. Terim Bankası (`tm`) — `panel/src/TranslationMemoryBrowser.vue`
+* Manages terminology rows (`glossary_entries` where `pos IS NOT NULL`).
+* Holds parts-of-speech definitions, notes, and official WordPress glossary terms (`is_official = 1`).
 
-## Documentation and comments
+### 5. Güvenilir Projeler (`sources`) — `panel/src/TrustedSources.vue`
+* Curated upstream project repository list (`trusted_sources` table).
+* Priority ordering determines winning translations when projects disagree.
+* Sync engine (`src/glossary/sync.ts`): Fetches upstream PO exports and synchronizes translation memory.
 
-`README.md` and this file are the documentation. Both are present-tense
-descriptions of how things are: **no history, no changelog, no record of
-completed work, and no statistics**. Git holds the history, and a figure written
-into a document is a claim that goes stale silently — the panel gets its numbers
-from the database for the same reason.
+### 6. Etiketler & Üslup (`tags`) — `panel/src/TagsAndStyle.vue`
+* Manages vocabulary tags (e.g., general WordPress vs. WooCommerce).
+* Attaches free-text markdown style guides to tags; injected into AI prompts for contextual guidance.
+* Tag merging tool with collision detection for overlapping terms.
 
-Code comments say what something is for where the code cannot, in two or three
-sentences at most, plus parameters and annotations where they help. They are not
-the place for how the code got here or for what a measurement showed.
+### 7. Proje Ekle (`add`) — `panel/src/AddProject.vue`
+* Imports new projects from translate.wordpress.org URLs.
+* Retrieves project PO catalogues and scrapes WordPress.org plugin/theme metadata (`src/wporg/metadata.ts`).
 
-Commit messages carry all of that. Say what changed and why, and give the
-measurement if one drove it.
+### 8. Genel Ayarlar (`settings`) — `panel/src/Settings.vue`
+* Configures AI CLI tools (`agy`, `opencode`, `claude`, `codex`) and active model identifiers (`src/db/aiSettings.ts`).
+* Manages WordPress.org session cookies with live connection verification.
 
-## Things that will bite
+### 9. AI Hafızası (`ai_memory`) — `panel/src/AiMemory.vue` & `src/ai/memory.ts`
+* Persistent cache of model translations and judgements indexed by content hash and style rules hash.
+* Allows searching, filtering by kind, and deleting individual or bulk cache records.
 
-- **`opencode run --format json` hangs unless stdin is closed.** Undocumented.
-  Symptom is zero bytes and no error. This is why `src/translate/opencode.ts`
-  uses `spawn` with `stdio: ['ignore', …]` rather than `execFile`.
-- **A model can answer a batch by reaching for a shell.** agy exits zero, reports
-  `SUCCESS` with an empty `response`, no `structured_output`, and the only trace
-  is `denied_actions: [RunCommand]` — the turn was spent on a tool call that was
-  refused. Both prompts carry `NO_TOOLS` (`src/translate/prompt.ts`) to stop it,
-  and never describe the payload as an attached file: only opencode attaches it,
-  and naming a file that is not there is what invites the read. Keep the error
-  message in `agyItems` naming the denied tool; read as "ignored the schema" it
-  sends you looking at the payload instead of at the model.
-- **A model can hand back the payload's own escaping.** The strings ride inline
-  inside `JSON.stringify`, where a quote is `\"`, and an answer sometimes spells
-  it that way too — a whole batch at a time, not a string. `href=\"…\"` is then a
-  tag the source does not have, so the HTML check refuses the wording and the
-  refusal reads as a dropped link. `unescapeEchoedQuotes`
-  (`src/text/escapes.ts`) takes it off where an answer meets the string it was
-  asked about: `reconcile` for both providers, `readOpinions` and `settle` for a
-  judgement, and `splitByMemory` on the way *out* of the store — a remembered
-  answer is never asked for again, so one stored before the repair would be
-  refused for ever. It repairs quotes only, and only where the source carries no
-  backslash: `WordPress\AI` and `\frac{a}{b}` mean theirs.
-- **Judging runs one model call per batch; the concurrency is the script's.**
-  `/api/judge` and `/api/propose` each start one batch, and
-  `userscript/wp-translator-review.user.js` keeps three of those in flight. It sits
-  there rather than in the server so each answer can be annotated the moment it
-  lands — a page that fills in as it goes, not one that appears at the end.
-  `src/server/translate.ts` owns its own lanes because nothing is watching that one
-  row by row.
-- **Both take an `engine`, and neither may assume one.** Judging used to call
-  `invokeAgy` directly; a CLI that is out of quota does not fail, it hangs, so being
-  unable to switch meant every batch waiting out the timeout. `askModel` asks
-  whichever was named — agy with its schema, opencode by scraping the array out of
-  the text, which is what `jsonArray` is for.
-- **Nothing that takes minutes is answered on the request that asked for it.**
-  `/api/judge` and `/api/propose` return a ticket and `GET /api/jobs/:id` collects
-  it (`src/server/jobs.ts`). The caller is a browser extension whose background
-  worker Chrome puts to sleep, taking any request it is carrying with it. A ticket
-  outlives that; a held-open request loses the answer. A collected ticket is
-  dropped — there is one reader.
-- **A row's `row` attribute is `<originalId>` or `<originalId>-<translationId>`.**
-  An untranslated row has no translation to number, so it carries the original id
-  alone. Reading the second segment unconditionally skips every untranslated row —
-  and a synthetic fixture that invents the id is what lets that pass unnoticed.
-  Judging keys on the translation id (`-set-status/` takes it), proposing on the
-  original's (the save route takes that).
-- **A row with no translation is proposed for, not judged.** `/api/judge` on an
-  empty wording returns `flagged: empty` for every row, which is worse than
-  nothing, so `/api/propose` (`src/server/propose.ts`) translates instead — the
-  glossary where it holds exactly one wording, then `ai_memory`, then the model,
-  and nothing is offered that `checkTranslation` refuses. The script decides per
-  row rather than per queue, because `fuzzy` and `either` hold both kinds.
-- **A provider failure must not fail a judging batch.** The checks and the
-  glossary have already settled rows by then, and the userscript walks dozens of
-  pages. `askModel` turns an unreachable model into `unknown` carrying the error
-  as its reason, and rethrows only when the run was aborted.
-- **Do not rely on an opencode free model.** The roster rotates and they refuse
-  CLI requests without warning: `{"type":"provider.auth","status":403,"message":
-  "OpenCode's free tier can only be used from within OpenCode"}`. opencode's own
-  default is one of them, so leaving the model unset is what breaks. Name a model
-  from a plan instead — `panel/src/App.vue` asks for the owner's z.ai one. The
-  error arrives as an `error` event on **stdout** with stderr empty, so the exit
-  code says nothing; `providerError` is what turns it into a sentence.
-- **A chunk is bounded by length, not only by count.** Ten interface labels are a
-  couple of hundred characters of source; ten readme paragraphs are six thousand.
-  `DEFAULT_CHUNK_CHARS` is what bounds the work. It does not bound the *time*: the
-  cost per character is not linear and the variance swamps it, so the request
-  timeout is wide enough to outlast an ordinary answer rather than tight enough to
-  catch a stall promptly. A stall costs one chunk; a killed answer costs every
-  chunk. Do not narrow either without measuring both.
-- **A probe must close stdin or it measures the wrong thing.** `opencode run
-  --format json` from a shell inherits a terminal, hangs, and produces zero bytes
-  with no error — indistinguishable from a stalled model. `< /dev/null` is what the
-  tool's `stdio: ['ignore', …]` does. A probe without it wasted seven minutes here
-  reproducing the documented hang rather than the reported failure.
-- **agy has no effort flag worth passing.** Its models carry the effort in the id
-  (`gemini-3.8-flash-low`), and `--effort` on one of those exits 1 with "not
-  supported for the current model". Choose the model, not a flag.
-- **A plugin's pending rows are not in its development project.** They sit in
-  whichever sub-project the submissions were made against, which is mostly the
-  released one, and a `dev` that is in step beside a `stable` that is not is
-  common — so "work development where there is one" walks past most of the queue
-  and sometimes past all of it. Choose per pair (code, readme) by which holds more
-  pending, as `chooseSets` in `userscript/wp-translator-tier-run.user.js` does; a
-  tie is the same submissions in both sets, so it costs nothing either way.
-  **`wp-translator-tm-approve.user.js` still has the old rule** and skips the same
-  work.
-- **A sub-project's completion is not the sum of its status columns.** GlotPress
-  counts *originals* in `All` and *translations* in Translated/Fuzzy/Untranslated/
-  Waiting/Changes requested, so one original carrying both a current translation
-  and a pending suggestion is counted twice across them and the columns overshoot
-  `All`. Approving such a row moves the percentage by nothing — it replaces a
-  translation that was already current. What a queue can reach is therefore
-  `ceil((All − Untranslated − ChangesRequested) / All × 100)` and not anything
-  involving the size of the queue; `projectionOf` in
-  `userscript/wp-translator-tier-run.user.js` is where that lives.
-- **The percentages the site prints come from cached counters on the translation
-  set.** They disagree with the live filter-bar counts in *both* directions, so no
-  rounding rule reproduces them and they are not something to cross-check against.
-  Decide on the live counts; the filter bar carries the whole set whether or not a
-  filter is applied.
-- **An `unknown` verdict does not say the provider is down.** It is also what a
-  model skipping one id looks like, and the two call for opposite things: leave the
-  row, or stop the run. "Every verdict is unknown" does not separate them either,
-  because the checks and the glossary settle rows in the same batch — a plan out of
-  balance comes back as one `unknown` reading *Insufficient balance* beside a
-  `flagged` the glossary decided. `JudgeResult.unreachable` is the signal; the
-  reason text is not.
-- **`/api/*` answers one browser origin, and the browser decides first.** The
-  completion walk runs in translate.wordpress.org's own context, so `cors` in
-  `src/server/http.ts` writes the headers for exactly that origin. A page on HTTPS
-  calling 127.0.0.1 is a private-network request: Chrome asks on the preflight and
-  blocks the real request itself when the answer is missing, which leaves nothing
-  at all in the server's log. `Access-Control-Allow-Private-Network` is what keeps
-  that from reading as a server that is not listening.
-- **translate.wordpress.org rate-limits a tight loop.** No `Retry-After`, no
-  headers — a run of sequential requests eventually returns 429 and the same URL
-  succeeds seconds later. `src/wporg/fetch.ts` paces and retries; keep it.
-- **A 404 from translate.wordpress.org is a large HTML page.** Check the status
-  and content type, never the byte count.
-- **`GM_xmlhttpRequest` dies with `background shutdown`.** Manifest V3 sleeps the
-  extension's service worker and every such request is carried by it, so one fails
-  while the worker restarts. The ticket is what keeps each request to
-  milliseconds, so none is held open long enough to be evicted under — but a short
-  one still dies this way, and the script sends it again on that error alone. The
-  retry is cheap because the server finishes a batch and writes `ai_memory`
-  whether or not anybody is still listening, so the second ask is served from it.
-- **translate.wordpress.org replaces GlotPress's editor row.** Read
-  `wporg-gp-customizations/templates/translation-row-editor.php` in
-  `WordPress/wordpress.org`, not GlotPress core, for anything inside
-  `tr.editor` — the save button is `button.translation-actions__save`, not
-  GlotPress's `button.ok`. The preview row and the status buttons keep their core
-  classes. Nothing in there can be checked without a logged-in session: an
-  anonymous fetch renders no `data-nonce` button at all, so a selector that
-  "matches the template" is not a selector that has been verified.
-  `userscript/wp-translator-review.user.js` accepts both spellings and logs the
-  editor row when it finds neither.
-- **A translation's status is not in the PO.** GlotPress states it through an
-  export filter, so one request cannot separate `fuzzy` or `waiting` from
-  `current`. It need not: a fuzzy entry comes through the unfiltered export with
-  an empty `msgstr` and is simply redone. Do not add a request per status
-  without measuring that it buys something.
-- **A trusted source with no tag imports nothing, silently.** `syncTrustedSource`
-  loops over the source's tags, so an empty list skips every unit and the run still
-  reports success. `addSource` falls back to the seeded tag for exactly this reason,
-  and migration 13 repairs any that were created without one. Everything starts
-  under one tag; splitting it is a later decision.
-- **A sync that adds nothing is the normal case.** A source already in step carries
-  the same entries, so the glossary's total does not move — which reads as a button
-  that did nothing. `SyncResult.entriesAdded` counts rows actually created (the
-  insert's `changes`, which the conflict clause makes zero on a repeat) and the run
-  reports it per source. `last_synced_at` is the other thing that proves it ran.
-- **A trusted source is a project, not a URL.** `project_path` is the unique
-  column; `translate_url` is only what the owner pasted, and the same project
-  arrives under several spellings of it. Two rows for one project sync it twice and
-  let it vouch for its own entries twice, which is exactly what the ranking reads.
-  `addSource` refuses by path and names what is already there.
-- **Nothing in a project writes to the glossary.** Not an approval, not an edit,
-  not the model's output. What writes to `glossary_entries` is
-  `src/glossary/sync.ts`, `src/glossary/officialGlossary.ts`, and the owner's own
-  hand through `createEntry`, `updateEntry` and `deleteEntry`. A glossary match is
-  placed without review precisely because a human approved it upstream; a
-  project's own output has not been through that.
-  `test/glossary-writers.test.ts` asserts it.
-- **Surrounding whitespace is shape, not meaning.** The glossary and the AI
-  memory store the words alone, and the shape is restored from whichever string
-  is being filled — `src/text/whitespace.ts`. The fold is `\s`, which is
-  deliberate: it is exactly the set the quality checks compare at a string's
-  edges, so anything folded is still guarded. Zero-width format characters are
-  outside it — `\s` does not match them and neither do the checks, so folding
-  them would hide a difference nothing is watching. Punctuation is outside it
-  because it changes what a string says.
-- **A glossary entry is a source *and a translation*.** `msgctxt` is not part of
-  the key and matching never reads it; it lives in `glossary_entry_contexts` as
-  a note. Two wordings of one string are two rows, and matching ranks them. Do
-  not reintroduce a "winning" translation on the entry — storing one is what hid
-  the alternatives.
-- **Nothing rewrites `translation` on a synced entry.** It is part of the key,
-  so an edit makes the row the owner's (`origin = 'owner'`) — otherwise it
-  matches no source's wording, loses its vouches and the sweep deletes it.
-- **`glossary_entries` holds two kinds of row.** Translation memory has
-  `pos IS NULL`; terminology has `pos IS NOT NULL` and keys on the translation
-  too, because the official glossary offers alternatives under one part of
-  speech. Separate partial unique indexes. Matching uses memory rows only.
-- **`blocked` on a unit is stored, not derived.** The review queue filters and
-  pages on it in SQL, and recomputing the checks per row is what forces the
-  screen to load a whole catalogue. Anything that writes `msgstr` writes
-  `blocked` too — `saveUnit`, `applyGlossary`, `replaceUnits`, and the AI writer.
-- **Counts in a select list are paid per sorted row, not per returned row.** A
-  page query that sorts before it limits evaluates them for everything it sorts.
-  Choose the page's ids in a CTE and decorate only those.
-- **A scan in `sync.ts` hangs the whole server, it does not merely slow it.**
-  `better-sqlite3` is synchronous, so a statement that loses its index blocks
-  the HTTP loop — the panel cannot even poll its own progress. An `OR` across
-  two different index lookups is the way to lose it; write two seeks joined by
-  `coalesce`, and spell `msgctxt IS NULL` as `ifnull(msgctxt, '') = ''` because
-  that is what `idx_glossary_memory_key` is built on. `test/sync-plan.test.ts`
-  asserts the plan.
-- **SQLite `NOCASE` and `LIKE` fold ASCII only.** `içerik` and `İÇERİK` compare
-  unequal, so tag names and both search boxes fold in the application instead —
-  `src/db/fold.ts`, registered as the SQLite function `fold` in `openDb`. It
-  collapses all four i-forms rather than applying Turkish casing, because the
-  source column is English and `item` has to find `ITEM`.
-- **The style guide is seeded once**, from `style-guide/tr-genel.md`, on a
-  database's first open. Editing the file does not reach existing databases —
-  `pnpm run style-guide:sync` does that, and refuses when the stored text looks
-  hand-edited.
-- **The quality checks and the AI prompt must agree.** The checks allow a
-  translated `title` and any ordering; the prompt has to say so, or the model
-  produces English tooltips the checks then bless. A test asserts the prompt
-  carries both rules.
-- **A bulk action's scope is the filter, not the page.** `targetClause` takes
-  either the picked ids or the whole filter, and the queue, the bulk actions and
-  find-and-replace all go through it. A screenful is never the unit of work.
-- **Find and replace is literal and case-sensitive on purpose.** It rewrites
-  thousands of rows at once, where a loose match is how the wrong ones change —
-  and SQLite's `LIKE` folds ASCII, so `%Alan%` finds `alan` while the replacement
-  rightly does not. It is done in the application for that reason, and because
-  every row it writes has to be re-checked and demoted to `review`.
-- **Nothing that can grow belongs inside a review row.** Editing happens in the
-  detail panel. The queue is a table and stays one.
+### 10. Sistem Günlüğü (`logs`) — `panel/src/SystemLogs.vue` & `src/db/logs.ts`
+* Central operational log table (`system_logs`) tracking errors, warnings, GlotPress UI drifts, and queue runs.
+* Enforces automatic rolling retention, purging records older than 7 days.
 
-## The rules behind the shapes
+---
 
-Not measurements, just decisions that the code assumes everywhere.
+## 4. AI Engine & CLI Integration Rules
 
-- **Single user, local, no auth.** The server binds to 127.0.0.1.
-- **The sync runs unattended.** Entries are updated, added and removed without
-  confirmation. The owner supplies the list and presses the button.
-- **Only `current` translations feed the glossary.** `waiting` is unreviewed and
-  would dilute it.
-- **The status model.** A glossary match is placed as `ok` without review,
-  because a human approved it upstream. AI output is `review`; approval makes it
-  `ok`. Rejection is not a state — it clears the translation and the unit
-  returns to `untranslated`.
-- **`msgctxt` on a project's units is carried verbatim and never matched on.**
-  GlotPress identifies an entry by singular + plural + context, so an export
-  that drops it loses those translations.
-- **The style guide is free text**, written by the owner and passed to the model
-  whole. General rules plus per-tag rules. No structured editor.
-- **Tag drift is prevented and repaired**: the model is given the existing tag
-  list and told to choose from it, and the panel offers a merge that moves every
-  entry and project from one tag to another.
-- **`dev` where a project has one, otherwise `stable`.** A slug alone cannot
-  identify a project, so the owner supplies the full URL.
+* Supported CLI engines reside in `src/translate/` (`agy.ts`, `opencode.ts`, `claude.ts`, `codex.ts`).
+* **No Automatic Provider Fallback:** When a model fails, times out, or exhausts quota, the operation must fail explicitly and record the error in `system_logs`. Automatic switching between providers is prohibited to prevent unexpected API costs.
+* **Stdin Handling:** CLI spawn invocations must ignore stdin (`stdio: ['ignore', …]`) to prevent commands like `opencode` from hanging indefinitely.
+* **Tool Call Refusal:** Prompts must enforce `NO_TOOLS` to prevent models from attempting shell or filesystem commands during batch translation turns.
+* **Escaped Quote Repair:** Language models occasionally echo JSON string escaping (`\"`). `src/text/escapes.ts` sanitizes these responses before quality checks run.
 
-## Schema changes
+---
 
-Forward-only migrations in `src/db/migrations.ts`, each with `PRAGMA
-user_version` moved to match. `schema.sql` is version 1 and is not edited again —
-a database created months ago and one created today must end up identical, not
-merely similar. A migration's SQL is frozen once it has shipped, even when a
-later one subsumes it.
+## 5. Desktop & Native Packaging
+
+* Electron packaging uses Electron 42 (ABI 146) to match precompiled `better-sqlite3` native binaries.
+* `scripts/fetch-native.ts` downloads prebuilt native binaries for Linux and Windows, eliminating the need for local C++ build tools.
+* Desktop system tray (`electron/main.ts`) monitors `/api/app-status` and animates the tray icon when background tasks or queue workers are running.
+* GitHub Actions (`.github/workflows/release.yml`) builds AppImage and Portable ZIP packages upon pushes or merges to the `main` branch.
+
+---
+
+## 6. Testing Strategy & Conventions
+
+Tests reside in the `test/` directory and are run via Vitest:
+
+* **Property & Regression Guards:** Tests must assert invariants and architectural properties rather than merely executing functions.
+* **Edge Case Parsers:** Naive parser edge cases (empty strings, `msgid "0"`, escaped quotes, significant trailing whitespace, plural forms) are tested against `test/fixtures/edge-cases.po`. Add to this fixture rather than creating new ones.
+* **Query Plan & Performance Tests:** Verify query execution plans using SQLite `EXPLAIN QUERY PLAN` to ensure statements hit required indexes without table scans.
+* **Component Shape Tests:** Assert component structure and attributes to protect against subtle UI drift.
+
+---
+
+## 7. Deliberate Design Choices & Accepted Trade-offs
+
+* **Synchronous SQLite:** Kept synchronous to guarantee transactional integrity and eliminate complex async locking. Long-running tasks must be broken into batches or run outside the SQLite thread.
+* **Exact String Matching:** Glossary matching rejects normalization (such as aggressive trimming or case folding) because real-world catalogues demonstrate that normalized matches frequently map to incorrect translations.
+* **Local-Only Security Boundary:** The application binds strictly to `127.0.0.1` and does not implement authentication. It assumes the local machine is secure.
+* **GlotPress DOM Scraping:** WordPress.org does not provide a public write API for translations; queue reviewing relies on authenticated HTTP requests and DOM parsing. GlotPress UI template discrepancies are caught and recorded in `system_logs`.
+* **One-Way Glossary Writes:** Edits made in a project or outputs generated by AI never write to `glossary_entries`. Only human-approved upstream imports and direct owner actions in the glossary screen may populate the glossary.

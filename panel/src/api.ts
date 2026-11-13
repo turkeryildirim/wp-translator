@@ -711,3 +711,90 @@ export const stopQueueWorker = () =>
 
 export const scanQueuePreview = (family?: 'plugin' | 'theme' | 'all') =>
   post<{ targets: QueueTargetPreview[] }>('/api/queue-worker/scan', { family: family ?? 'all' });
+
+// AI Memory types & client
+export interface MemoryEntry {
+  id: number;
+  kind: 'translation' | 'judgement';
+  keyHash: string;
+  sourceText: string;
+  answer: any;
+  model: string | null;
+  uses: number;
+  usedAt: string | null;
+  createdAt: string;
+}
+
+export interface MemoryCounts {
+  translation: number;
+  judgement: number;
+  reuses: number;
+}
+
+export interface MemoryResponse {
+  total: number;
+  entries: MemoryEntry[];
+  counts: MemoryCounts;
+}
+
+export async function fetchMemory(params?: {
+  kind?: 'translation' | 'judgement';
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<MemoryResponse> {
+  const query = new URLSearchParams();
+  if (params?.kind) query.set('kind', params.kind);
+  if (params?.search) query.set('search', params.search);
+  if (params?.limit) query.set('limit', String(params.limit));
+  if (params?.offset) query.set('offset', String(params.offset));
+  return json<MemoryResponse>(`/api/memory?${query.toString()}`);
+}
+
+export async function deleteMemoryItem(id: number): Promise<void> {
+  await del(`/api/memory/${id}`, 'Hafıza kaydı silindi');
+}
+
+export async function deleteMemoryBulk(ids: number[]): Promise<void> {
+  await post('/api/memory/delete', { ids }, `${ids.length} hafıza kaydı silindi`);
+}
+
+export async function clearAllMemory(kind?: 'translation' | 'judgement'): Promise<void> {
+  await post('/api/memory/delete', { all: true, kind }, 'Tüm hafıza temizlendi');
+}
+
+// System Logs types & client
+export interface SystemLog {
+  id: number;
+  level: 'error' | 'warn' | 'info';
+  category: string;
+  message: string;
+  details: string | null;
+  createdAt: string;
+}
+
+export interface LogsResponse {
+  total: number;
+  entries: SystemLog[];
+}
+
+export async function fetchLogs(params?: {
+  level?: 'error' | 'warn' | 'info';
+  category?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<LogsResponse> {
+  const query = new URLSearchParams();
+  if (params?.level) query.set('level', params.level);
+  if (params?.category) query.set('category', params.category);
+  if (params?.search) query.set('search', params.search);
+  if (params?.limit) query.set('limit', String(params.limit));
+  if (params?.offset) query.set('offset', String(params.offset));
+  return json<LogsResponse>(`/api/logs?${query.toString()}`);
+}
+
+export async function clearLogs(): Promise<void> {
+  await del('/api/logs', 'Tüm sistem günlükleri temizlendi');
+}
+

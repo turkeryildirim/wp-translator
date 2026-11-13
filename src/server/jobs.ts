@@ -45,6 +45,23 @@ export function readJob(id: string): JobState | undefined {
   return job;
 }
 
+/** Check if there are any pending / in-progress background jobs. */
+export function hasActiveJobs(): boolean {
+  for (const [, state] of jobs) {
+    if (!state.done) return true;
+  }
+  return false;
+}
+
+/** Number of currently active background jobs. */
+export function activeJobCount(): number {
+  let count = 0;
+  for (const [, state] of jobs) {
+    if (!state.done) count++;
+  }
+  return count;
+}
+
 function finish(id: string, state: JobState): void {
   // Only if it is still wanted: a ticket collected between starting and finishing
   // cannot happen, but one evicted by the cap can.

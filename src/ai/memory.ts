@@ -111,3 +111,114 @@ export function memoryCounts(db: Db): MemoryCounts {
     reuses: row.reuses ?? 0,
   };
 }
+
+export interface MemoryRow {
+  id: number;
+  kind: Kind;
+  keyHash: string;
+  sourceText: string;
+  answer: unknown;
+  model: string | null;
+  uses: number;
+  usedAt: string | null;
+  createdAt: string;
+}
+
+export interface MemoryListResult {
+  total: number;
+  entries: MemoryRow[];
+}
+
+export function listMemoryEntries(
+  db: Db,
+  options?: {
+    kind?: Kind | undefined;
+    search?: string | undefined;
+    limit?: number | undefined;
+    offset?: number | undefined;
+  },
+): MemoryListResult {
+  const kind = options?.kind;
+  const search = options?.search?.trim();
+  const limit = options?.limit ?? 50;
+  const offset = options?.offset ?? 0;
+
+  const whereClauses: string[] = [];
+  const params: unknown[] = [];
+
+  if (kind) {
+    whereClauses.push('kind = ?');
+    params.push(kind);
+  }
+
+  if (search) {
+    whereClauses.push('(source_text LIKE ? OR answer LIKE ?)');
+    params.push(`%${search}%`, `%${search}%`);
+  }
+
+  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+  const totalRow = db.prepare(`SELECT count(*) AS cnt FROM ai_memory ${whereSql}`).get(...params) as { cnt: number };
+  const total = totalRow?.cnt ?? 0;
+
+  const rows = db.prepare(`
+    SELECT id, kind, key_hash AS keyHash, source_text AS sourceText, answer, model, uses,
+           used_at AS usedAt, created_at AS createdAt
+      FROM ai_memory
+     ${whereSql}
+     ORDER BY id DESC
+     LIMIT ? OFFSET ?
+  `).all(...params, limit, offset) as Array<{
+    id: number;
+    kind: Kind;
+    keyHash: string;
+    sourceText: string;
+    answer: string;
+    model: string | null;
+    uses: number;
+    usedAt: string | null;
+    createdAt: string;
+  }>;
+
+  const entries: MemoryRow[] = rows.map((r) => {
+    let parsed: unknown = r.answer;
+    try {
+      parsed = JSON.parse(r.answer);
+    } catch {}
+    return {
+      id: r.id,
+      kind: r.kind,
+      keyHash: r.keyHash,
+      sourceText: r.sourceText,
+      answer: parsed,
+      model: r.model,
+      uses: r.uses,
+      usedAt: r.usedAt,
+      createdAt: r.createdAt,
+    };
+  });
+
+  return { total, entries };
+}
+
+export function deleteMemoryEntry(db: Db, id: number): boolean {
+  const info = db.prepare('DELETE FROM ai_memory WHERE id = ?').run(id);
+  return info.changes > 0;
+}
+
+export function deleteMemoryEntries(db: Db, ids: number[]): number {
+  if (ids.length === 0) return 0;
+  const placeholders = ids.map(() => '?').join(',');
+  const info = db.prepare(`DELETE FROM ai_memory WHERE id IN (${placeholders})`).run(...ids);
+  return info.changes;
+}
+
+export function clearMemory(db: Db, kind?: Kind): number {
+  if (kind) {
+    const info = db.prepare('DELETE FROM ai_memory WHERE kind = ?').run(kind);
+    return info.changes;
+  }
+  const info = db.prepare('DELETE FROM ai_memory').run();
+  return info.changes;
+}
+

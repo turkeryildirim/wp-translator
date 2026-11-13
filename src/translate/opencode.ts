@@ -104,6 +104,7 @@ export function invokeOpencode(call: OpencodeCall): Promise<string> {
       // `opencode run --format json` never returns unless stdin is closed, which
       // is why this uses spawn: execFile cannot set stdio.
       stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32',
       ...(call.signal ? { signal: call.signal } : {}),
     });
 

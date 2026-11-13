@@ -1,8 +1,11 @@
 {
   "name": "wp-translator",
   "version": "0.1.0",
+  "description": "Autonomous AI Translation Assistant for WordPress.org",
+  "author": "Turker",
   "private": true,
   "type": "module",
+  "main": "dist/electron/main.js",
   "engines": {
     "node": ">=22"
   },
@@ -12,21 +15,58 @@
     "typecheck": "tsc --noEmit",
     "dev:panel": "vite",
     "build:panel": "vite build",
+    "build:electron": "vite build -c vite.electron.config.ts",
+    "build:all": "pnpm run build:panel && pnpm run build:electron",
+    "start": "electron .",
     "serve": "node --experimental-strip-types src/cli/serve.ts",
-    "style-guide:sync": "node --experimental-strip-types src/cli/sync-style-guide.ts"
+    "style-guide:sync": "node --experimental-strip-types src/cli/sync-style-guide.ts",
+    "dist:linux": "node --experimental-strip-types scripts/fetch-native.ts linux && pnpm run build:all && electron-builder --linux AppImage && node --experimental-strip-types scripts/fetch-native.ts node",
+    "dist:win": "node --experimental-strip-types scripts/fetch-native.ts win && pnpm run build:all && electron-builder --win zip && node --experimental-strip-types scripts/fetch-native.ts node"
   },
   "dependencies": {
-    "better-sqlite3": "^12.6.0",
-    "gettext-parser": "^9.1.1",
-    "vue": "^3.5.43"
+    "better-sqlite3": "^12.6.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.10.1",
     "@vitejs/plugin-vue": "^6.0.9",
+    "electron": "42.11.18",
+    "electron-builder": "^26.18.0",
+    "gettext-parser": "^9.1.1",
     "typescript": "^5.9.3",
     "vite": "^7.3.6",
     "vitest": "^3.2.4",
+    "vue": "^3.5.43",
     "vue-tsc": "^3.3.11"
+  },
+  "build": {
+    "appId": "org.wordpress.wp-translator",
+    "productName": "WP Translator",
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist/builds"
+    },
+    "files": [
+      "dist/panel/**/*",
+      "dist/electron/**/*",
+      "assets/icons/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development",
+      "icon": "assets/icons/icons"
+    },
+    "win": {
+      "target": [
+        "zip"
+      ],
+      "icon": "assets/icons/icon.ico"
+    }
   }
 }

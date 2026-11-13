@@ -96,6 +96,7 @@ export function invokeAgy(call: AgyCall): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const child = spawn(call.binary ?? 'agy', args, {
       stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32',
       ...(call.signal ? { signal: call.signal } : {}),
     });
 

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { openDb } from '../db/open.ts';
+import { resolveDbPath } from '../db/path.ts';
 import { listStyleRules, saveStyleRule } from '../server/tags.ts';
 
 /**
@@ -17,7 +18,7 @@ import { listStyleRules, saveStyleRule } from '../server/tags.ts';
  */
 const guidePath = fileURLToPath(new URL('../../style-guide/tr-genel.md', import.meta.url));
 
-const dbPath = process.env.WPT_DB ?? 'wp-translator.sqlite';
+const dbPath = resolveDbPath({ preferLocal: true });
 const force = process.argv.includes('--force');
 
 const file = readFileSync(guidePath, 'utf-8');

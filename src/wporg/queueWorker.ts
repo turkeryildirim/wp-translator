@@ -4,6 +4,7 @@ import { listAiAgents } from '../db/aiSettings.ts';
 import { judgeSubmissions } from '../server/judge.ts';
 import { scanQueueTargets } from './scanner.ts';
 import { fetchQueuePage, setTranslationStatus } from './reviewer.ts';
+import { logMessage } from '../db/logs.ts';
 import type { Engine } from '../server/translate.ts';
 
 export interface QueueWorkerConfig {
@@ -48,6 +49,7 @@ function nowTime(): string {
 }
 
 class QueueWorkerManager {
+  private db: Db | null = null;
   private abortController: AbortController | null = null;
   private state: QueueWorkerState = {
     running: false,
@@ -69,11 +71,21 @@ class QueueWorkerManager {
     return { ...this.state, logs: [...this.state.logs] };
   }
 
-  private log(level: QueueLog['level'], text: string): void {
+  private log(level: QueueLog['level'], text: string, details?: unknown): void {
     const entry: QueueLog = { time: nowTime(), level, text };
     this.state.logs.push(entry);
     if (this.state.logs.length > MAX_LOGS) {
       this.state.logs.splice(0, this.state.logs.length - MAX_LOGS);
+    }
+
+    if (this.db) {
+      const dbLevel = level === 'success' || level === 'info' ? 'info' : level;
+      logMessage(this.db, {
+        level: dbLevel,
+        category: 'queue_worker',
+        message: text,
+        details,
+      });
     }
   }
 
@@ -100,6 +112,7 @@ class QueueWorkerManager {
       );
     }
 
+    this.db = db;
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
 
@@ -192,7 +205,13 @@ class QueueWorkerManager {
 
         while (currentUrl && !signal.aborted) {
           const page = await fetchQueuePage(currentUrl, cookie, signal);
-          if (page.rows.length === 0) break;
+          if (page.rows.length === 0) {
+            if (target.count > 0) {
+              const warnMsg = `Proje (${target.slug}) için ~${target.count} bekleyen bildirilmişti ancak sayfada satır bulunamadı. GlotPress arayüz şablonu değişmiş veya kuyruk temizlenmiş olabilir.`;
+              this.log('warn', warnMsg, { target, url: currentUrl });
+            }
+            break;
+          }
 
           this.state.rowsTotal += page.rows.length;
 
@@ -228,23 +247,28 @@ class QueueWorkerManager {
             const verdict = judgement?.verdict ?? 'unknown';
 
             if (verdict === 'exact' || verdict === 'agreed') {
-              if (this.state.mode === 'apply' && autoApprove && row.approveNonce) {
-                try {
-                  await setTranslationStatus(
-                    page.setStatusUrl,
-                    row.translationId,
-                    'current',
-                    row.approveNonce,
-                    cookie,
-                    signal,
-                  );
-                  this.state.approved++;
-                  this.log(
-                    'success',
-                    `✓ ONAYLANDI: "${row.source}" → "${row.translation}" (${target.slug})`,
-                  );
-                } catch (err: unknown) {
-                  this.log('error', `Onaylanamadı (${row.translationId}): ${String(err)}`);
+              if (this.state.mode === 'apply' && autoApprove) {
+                if (!row.approveNonce) {
+                  const errMsg = `Satır #${row.translationId} onaylanamadı: GlotPress onay noncesi bulunamadı. Oturum süresi dolmuş veya arayüz şablonu değişmiş olabilir.`;
+                  this.log('error', errMsg, { row, target });
+                } else {
+                  try {
+                    await setTranslationStatus(
+                      page.setStatusUrl,
+                      row.translationId,
+                      'current',
+                      row.approveNonce,
+                      cookie,
+                      signal,
+                    );
+                    this.state.approved++;
+                    this.log(
+                      'success',
+                      `✓ ONAYLANDI: "${row.source}" → "${row.translation}" (${target.slug})`,
+                    );
+                  } catch (err: unknown) {
+                    this.log('error', `Onaylanamadı (${row.translationId}): ${String(err)}`, { row, err });
+                  }
                 }
               } else {
                 this.state.approved++;
@@ -255,23 +279,28 @@ class QueueWorkerManager {
               }
             } else if (verdict === 'flagged') {
               const reason = judgement?.reason || 'Kalite/üslup kontrolünü geçemedi';
-              if (this.state.mode === 'apply' && autoReject && row.rejectNonce) {
-                try {
-                  await setTranslationStatus(
-                    page.setStatusUrl,
-                    row.translationId,
-                    'rejected',
-                    row.rejectNonce,
-                    cookie,
-                    signal,
-                  );
-                  this.state.rejected++;
-                  this.log(
-                    'warn',
-                    `✗ REDDEDİLDİ: "${row.source}" → "${row.translation}" (${target.slug}) [${reason}]`,
-                  );
-                } catch (err: unknown) {
-                  this.log('error', `Reddedilemedi (${row.translationId}): ${String(err)}`);
+              if (this.state.mode === 'apply' && autoReject) {
+                if (!row.rejectNonce) {
+                  const errMsg = `Satır #${row.translationId} reddedilemedi: GlotPress ret noncesi bulunamadı. Oturum süresi dolmuş veya arayüz şablonu değişmiş olabilir.`;
+                  this.log('error', errMsg, { row, target });
+                } else {
+                  try {
+                    await setTranslationStatus(
+                      page.setStatusUrl,
+                      row.translationId,
+                      'rejected',
+                      row.rejectNonce,
+                      cookie,
+                      signal,
+                    );
+                    this.state.rejected++;
+                    this.log(
+                      'warn',
+                      `✗ REDDEDİLDİ: "${row.source}" → "${row.translation}" (${target.slug}) [${reason}]`,
+                    );
+                  } catch (err: unknown) {
+                    this.log('error', `Reddedilemedi (${row.translationId}): ${String(err)}`, { row, err });
+                  }
                 }
               } else {
                 this.state.rejected++;

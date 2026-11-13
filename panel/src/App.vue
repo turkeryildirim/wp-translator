@@ -35,8 +35,10 @@ import TagsAndStyle from './TagsAndStyle.vue';
 import AddProject from './AddProject.vue';
 import QueueReview from './QueueReview.vue';
 import Settings from './Settings.vue';
+import AiMemory from './AiMemory.vue';
+import SystemLogs from './SystemLogs.vue';
 
-type Screen = 'review' | 'add' | 'sources' | 'glossary' | 'tm' | 'tags' | 'queue' | 'settings';
+type Screen = 'review' | 'add' | 'sources' | 'glossary' | 'tm' | 'tags' | 'queue' | 'settings' | 'ai_memory' | 'logs';
 const screen = ref<Screen>('review');
 
 const isSidebarCollapsed = ref(localStorage.getItem('wp_translator_sidebar_collapsed') === 'true');
@@ -121,6 +123,16 @@ const navItems = computed(() => [
     screen: 'add' as const,
     label: 'Proje Ekle',
     icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>`,
+  },
+  {
+    screen: 'ai_memory' as const,
+    label: 'AI Hafızası',
+    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10H12V2z"></path><path d="M12 12 2.1 12.5"></path><path d="m4.5 4.5 7.5 7.5"></path><path d="M12 12V2a10 10 0 0 1 10 10"></path></svg>`,
+  },
+  {
+    screen: 'logs' as const,
+    label: 'Sistem Günlüğü',
+    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`,
   },
   {
     screen: 'settings' as const,
@@ -608,6 +620,8 @@ watch(page, load);
       <AddProject v-else-if="screen === 'add'" @added="onProjectAdded" />
       <QueueReview v-else-if="screen === 'queue'" />
       <Settings v-else-if="screen === 'settings'" />
+      <AiMemory v-else-if="screen === 'ai_memory'" />
+      <SystemLogs v-else-if="screen === 'logs'" />
 
       <template v-else>
         <!-- Top Contextual Bar -->

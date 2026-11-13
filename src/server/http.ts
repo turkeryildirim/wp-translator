@@ -6,7 +6,16 @@ import { listAiAgents, updateAiAgent } from '../db/aiSettings.ts';
 import { applyGlossary } from '../glossary/match.ts';
 import { judgeSubmissions, type JudgeRequest } from './judge.ts';
 import { proposeTranslations, type ProposeRequest } from './propose.ts';
-import { readJob, startJob } from './jobs.ts';
+import { activeJobCount, hasActiveJobs, readJob, startJob } from './jobs.ts';
+import {
+  clearMemory,
+  deleteMemoryEntries,
+  deleteMemoryEntry,
+  listMemoryEntries,
+  memoryCounts,
+  type Kind,
+} from '../ai/memory.ts';
+import { clearSystemLogs, listSystemLogs, type LogLevel } from '../db/logs.ts';
 import { getAppSetting, setAppSetting } from '../db/appSettings.ts';
 import { exportProject } from '../project/export.ts';
 import { publishProjectToWporg, verifyWporgSession } from '../wporg/publish.ts';
@@ -516,6 +525,57 @@ async function api(
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return send(response, 400, { error: message });
+    }
+  }
+
+  if (route === '/api/app-status' && method === 'GET') {
+    const queueState = queueWorkerManager.getState();
+    const busy = hasActiveJobs() || queueState.running;
+    return send(response, 200, {
+      busy,
+      activeJobs: activeJobCount(),
+      queueRunning: queueState.running,
+    });
+  }
+
+  if (route === '/api/memory') {
+    if (method === 'GET') {
+      const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+      const kind = (url.searchParams.get('kind') as Kind) || undefined;
+      const search = url.searchParams.get('search') || undefined;
+      const limit = Number(url.searchParams.get('limit') ?? 50);
+      const offset = Number(url.searchParams.get('offset') ?? 0);
+      const result = listMemoryEntries(db, { kind, search, limit, offset });
+      return send(response, 200, { ...result, counts: memoryCounts(db) });
+    }
+  }
+
+  const memoryItem = /^\/api\/memory\/(\d+)$/.exec(route);
+  if (memoryItem && method === 'DELETE') {
+    const id = Number(memoryItem[1]);
+    return send(response, 200, { deleted: deleteMemoryEntry(db, id) });
+  }
+
+  if (route === '/api/memory/delete' && method === 'POST') {
+    const body = (await readJson(request)) as { ids?: number[]; all?: boolean; kind?: Kind };
+    if (body.all) {
+      return send(response, 200, { deleted: clearMemory(db, body.kind) });
+    }
+    return send(response, 200, { deleted: deleteMemoryEntries(db, body.ids ?? []) });
+  }
+
+  if (route === '/api/logs') {
+    if (method === 'GET') {
+      const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+      const level = (url.searchParams.get('level') as LogLevel) || undefined;
+      const category = url.searchParams.get('category') || undefined;
+      const search = url.searchParams.get('search') || undefined;
+      const limit = Number(url.searchParams.get('limit') ?? 100);
+      const offset = Number(url.searchParams.get('offset') ?? 0);
+      return send(response, 200, listSystemLogs(db, { level, category, search, limit, offset }));
+    }
+    if (method === 'DELETE') {
+      return send(response, 200, { deleted: clearSystemLogs(db) });
     }
   }
 
