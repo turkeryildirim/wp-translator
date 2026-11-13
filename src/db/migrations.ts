@@ -418,6 +418,19 @@ export const migrations: readonly Migration[] = [
       UPDATE glossary_entries SET is_official = 1 WHERE pos IS NOT NULL;
     `,
   },
+  {
+    version: 17,
+    // Key-value application settings table, seeded with WordPress.org authentication cookie.
+    sql: `
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      ) STRICT;
+
+      INSERT OR IGNORE INTO app_settings (key, value)
+      VALUES ('wporg_cookie', 'wporg_locale=en_US; wporg_sec=trkr%7C1794852283%7CaWjZZEsoOynTJtql9WTBwfC30IqtutsebmkrRD5EPto%7C473ef2a9c43b791f8da3b4763258d17f6ad447af08e5f3f6cd17b36a1adb2da1; wporg_logged_in=trkr%7C1794852283%7CaWjZZEsoOynTJtql9WTBwfC30IqtutsebmkrRD5EPto%7C97fde79b2bad142e2a92aed87d8c8b6a5124b9a9f286ef8b1f236fc987d4eb22; wordpress_test_cookie=WP%20Cookie%20check');
+    `,
+  },
 ];
 
 export const latestVersion = migrations[migrations.length - 1]!.version;

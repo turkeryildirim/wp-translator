@@ -7,7 +7,9 @@ import { applyGlossary } from '../glossary/match.ts';
 import { judgeSubmissions, type JudgeRequest } from './judge.ts';
 import { proposeTranslations, type ProposeRequest } from './propose.ts';
 import { readJob, startJob } from './jobs.ts';
+import { getAppSetting, setAppSetting } from '../db/appSettings.ts';
 import { exportProject } from '../project/export.ts';
+import { publishProjectToWporg, verifyWporgSession } from '../wporg/publish.ts';
 import {
   copyMemoryToTerms,
   createEntry,
@@ -189,6 +191,32 @@ async function api(
       'x-withheld': String(result.withheld),
     });
     return void response.end(result.po);
+  }
+
+  const publishMatch = /^\/api\/projects\/(\d+)\/publish$/.exec(route);
+  if (method === 'POST' && publishMatch) {
+    try {
+      const body = (await readJson(request)) as {
+        ids?: number[];
+        filter?: string;
+        status?: 'current' | 'waiting';
+      } | null;
+      const projectId = Number(publishMatch[1]);
+      let unitIds: number[] | undefined;
+      if (body?.ids && Array.isArray(body.ids)) {
+        unitIds = body.ids;
+      } else if (body?.filter) {
+        unitIds = unitIdsFor(db, projectId, readFilter(new URL(`http://x/?${body.filter}`)));
+      }
+      const result = await publishProjectToWporg(db, projectId, {
+        unitIds,
+        status: body?.status,
+      });
+      return send(response, 200, result);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return send(response, 400, { error: message });
+    }
   }
 
   const detail = /^\/api\/units\/(\d+)\/detail$/.exec(route);
@@ -435,6 +463,24 @@ async function api(
       }
       return send(response, 200, { ok: true, agents: listAiAgents(db) });
     }
+  }
+
+  if (route === '/api/settings/wporg') {
+    if (method === 'GET') {
+      return send(response, 200, { cookie: getAppSetting(db, 'wporg_cookie') ?? '' });
+    }
+    if (method === 'POST') {
+      const body = (await readJson(request)) as { cookie?: string };
+      setAppSetting(db, 'wporg_cookie', body.cookie ?? '');
+      return send(response, 200, { ok: true });
+    }
+  }
+
+  if (method === 'POST' && route === '/api/settings/wporg/verify') {
+    const body = (await readJson(request)) as { cookie?: string } | null;
+    const cookieToTest = body?.cookie?.trim() || getAppSetting(db, 'wporg_cookie') || '';
+    const result = await verifyWporgSession(cookieToTest);
+    return send(response, 200, result);
   }
 
   if (method === 'POST' && route === '/api/projects') {

@@ -623,3 +623,35 @@ export async function requestSingleProposal(
   }
   throw new Error('AI öneri zaman aşımına uğradı.');
 }
+
+export interface WporgSettings {
+  cookie: string;
+}
+
+export interface WporgSessionVerification {
+  valid: boolean;
+  username?: string | undefined;
+  displayName?: string | undefined;
+  error?: string | undefined;
+}
+
+export interface PublishResult {
+  ok: boolean;
+  message: string;
+  exported: number;
+  withheld: number;
+}
+
+export const fetchWporgSettings = () => json<WporgSettings>('/api/settings/wporg');
+
+export const saveWporgSettings = (cookie: string) =>
+  post<{ ok: true }>('/api/settings/wporg', { cookie }, 'WordPress.org çerezi kaydedildi');
+
+export const verifyWporgSession = (cookie?: string) =>
+  post<WporgSessionVerification>('/api/settings/wporg/verify', { cookie });
+
+export const publishToWporg = (
+  projectId: number,
+  options?: { ids?: number[]; filter?: string; status?: 'current' | 'waiting' },
+) =>
+  post<PublishResult>(`/api/projects/${projectId}/publish`, options ?? {}, 'wp.org’a yayınlandı');

@@ -8,6 +8,7 @@ import {
   replaceInTranslations,
   listProjects,
   listUnits,
+  publishToWporg,
   reloadCost,
   stopTranslation,
   reloadProject,
@@ -298,7 +299,7 @@ function show(view: QueueView): void {
   void load();
 }
 
-type BulkChoice = BulkAction | 'translate';
+type BulkChoice = BulkAction | 'translate' | 'publish_to_wporg';
 
 const bulkAction = ref<BulkChoice | ''>('');
 const bulkPos = ref('auto');
@@ -313,6 +314,7 @@ const BULK_LABEL: Record<BulkChoice, string> = {
   glossary: 'Sözlükten doldur',
   translate: 'AI ile çevir',
   add_to_glossary: 'Sözlüğe ekle',
+  publish_to_wporg: "wp.org'a Gönder",
 };
 
 /**
@@ -352,6 +354,25 @@ async function runBulk(): Promise<void> {
     if (details.length > 0) msg += ` (${details.join(', ')})`;
     notify(res.added > 0 ? 'ok' : 'error', msg);
     clearSelection();
+    return;
+  }
+
+  if (action === 'publish_to_wporg') {
+    publishing.value = true;
+    try {
+      const res = await publishToWporg(selected.value, {
+        ids: wholeFilter.value ? undefined : picked.value,
+        filter: wholeFilter.value ? queryParams(false) : undefined,
+      });
+      notify('ok', res.message || `${res.exported.toLocaleString('tr')} çeviri wp.org'a başarıyla yüklendi.`);
+      clearSelection();
+      projects.value = await listProjects();
+      await load();
+    } catch (err: unknown) {
+      notify('error', "wp.org'a gönderilemedi: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      publishing.value = false;
+    }
     return;
   }
 
@@ -469,6 +490,37 @@ async function downloadPo(): Promise<void> {
       ? `${exported.toLocaleString('tr')} dizge indirildi, ${withheld.toLocaleString('tr')} onaysız olduğu için dışarıda kaldı.`
       : `${exported.toLocaleString('tr')} dizge indirildi.`,
   );
+}
+
+const publishing = ref(false);
+
+async function publishToWpOrg(): Promise<void> {
+  if (selected.value === null || !project.value) return;
+
+  const count = project.value.ok;
+  if (count === 0) {
+    notify('error', 'Onaylanmış çeviri yok. Önce dizgeleri onaylayın.');
+    return;
+  }
+
+  const projName = project.value.name || project.value.projectPath;
+  if (
+    !confirm(
+      `"${projName}" projesine ait ${count.toLocaleString('tr')} adet onaylı çeviri doğrudan translate.wordpress.org üzerine yüklenecek ve yayınlanacak.\n\nDevam edilsin mi?`,
+    )
+  ) {
+    return;
+  }
+
+  publishing.value = true;
+  try {
+    const res = await publishToWporg(selected.value);
+    notify('ok', res.message || `${res.exported.toLocaleString('tr')} çeviri wp.org'a başarıyla yüklendi.`);
+  } catch (err: unknown) {
+    notify('error', 'wp.org’a gönderilemedi: ' + (err instanceof Error ? err.message : String(err)));
+  } finally {
+    publishing.value = false;
+  }
 }
 
 function onChanged(saved: Unit): void {
@@ -629,6 +681,21 @@ watch(page, load);
             </button>
             <button
               class="btn primary"
+              :disabled="!project || project.ok === 0 || publishing"
+              :title="
+                !project || project.ok === 0
+                  ? 'Onaylanmış dizge yok'
+                  : `${project.ok} onaylı çeviriyi doğrudan translate.wordpress.org üzerine yükle`
+              "
+              style="background: #2563eb; border-color: #3b82f6;"
+              @click="publishToWpOrg"
+            >
+              <span v-if="publishing" class="inline-spinner" style="margin-right: 4px;"></span>
+              <span v-else style="margin-right: 4px;">🚀</span>
+              {{ publishing ? 'Gönderiliyor…' : `wp.org'a Gönder (${project?.ok ?? 0})` }}
+            </button>
+            <button
+              class="btn primary"
               :disabled="translating?.running || !project"
               title="Toplu AI çevirisi yap"
               @click="showTranslateDialog = true"
@@ -755,10 +822,11 @@ watch(page, load);
           </select>
           <button
             class="btn primary"
-            :disabled="!bulkAction || bulkCount === 0"
+            :disabled="!bulkAction || bulkCount === 0 || publishing"
             @click="runBulk"
           >
-            Uygula{{ bulkCount ? ` (${bulkCount.toLocaleString('tr')})` : '' }}
+            <span v-if="publishing && bulkAction === 'publish_to_wporg'" class="inline-spinner" style="margin-right: 4px;"></span>
+            {{ publishing && bulkAction === 'publish_to_wporg' ? 'Gönderiliyor…' : `Uygula${bulkCount ? ` (${bulkCount.toLocaleString('tr')})` : ''}` }}
           </button>
           <label class="check" style="font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
             <input type="checkbox" :checked="allOnPage" @change="togglePage" />
