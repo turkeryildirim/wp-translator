@@ -17,6 +17,12 @@ import {
 } from '../ai/memory.ts';
 import { clearSystemLogs, listSystemLogs, type LogLevel } from '../db/logs.ts';
 import { getAppSetting, setAppSetting } from '../db/appSettings.ts';
+import {
+  searchMultiProjectUnits,
+  executeMultiProjectReplace,
+  type MultiSearchQuery,
+  type MultiReplaceExecuteRequest,
+} from './multiReplace.ts';
 import { exportProject } from '../project/export.ts';
 import { publishProjectToWporg, verifyWporgSession } from '../wporg/publish.ts';
 import { queueWorkerManager, type QueueWorkerConfig } from '../wporg/queueWorker.ts';
@@ -703,6 +709,21 @@ async function api(
         body.caseSensitive !== false,
       ),
     );
+  }
+
+  if (route === '/api/multi-replace/search' && method === 'POST') {
+    const body = (await readJson(request)) as unknown as MultiSearchQuery;
+    return send(response, 200, searchMultiProjectUnits(db, body));
+  }
+
+  if (route === '/api/multi-replace/execute' && method === 'POST') {
+    const body = (await readJson(request)) as unknown as MultiReplaceExecuteRequest;
+    try {
+      return send(response, 200, executeMultiProjectReplace(db, body));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return send(response, 400, { error: message });
+    }
   }
 
   if (method === 'POST' && route === '/api/units/bulk-approve') {

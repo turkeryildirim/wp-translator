@@ -798,3 +798,65 @@ export async function clearLogs(): Promise<void> {
   await del('/api/logs', 'Tüm sistem günlükleri temizlendi');
 }
 
+// Multi-project Find & Replace
+export interface MultiSearchQuery {
+  projectIds?: number[];
+  sourceText?: string;
+  findText: string;
+  replaceText?: string;
+  caseSensitive?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export interface MultiSearchMatch {
+  id: number;
+  projectId: number;
+  projectName: string;
+  projectSlug: string;
+  msgid: string;
+  msgidPlural: string | null;
+  msgstr: string;
+  msgstrPlural: string | null;
+  proposedMsgstr: string;
+  proposedMsgstrPlural: string | null;
+  state: string;
+}
+
+export interface MultiSearchResult {
+  total: number;
+  projectCount: number;
+  matches: MultiSearchMatch[];
+}
+
+export interface MultiReplaceExecuteRequest {
+  unitIds?: number[];
+  projectIds?: number[];
+  sourceText?: string;
+  findText: string;
+  replaceText: string;
+  caseSensitive?: boolean;
+}
+
+export interface MultiReplaceExecuteResult {
+  matched: number;
+  changed: number;
+  blocked: number;
+  projectCount: number;
+}
+
+export async function searchMultiReplace(params: MultiSearchQuery): Promise<MultiSearchResult> {
+  return post<MultiSearchResult>('/api/multi-replace/search', params);
+}
+
+export async function executeMultiReplace(
+  params: MultiReplaceExecuteRequest,
+): Promise<MultiReplaceExecuteResult> {
+  return post<MultiReplaceExecuteResult>(
+    '/api/multi-replace/execute',
+    params,
+    'Toplu değişiklik uygulandı',
+  );
+}
+
+

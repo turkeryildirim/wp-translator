@@ -108,6 +108,21 @@ The user interface is structured into dedicated screens managed in `panel/src/Ap
 * Central operational log table (`system_logs`) tracking errors, warnings, GlotPress UI drifts, and queue runs.
 * Enforces automatic rolling retention, purging records older than 7 days.
 
+### 11. Toplu Bul & Değiştir (`multi_replace`) — `panel/src/MultiReplace.vue` & `src/server/multiReplace.ts`
+* Cross-project search and replace engine across all or user-selected projects.
+* Search parameters:
+  * Optional source filter (`msgid`): guarantees only translation units whose source text matches are modified (e.g. scoping to `"post"` so `"input"` -> `"girdi"` remains untouched).
+  * Target translation (`findText`): current incorrect translation to find.
+  * Replacement translation (`replaceText`): proposed correct translation.
+  * Turkish orthography-aware case-sensitivity: handles `İ/i` and `I/ı` distinctions precisely without ASCII folding distortion.
+* Two-stage interactive workflow:
+  1. **Search & Preview:** Lists matching translation units across projects with real-time visual highlight of find matches and proposed replacement strings.
+  2. **Selective or Global Execution:** Allows granular row-level selection via checkboxes or one-click cross-project replacement.
+* Quality & Lifecycle Invariants:
+  * Runs SQLite modifications inside an atomic transaction.
+  * Runs automated quality checks (`checkTranslation` respecting `qa_exceptions`) on every modified row, marking violations as `blocked`.
+  * Resets modified rows to `state = 'review'` and provenance to `'human'`.
+
 ---
 
 ## 4. AI Engine & CLI Integration Rules

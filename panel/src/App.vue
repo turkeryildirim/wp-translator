@@ -34,11 +34,12 @@ import { notify } from './notify.ts';
 import TagsAndStyle from './TagsAndStyle.vue';
 import AddProject from './AddProject.vue';
 import QueueReview from './QueueReview.vue';
+import MultiReplace from './MultiReplace.vue';
 import Settings from './Settings.vue';
 import AiMemory from './AiMemory.vue';
 import SystemLogs from './SystemLogs.vue';
 
-type Screen = 'review' | 'add' | 'sources' | 'glossary' | 'tm' | 'tags' | 'queue' | 'settings' | 'ai_memory' | 'logs';
+type Screen = 'review' | 'add' | 'sources' | 'glossary' | 'tm' | 'tags' | 'queue' | 'multi_replace' | 'settings' | 'ai_memory' | 'logs';
 const screen = ref<Screen>('review');
 
 const isSidebarCollapsed = ref(localStorage.getItem('wp_translator_sidebar_collapsed') === 'true');
@@ -98,6 +99,11 @@ const navItems = computed(() => [
     screen: 'queue' as const,
     label: 'Kuyruk Tarayıcısı',
     icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`,
+  },
+  {
+    screen: 'multi_replace' as const,
+    label: 'Toplu Bul & Değiştir',
+    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`,
   },
   {
     screen: 'glossary' as const,
@@ -619,6 +625,7 @@ watch(page, load);
       <TagsAndStyle v-else-if="screen === 'tags'" />
       <AddProject v-else-if="screen === 'add'" @added="onProjectAdded" />
       <QueueReview v-else-if="screen === 'queue'" />
+      <MultiReplace v-else-if="screen === 'multi_replace'" />
       <Settings v-else-if="screen === 'settings'" />
       <AiMemory v-else-if="screen === 'ai_memory'" />
       <SystemLogs v-else-if="screen === 'logs'" />
