@@ -61,9 +61,7 @@
         "AppImage"
       ],
       "category": "Development",
-      "icon": "assets/icons/icons",
-      "desktopName": "wp-translator.desktop",
-      "syncDesktopName": true
+      "icon": "assets/icons/icons"
     },
     "win": {
       "target": [
