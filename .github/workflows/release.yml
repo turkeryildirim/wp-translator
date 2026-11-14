@@ -46,9 +46,13 @@ jobs:
 
       - name: Build Linux AppImage
         run: pnpm run dist:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Windows Portable ZIP
         run: pnpm run dist:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

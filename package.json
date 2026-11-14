@@ -20,8 +20,8 @@
     "start": "electron .",
     "serve": "node --experimental-strip-types src/cli/serve.ts",
     "style-guide:sync": "node --experimental-strip-types src/cli/sync-style-guide.ts",
-    "dist:linux": "node --experimental-strip-types scripts/fetch-native.ts linux && pnpm run build:all && electron-builder --linux AppImage && node --experimental-strip-types scripts/fetch-native.ts node",
-    "dist:win": "node --experimental-strip-types scripts/fetch-native.ts win && pnpm run build:all && electron-builder --win zip && node --experimental-strip-types scripts/fetch-native.ts node"
+    "dist:linux": "node --experimental-strip-types scripts/fetch-native.ts linux && pnpm run build:all && electron-builder --linux AppImage -p never && node --experimental-strip-types scripts/fetch-native.ts node",
+    "dist:win": "node --experimental-strip-types scripts/fetch-native.ts win && pnpm run build:all && electron-builder --win zip -p never && node --experimental-strip-types scripts/fetch-native.ts node"
   },
   "dependencies": {
     "better-sqlite3": "^12.6.0"
@@ -42,6 +42,7 @@
   "build": {
     "appId": "org.wordpress.wp-translator",
     "productName": "WP Translator",
+    "publish": null,
     "npmRebuild": false,
     "directories": {
       "output": "dist/builds"
@@ -60,7 +61,9 @@
         "AppImage"
       ],
       "category": "Development",
-      "icon": "assets/icons/icons"
+      "icon": "assets/icons/icons",
+      "desktopName": "wp-translator.desktop",
+      "syncDesktopName": true
     },
     "win": {
       "target": [
