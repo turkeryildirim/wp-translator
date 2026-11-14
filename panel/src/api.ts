@@ -805,6 +805,7 @@ export interface MultiSearchQuery {
   findText: string;
   replaceText?: string;
   caseSensitive?: boolean;
+  targetScope?: 'all' | 'singular' | 'plural';
   limit?: number;
   offset?: number;
 }
@@ -836,6 +837,7 @@ export interface MultiReplaceExecuteRequest {
   findText: string;
   replaceText: string;
   caseSensitive?: boolean;
+  targetScope?: 'all' | 'singular' | 'plural';
 }
 
 export interface MultiReplaceExecuteResult {

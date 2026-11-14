@@ -163,4 +163,86 @@ describe('multi-project find and replace', () => {
       .get() as { msgstr: string };
     expect(inputVal.msgstr).toBe('Girdi değeri');
   });
+
+  it('handles plural forms correctly (e.g. %d message/%d messages -> %d mesaj/%d mesaj)', () => {
+    // Insert plural unit with typo in plural form
+    db.prepare(`
+      INSERT INTO translation_units (project_id, ordinal, source_hash, msgid, msgid_plural, msgstr, msgstr_plural, state)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(p1, 5, 'h_plural', '%d message', '%d messages', '%d mesaj', '%d mesjalar', 'ok');
+
+    // 1. Search for "mesjalar" to replace with "mesaj"
+    const searchRes = searchMultiProjectUnits(db, {
+      sourceText: 'message',
+      findText: 'mesjalar',
+      replaceText: 'mesaj',
+      caseSensitive: true,
+    });
+
+    expect(searchRes.total).toBe(1);
+    expect(searchRes.matches[0]?.msgid).toBe('%d message');
+    expect(searchRes.matches[0]?.msgidPlural).toBe('%d messages');
+    expect(searchRes.matches[0]?.msgstr).toBe('%d mesaj');
+    expect(searchRes.matches[0]?.msgstrPlural).toBe('%d mesjalar');
+    expect(searchRes.matches[0]?.proposedMsgstr).toBe('%d mesaj');
+    expect(searchRes.matches[0]?.proposedMsgstrPlural).toBe('%d mesaj');
+
+    // 2. Execute replacement
+    const execRes = executeMultiProjectReplace(db, {
+      sourceText: 'message',
+      findText: 'mesjalar',
+      replaceText: 'mesaj',
+      caseSensitive: true,
+    });
+
+    expect(execRes.changed).toBe(1);
+    expect(execRes.blocked).toBe(0);
+
+    // Verify row in database: singular and plural both now '%d mesaj'
+    const updated = db
+      .prepare('SELECT msgstr, msgstr_plural AS msgstrPlural, state, blocked FROM translation_units WHERE msgid = ?')
+      .get('%d message') as { msgstr: string; msgstrPlural: string; state: string; blocked: number };
+    expect(updated.msgstr).toBe('%d mesaj');
+    expect(updated.msgstrPlural).toBe('%d mesaj');
+    expect(updated.state).toBe('review');
+    expect(updated.blocked).toBe(0);
+  });
+
+  it('restricts search and replacement by targetScope (plural only vs singular only)', () => {
+    // Insert a unit where both singular and plural contain the word "kayıt"
+    db.prepare(`
+      INSERT INTO translation_units (project_id, ordinal, source_hash, msgid, msgid_plural, msgstr, msgstr_plural, state)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(p2, 10, 'h_scope', '%d record', '%d records', '%d kayıt', '%d kayıtlar', 'ok');
+
+    // When targeting only plural:
+    const pluralOnly = searchMultiProjectUnits(db, {
+      findText: 'kayıtlar',
+      replaceText: 'öğeler',
+      targetScope: 'plural',
+      caseSensitive: true,
+    });
+
+    const matchedUnit = pluralOnly.matches.find((m) => m.msgid === '%d record');
+    expect(matchedUnit).toBeDefined();
+    // Singular should remain untouched in proposal
+    expect(matchedUnit?.proposedMsgstr).toBe('%d kayıt');
+    // Plural should be updated
+    expect(matchedUnit?.proposedMsgstrPlural).toBe('%d öğeler');
+
+    // Execute with targetScope: 'plural'
+    executeMultiProjectReplace(db, {
+      unitIds: [matchedUnit!.id],
+      findText: 'kayıtlar',
+      replaceText: 'öğeler',
+      targetScope: 'plural',
+      caseSensitive: true,
+    });
+
+    const row = db
+      .prepare('SELECT msgstr, msgstr_plural AS msgstrPlural FROM translation_units WHERE id = ?')
+      .get(matchedUnit!.id) as { msgstr: string; msgstrPlural: string };
+    expect(row.msgstr).toBe('%d kayıt'); // Untouched!
+    expect(row.msgstrPlural).toBe('%d öğeler'); // Replaced!
+  });
 });

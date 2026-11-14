@@ -7,6 +7,7 @@ export interface MultiSearchQuery {
   findText: string;
   replaceText?: string | undefined;
   caseSensitive?: boolean | undefined;
+  targetScope?: 'all' | 'singular' | 'plural' | undefined;
   limit?: number | undefined;
   offset?: number | undefined;
 }
@@ -38,6 +39,7 @@ export interface MultiReplaceExecuteRequest {
   findText: string;
   replaceText: string;
   caseSensitive?: boolean | undefined;
+  targetScope?: 'all' | 'singular' | 'plural' | undefined;
 }
 
 export interface MultiReplaceExecuteResult {
@@ -83,6 +85,7 @@ export function searchMultiProjectUnits(
   const findText = query.findText;
   const replaceText = query.replaceText ?? '';
   const caseSensitive = query.caseSensitive === true;
+  const targetScope = query.targetScope ?? 'all';
   const replacer = createReplacer(findText, replaceText, caseSensitive);
 
   const whereClauses: string[] = ["u.msgstr IS NOT NULL AND u.msgstr <> ''"];
@@ -109,16 +112,36 @@ export function searchMultiProjectUnits(
     }
   }
 
-  if (caseSensitive) {
-    whereClauses.push(
-      `(u.msgstr LIKE ? OR (u.msgstr_plural IS NOT NULL AND u.msgstr_plural LIKE ?))`,
-    );
-    params.push(`%${findText}%`, `%${findText}%`);
+  if (targetScope === 'singular') {
+    if (caseSensitive) {
+      whereClauses.push(`u.msgstr LIKE ?`);
+      params.push(`%${findText}%`);
+    } else {
+      whereClauses.push(`fold(u.msgstr) LIKE '%' || fold(?) || '%'`);
+      params.push(findText);
+    }
+  } else if (targetScope === 'plural') {
+    if (caseSensitive) {
+      whereClauses.push(`(u.msgstr_plural IS NOT NULL AND u.msgstr_plural LIKE ?)`);
+      params.push(`%${findText}%`);
+    } else {
+      whereClauses.push(
+        `(u.msgstr_plural IS NOT NULL AND fold(u.msgstr_plural) LIKE '%' || fold(?) || '%')`,
+      );
+      params.push(findText);
+    }
   } else {
-    whereClauses.push(
-      `(fold(u.msgstr) LIKE '%' || fold(?) || '%' OR (u.msgstr_plural IS NOT NULL AND fold(u.msgstr_plural) LIKE '%' || fold(?) || '%'))`,
-    );
-    params.push(findText, findText);
+    if (caseSensitive) {
+      whereClauses.push(
+        `(u.msgstr LIKE ? OR (u.msgstr_plural IS NOT NULL AND u.msgstr_plural LIKE ?))`,
+      );
+      params.push(`%${findText}%`, `%${findText}%`);
+    } else {
+      whereClauses.push(
+        `(fold(u.msgstr) LIKE '%' || fold(?) || '%' OR (u.msgstr_plural IS NOT NULL AND fold(u.msgstr_plural) LIKE '%' || fold(?) || '%'))`,
+      );
+      params.push(findText, findText);
+    }
   }
 
   const whereSql = whereClauses.join(' AND ');
@@ -152,8 +175,9 @@ export function searchMultiProjectUnits(
   const projectSet = new Set<number>();
 
   for (const row of rows) {
-    const proposed = replacer(row.msgstr);
-    const proposedPlural = row.msgstrPlural ? replacer(row.msgstrPlural) : null;
+    const proposed = targetScope !== 'plural' ? replacer(row.msgstr) : row.msgstr;
+    const proposedPlural =
+      targetScope !== 'singular' && row.msgstrPlural ? replacer(row.msgstrPlural) : row.msgstrPlural;
 
     if (proposed === row.msgstr && proposedPlural === row.msgstrPlural) {
       continue;
@@ -228,6 +252,7 @@ export function executeMultiProjectReplace(
       findText: request.findText,
       replaceText: request.replaceText,
       caseSensitive: request.caseSensitive,
+      targetScope: request.targetScope,
       limit: 100000,
       offset: 0,
     });
@@ -249,6 +274,7 @@ export function executeMultiProjectReplace(
       WHERE id = ?`,
   );
   const exceptions = db.prepare(`SELECT rule FROM qa_exceptions WHERE unit_id = ?`);
+  const targetScope = request.targetScope ?? 'all';
 
   return db.transaction((): MultiReplaceExecuteResult => {
     let matched = 0;
@@ -257,8 +283,9 @@ export function executeMultiProjectReplace(
     const projectSet = new Set<number>();
 
     for (const row of targetUnits) {
-      const msgstr = replacer(row.msgstr);
-      const msgstrPlural = row.msgstrPlural ? replacer(row.msgstrPlural) : null;
+      const msgstr = targetScope !== 'plural' ? replacer(row.msgstr) : row.msgstr;
+      const msgstrPlural =
+        targetScope !== 'singular' && row.msgstrPlural ? replacer(row.msgstrPlural) : row.msgstrPlural;
       if (msgstr === row.msgstr && msgstrPlural === row.msgstrPlural) continue;
 
       matched += 1;

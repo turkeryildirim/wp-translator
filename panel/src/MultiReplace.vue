@@ -16,6 +16,7 @@ const sourceText = ref('');
 const findText = ref('');
 const replaceText = ref('');
 const caseSensitive = ref(true);
+const targetScope = ref<'all' | 'singular' | 'plural'>('all');
 
 const searching = ref(false);
 const replacing = ref(false);
@@ -78,6 +79,7 @@ async function handleSearch() {
       findText: find,
       replaceText: replaceText.value,
       caseSensitive: caseSensitive.value,
+      targetScope: targetScope.value,
       limit: 500,
     });
     matches.value = res.matches;
@@ -127,6 +129,7 @@ async function handleReplaceSelected() {
       findText: find,
       replaceText: replaceText.value,
       caseSensitive: caseSensitive.value,
+      targetScope: targetScope.value,
     });
 
     notify(
@@ -167,6 +170,7 @@ async function handleReplaceAll() {
       findText: find,
       replaceText: replaceText.value,
       caseSensitive: caseSensitive.value,
+      targetScope: targetScope.value,
     });
 
     notify(
@@ -317,6 +321,20 @@ function highlightReplace(text: string): string {
             />
             <span>Büyük/Küçük Harf Duyarlı (Türkçe Ç/ç, İ/i, I/ı uyumlu)</span>
           </label>
+
+          <div class="scope-group" style="display: flex; align-items: center; gap: 8px;">
+            <label class="form-label" style="margin: 0; font-size: 12px; color: var(--text-dim);">Alan Kapsamı:</label>
+            <select
+              v-model="targetScope"
+              class="form-select"
+              style="padding: 4px 8px; font-size: 12px; height: 30px;"
+              :disabled="searching || replacing"
+            >
+              <option value="all">Tümü (Tekil & Çoğul)</option>
+              <option value="plural">Yalnızca Çoğul (msgstr_plural)</option>
+              <option value="singular">Yalnızca Tekil (msgstr)</option>
+            </select>
+          </div>
         </div>
 
         <div class="buttons-group">
@@ -411,23 +429,36 @@ function highlightReplace(text: string): string {
               </td>
               <td class="col-source">
                 <div class="text-mono">{{ m.msgid }}</div>
-                <div v-if="m.msgidPlural" class="text-mono plural-sub">Çoğul: {{ m.msgidPlural }}</div>
+                <div v-if="m.msgidPlural" class="text-mono plural-sub">
+                  <span class="plural-badge">Çoğul:</span> {{ m.msgidPlural }}
+                </div>
               </td>
               <td class="col-current">
                 <div v-html="highlightFind(m.msgstr)"></div>
                 <div
                   v-if="m.msgstrPlural"
                   class="plural-sub"
-                  v-html="'Çoğul: ' + highlightFind(m.msgstrPlural)"
-                ></div>
+                >
+                  <span class="plural-badge">Çoğul:</span>
+                  <span v-html="highlightFind(m.msgstrPlural)"></span>
+                </div>
               </td>
               <td class="col-proposed">
-                <div v-html="highlightReplace(m.proposedMsgstr)"></div>
+                <div>
+                  <span v-if="m.proposedMsgstr !== m.msgstr" v-html="highlightReplace(m.proposedMsgstr)"></span>
+                  <span v-else class="text-unchanged">{{ m.msgstr }} <span class="badge-unchanged">(Aynı)</span></span>
+                </div>
                 <div
                   v-if="m.proposedMsgstrPlural"
                   class="plural-sub"
-                  v-html="'Çoğul: ' + highlightReplace(m.proposedMsgstrPlural)"
-                ></div>
+                >
+                  <span class="plural-badge">Çoğul:</span>
+                  <span
+                    v-if="m.proposedMsgstrPlural !== m.msgstrPlural"
+                    v-html="highlightReplace(m.proposedMsgstrPlural)"
+                  ></span>
+                  <span v-else class="text-unchanged">{{ m.msgstrPlural }} <span class="badge-unchanged">(Aynı)</span></span>
+                </div>
               </td>
               <td style="text-align: center;">
                 <span class="status-badge" :class="'status-' + m.state">
@@ -737,6 +768,29 @@ function highlightReplace(text: string): string {
   margin-top: 4px;
   font-size: 11px;
   color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plural-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+}
+
+.text-unchanged {
+  color: var(--text-dim);
+}
+
+.badge-unchanged {
+  font-size: 10px;
+  opacity: 0.7;
+  font-style: italic;
 }
 
 /* Highlighting in Table */
