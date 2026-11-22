@@ -24,16 +24,26 @@ const PAIRS: readonly [string, string][] = [
   ['dev-readme', 'stable-readme'],
 ];
 
-function decodeHtml(str: string): string {
+export function decodeHtml(str: string): string {
   return str
+    .replace(/&#(\d+);/g, (_, code: string) => {
+      const num = Number(code);
+      return Number.isFinite(num) && num >= 0 && num <= 0x10ffff ? String.fromCodePoint(num) : _;
+    })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) => {
+      const num = parseInt(hex, 16);
+      return Number.isFinite(num) && num >= 0 && num <= 0x10ffff ? String.fromCodePoint(num) : _;
+    })
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#039;/g, "'")
+    .replace(/&apos;/g, "'")
     .replace(/&#8211;/g, '–')
     .replace(/&#8212;/g, '—')
     .replace(/&hellip;/g, '…')
+    .replace(/&minus;/g, '-')
     .trim();
 }
 

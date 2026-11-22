@@ -150,8 +150,44 @@ describe('WordPress.org Queue Scanner & Reviewer', () => {
       expect(row.source).toBe('Save settings');
       expect(row.translation).toBe('Ayarları kaydet');
       expect(row.context).toBe('admin menu');
+      expect(row.status).toBe('waiting');
       expect(row.approveNonce).toBe('nonce_app_123');
       expect(row.rejectNonce).toBe('nonce_rej_456');
+    });
+
+    it('decodes numeric HTML entities (&#038;) in pagination next link and handles href before class', () => {
+      const html = `
+        <table id="translations">
+          <tr class="preview status-current" row="102-502">
+            <td class="original"><span class="original-text">Test</span></td>
+            <td class="translation"><span class="translation-text">Test</span></td>
+          </tr>
+        </table>
+        <div class="paging">
+          <a href="?filters%5Bstatus%5D=waiting&#038;page=2" class="next">&rarr;</a>
+        </div>
+      `;
+      const page = parseQueuePage(html, 'https://translate.wordpress.org/projects/wp-plugins/sample/dev/tr/default/');
+      expect(page.nextPageUrl).toBe('https://translate.wordpress.org/projects/wp-plugins/sample/dev/tr/default/?filters%5Bstatus%5D=waiting&page=2');
+      expect(page.rows[0]?.status).toBe('current');
+    });
+
+    it('extracts nonces when data-nonce attribute precedes class attribute', () => {
+      const html = `
+        <table id="translations">
+          <tr class="preview status-waiting" row="103-503">
+            <td class="original"><span class="original-text">Submit</span></td>
+            <td class="translation"><span class="translation-text">Gönder</span></td>
+            <td>
+              <button data-nonce="rev_app_789" class="inline-action-approve">+</button>
+              <button data-nonce="rev_rej_012" class="inline-action-reject">-</button>
+            </td>
+          </tr>
+        </table>
+      `;
+      const page = parseQueuePage(html, 'https://translate.wordpress.org/projects/wp-plugins/sample/dev/tr/default/');
+      expect(page.rows[0]?.approveNonce).toBe('rev_app_789');
+      expect(page.rows[0]?.rejectNonce).toBe('rev_rej_012');
     });
 
     it('sends set-status POST request with proper nonce and payload', async () => {
