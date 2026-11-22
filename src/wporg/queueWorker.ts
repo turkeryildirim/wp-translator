@@ -247,7 +247,13 @@ class QueueWorkerManager {
             const verdict = judgement?.verdict ?? 'unknown';
 
             if (verdict === 'exact' || verdict === 'agreed') {
-              if (this.state.mode === 'apply' && autoApprove) {
+              if (row.status === 'current') {
+                this.state.approved++;
+                this.log(
+                  'info',
+                  `― ZATEN ONAYLI: "${row.source}" → "${row.translation}" (${target.slug})`,
+                );
+              } else if (this.state.mode === 'apply' && autoApprove) {
                 if (!row.approveNonce) {
                   const errMsg = `Satır #${row.translationId} onaylanamadı: GlotPress onay noncesi bulunamadı. Oturum süresi dolmuş veya arayüz şablonu değişmiş olabilir.`;
                   this.log('error', errMsg, { row, target });
@@ -279,7 +285,13 @@ class QueueWorkerManager {
               }
             } else if (verdict === 'flagged') {
               const reason = judgement?.reason || 'Kalite/üslup kontrolünü geçemedi';
-              if (this.state.mode === 'apply' && autoReject) {
+              if (row.status === 'rejected') {
+                this.state.rejected++;
+                this.log(
+                  'warn',
+                  `― ZATEN REDDEDİLMİŞ: "${row.source}" → "${row.translation}" (${target.slug})`,
+                );
+              } else if (this.state.mode === 'apply' && autoReject) {
                 if (!row.rejectNonce) {
                   const errMsg = `Satır #${row.translationId} reddedilemedi: GlotPress ret noncesi bulunamadı. Oturum süresi dolmuş veya arayüz şablonu değişmiş olabilir.`;
                   this.log('error', errMsg, { row, target });
