@@ -40,12 +40,48 @@ export function decodeHtml(str: string): string {
     .replace(/&#8211;/g, '–')
     .replace(/&#8212;/g, '—')
     .replace(/&hellip;/g, '…')
-    .replace(/&minus;/g, '-')
-    .trim();
+    .replace(/&minus;/g, '-');
 }
 
 function cleanText(html: string): string {
+  // Strip HTML tags and decode HTML entities while preserving leading/trailing whitespace
   return decodeHtml(html.replace(/<[^>]+>/g, ''));
+}
+
+/**
+ * Extracts inner content of a targeted <span> by tracking balanced open/close span tag depth.
+ * This prevents truncating text when GlotPress inserts nested `<span class="glossary-word">` tags.
+ */
+function extractSpanContent(html: string, spanClass: string): string | null {
+  const openTagRegex = new RegExp(`<span[^>]*class=["'][^"']*\\b${spanClass}\\b[^"']*["'][^>]*>`, 'i');
+  const match = openTagRegex.exec(html);
+  if (!match) return null;
+
+  const startIndex = match.index + match[0].length;
+  let depth = 1;
+  let currentIndex = startIndex;
+
+  while (depth > 0 && currentIndex < html.length) {
+    const nextOpen = html.indexOf('<span', currentIndex);
+    const nextClose = html.indexOf('</span>', currentIndex);
+
+    if (nextClose === -1) {
+      return html.slice(startIndex);
+    }
+
+    if (nextOpen !== -1 && nextOpen < nextClose) {
+      depth++;
+      currentIndex = nextOpen + 5;
+    } else {
+      depth--;
+      if (depth === 0) {
+        return html.slice(startIndex, nextClose);
+      }
+      currentIndex = nextClose + 7;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -57,14 +93,14 @@ function extractCellForms(cellHtml: string, textSpanClass: string): string[] {
     const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
     let lm: RegExpExecArray | null;
     while ((lm = liRegex.exec(cellHtml)) !== null) {
-      const spanMatch = new RegExp(`<span class="${textSpanClass}">([\\s\\S]*?)<\\/span>`, 'i').exec(lm[1] ?? '');
-      forms.push(spanMatch && spanMatch[1] ? cleanText(spanMatch[1]) : '');
+      const spanContent = extractSpanContent(lm[1] ?? '', textSpanClass);
+      forms.push(spanContent !== null ? cleanText(spanContent) : '');
     }
     if (forms.length > 0) return forms;
   }
 
-  const singleMatch = new RegExp(`<span class="${textSpanClass}">([\\s\\S]*?)<\\/span>`, 'i').exec(cellHtml);
-  return singleMatch && singleMatch[1] ? [cleanText(singleMatch[1])] : [''];
+  const spanContent = extractSpanContent(cellHtml, textSpanClass);
+  return spanContent !== null ? [cleanText(spanContent)] : [''];
 }
 
 function extractButtonNonce(rowHtml: string, ...classNames: string[]): string | undefined {
@@ -96,11 +132,11 @@ export function parseQueuePage(html: string, pageUrl: string): QueuePageResult {
   }
 
   const rows: QueueRow[] = [];
-  const previewRegex = /<tr[^>]*class="[^"]*\bpreview\b[^"]*"[^>]*row="([^"]+)"[\s\S]*?<\/tr>/gi;
+  const previewRegex = /<tr[^>]*class=["'][^"']*\bpreview\b[^"']*["'][^>]*row=["']([^"']+)["'][\s\S]*?<\/tr>|<tr[^>]*row=["']([^"']+)["'][^>]*class=["'][^"']*\bpreview\b[^"']*["'][\s\S]*?<\/tr>/gi;
 
   let m: RegExpExecArray | null;
   while ((m = previewRegex.exec(html)) !== null) {
-    const rowId = m[1] ?? '';
+    const rowId = (m[1] ?? m[2] ?? '').trim();
     const rowHtml = m[0];
 
     const [origStr, transStr] = rowId.split('-');
@@ -123,7 +159,7 @@ export function parseQueuePage(html: string, pageUrl: string): QueuePageResult {
 
     // Context bubble
     const ctxtMatch = /<span class="context bubble">([\s\S]*?)<\/span>/i.exec(rowHtml);
-    const context = ctxtMatch && ctxtMatch[1] ? cleanText(ctxtMatch[1]) : undefined;
+    const context = ctxtMatch && ctxtMatch[1] ? cleanText(ctxtMatch[1]).trim() : undefined;
 
     // Approve & reject nonces
     const approveNonce = extractButtonNonce(rowHtml, 'inline-action-approve', 'approve');
@@ -166,7 +202,7 @@ export function parseQueuePage(html: string, pageUrl: string): QueuePageResult {
       }
     }
     if (nextHref) {
-      const raw = decodeHtml(nextHref);
+      const raw = decodeHtml(nextHref).trim();
       nextPageUrl = raw.startsWith('http') ? raw : new URL(raw, pageUrl).toString();
     }
   }

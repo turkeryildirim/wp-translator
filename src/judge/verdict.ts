@@ -106,14 +106,39 @@ export function judgeLocally(
   }
 
   const known = glossaryWordings(db, submission, tagIds);
-  if (known.length === 0) return null;
-
   const plural = submission.translationPlural ?? '';
-  const matches = known.some(
-    (entry) => entry.translation === submission.translation && (entry.plural ?? '') === plural,
-  );
 
-  if (matches) return { id: submission.id, verdict: 'exact', reason: 'Sözlükteki karşılığın aynısı.' };
+  if (known.length > 0) {
+    const matches = known.some(
+      (entry) => entry.translation === submission.translation && (entry.plural ?? '') === plural,
+    );
+    if (matches) {
+      return { id: submission.id, verdict: 'exact', reason: 'Sözlükteki karşılığın aynısı.' };
+    }
+  }
+
+  // Check if translation matches a valid wording across any tag in translation memory
+  const allWordings = db
+    .prepare(
+      `SELECT translation, translation_plural AS plural
+         FROM glossary_entries
+        WHERE source_hash = ? AND pos IS NULL`,
+    )
+    .all(sourceHash(submission.source, submission.sourcePlural)) as {
+    translation: string;
+    plural: string | null;
+  }[];
+
+  if (allWordings.length > 0) {
+    const matchesAny = allWordings.some(
+      (entry) => entry.translation === submission.translation && (entry.plural ?? '') === plural,
+    );
+    if (matchesAny) {
+      return { id: submission.id, verdict: 'exact', reason: 'Sözlükteki karşılığın aynısı.' };
+    }
+  }
+
+  if (known.length === 0) return null;
 
   // Offered for one click only when the glossary is unambiguous: a list of
   // wordings is not a wording.
