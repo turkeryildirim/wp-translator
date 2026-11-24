@@ -112,6 +112,13 @@ export function checkTranslation(unit: TranslationUnit): CheckFailure[] {
     });
   }
 
+  if (unit.msgidPlural && unit.msgstrPlural) {
+    comparePrintfPlaceholders(unit.msgidPlural, unit.msgstrPlural, failures);
+    comparePlaceholders(unit.msgidPlural, unit.msgstrPlural, BRACE, 'brace-placeholders', failures);
+    compareTags(unit.msgidPlural, unit.msgstrPlural, failures);
+    compareEdgeWhitespace(unit.msgidPlural, unit.msgstrPlural, failures);
+  }
+
   if (unit.msgstrPlural) {
     checkSuffixOnPlaceholder(unit.msgstrPlural, failures);
     checkNumberPluralNoun(unit.msgstrPlural, failures);
@@ -205,7 +212,7 @@ function comparePrintfPlaceholders(
     else differences.push(`%% appears ${src.percentCount}× in the source and ${trans.percentCount}× in the translation`);
   }
 
-  // 2. Token counts and argument mapping
+  // 2. Token counts comparison (order- and position-independent)
   const srcTokens = src.tokens;
   const transTokens = trans.tokens;
 
@@ -214,47 +221,18 @@ function comparePrintfPlaceholders(
   const transRawCounts = new Map<string, number>();
   for (const t of transTokens) transRawCounts.set(t.raw, (transRawCounts.get(t.raw) ?? 0) + 1);
 
-  if (srcTokens.length !== transTokens.length) {
-    const diffTokens = describeDifferences(srcRawCounts, transRawCounts);
-    if (diffTokens.length > 0) {
-      differences.push(...diffTokens);
-    } else {
-      differences.push(`source has ${srcTokens.length} placeholders, translation has ${transTokens.length}`);
-    }
-  } else if (srcTokens.length > 0) {
-    // Both have the same number of placeholders.
-    // Check if translation is a valid reordering/mapping of source arguments.
-    const srcArgSpecs = new Map<number, string>();
-    for (let i = 0; i < srcTokens.length; i++) {
-      srcArgSpecs.set(i + 1, srcTokens[i]!.spec);
-    }
+  const rawDiffs = describeDifferences(srcRawCounts, transRawCounts);
+  if (rawDiffs.length > 0) {
+    // If raw tokens differ, check if it is a valid conversion between non-positional (%s, %d)
+    // and positional (%1$s, %2$s) with matching argument counts and types.
+    // Turkish syntax routinely moves and reorders arguments.
+    const sameCount = srcTokens.length === transTokens.length;
+    const srcSpecs = srcTokens.map((t) => t.spec).sort().join(',');
+    const transSpecs = transTokens.map((t) => t.spec).sort().join(',');
+    const validPositionalConversion = sameCount && srcSpecs === transSpecs;
 
-    const transPosCounts = new Map<number, number>();
-    for (const t of transTokens) {
-      transPosCounts.set(t.pos, (transPosCounts.get(t.pos) ?? 0) + 1);
-    }
-
-    let semanticValid = true;
-    for (let pos = 1; pos <= srcTokens.length; pos++) {
-      const count = transPosCounts.get(pos) ?? 0;
-      if (count !== 1) {
-        semanticValid = false;
-        break;
-      }
-      const transTok = transTokens.find((t) => t.pos === pos);
-      if (!transTok || transTok.spec !== srcArgSpecs.get(pos)) {
-        semanticValid = false;
-        break;
-      }
-    }
-
-    if (!semanticValid) {
-      const diffTokens = describeDifferences(srcRawCounts, transRawCounts);
-      if (diffTokens.length > 0) {
-        differences.push(...diffTokens);
-      } else {
-        differences.push('placeholder positions or types do not match source');
-      }
+    if (!validPositionalConversion) {
+      differences.push(...rawDiffs);
     }
   }
 

@@ -42,6 +42,15 @@ describe('quality checks', () => {
     // Turkish word order routinely moves these, which is the whole point of %1$s.
     expect(rules({ msgid: '%1$s in %2$s', msgstr: '%2$s içinde %1$s' })).toEqual([]);
     expect(rules({ msgid: 'Select %s of %s', msgstr: '%2$s içinden %1$s ögesini seçin' })).toEqual([]);
+    expect(rules({ msgid: 'One Reply to %2$s', msgstr: '%2$s için bir yanıt' })).toEqual([]);
+    expect(
+      rules({
+        msgid: 'One Reply to %2$s',
+        msgidPlural: '%1$s Replies to %2$s',
+        msgstr: '%2$s için bir yanıt',
+        msgstrPlural: '%2$s için %1$s yanıt',
+      }),
+    ).toEqual([]);
   });
 
   it('accepts a literal %%', () => {
