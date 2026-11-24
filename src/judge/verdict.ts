@@ -1,6 +1,7 @@
 import type { Db } from '../db/open.ts';
 import { sourceHash } from '../glossary/key.ts';
 import { checkTranslation } from '../quality/check.ts';
+import { repairTranslationUnit } from '../quality/repair.ts';
 
 /**
  * What to do with a translation somebody else submitted.
@@ -50,15 +51,22 @@ export function proposalFor(
 ): string | undefined {
   if (!wording.trim()) return undefined;
 
+  const repaired = repairTranslationUnit(
+    submission.source,
+    wording,
+    submission.sourcePlural,
+    wordingPlural,
+  );
+
   const failures = checkTranslation({
     ordinal: 0,
     msgid: submission.source,
     ...(submission.sourcePlural ? { msgidPlural: submission.sourcePlural } : {}),
-    msgstr: wording,
-    ...(wordingPlural ? { msgstrPlural: wordingPlural } : {}),
+    msgstr: repaired.translation,
+    ...(repaired.translationPlural ? { msgstrPlural: repaired.translationPlural } : {}),
   });
 
-  return failures.length === 0 ? wording : undefined;
+  return failures.length === 0 ? repaired.translation : undefined;
 }
 
 /** Why the checks refuse a wording, in one line, or null when they do not. */
@@ -67,12 +75,19 @@ export function refusalFor(
   wording: string,
   wordingPlural?: string,
 ): string | null {
+  const repaired = repairTranslationUnit(
+    submission.source,
+    wording,
+    submission.sourcePlural,
+    wordingPlural,
+  );
+
   const failures = checkTranslation({
     ordinal: 0,
     msgid: submission.source,
     ...(submission.sourcePlural ? { msgidPlural: submission.sourcePlural } : {}),
-    msgstr: wording,
-    ...(wordingPlural ? { msgstrPlural: wordingPlural } : {}),
+    msgstr: repaired.translation,
+    ...(repaired.translationPlural ? { msgstrPlural: repaired.translationPlural } : {}),
   });
 
   return failures.length === 0 ? null : failures.map((failure) => failure.message).join(' · ');
