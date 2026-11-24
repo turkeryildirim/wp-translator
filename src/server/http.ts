@@ -641,9 +641,12 @@ async function api(
       : { filter: readFilter(new URL(`http://x/?${body.filter ?? ''}`)) };
 
     if (body.action === 'glossary') {
-      const ids =
-        'ids' in target ? target.ids : unitIdsFor(db, projectId, target.filter);
-      const result = applyGlossary(db, projectId, ids);
+      const ids = 'ids' in target ? target.ids : undefined;
+      const result = applyGlossary(db, projectId, {
+        ...(ids ? { ids } : {}),
+        state: 'review',
+        fallbackAnyTag: true,
+      });
       return send(response, 200, { changed: result.filled, skipped: result.unmatched });
     }
     if (body.action === 'add_to_glossary') {

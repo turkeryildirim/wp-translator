@@ -3,6 +3,7 @@ import { openDb, type Db } from '../src/db/open.ts';
 import { applyGlossary } from '../src/glossary/match.ts';
 import { sourceHash } from '../src/glossary/key.ts';
 import { importProject, setProjectTags } from '../src/project/import.ts';
+import { defaultTagId } from '../src/server/sources.ts';
 import type { Catalogue, TranslationUnit } from '../src/po/types.ts';
 
 const catalogue = (units: Partial<TranslationUnit>[]): Catalogue => ({
@@ -191,6 +192,92 @@ describe('glossary matching', () => {
 
     applyGlossary(db, projectId);
     expect(applyGlossary(db, projectId)).toEqual({ filled: 0, alternatives: 0, unmatched: 0 });
+  });
+
+  it('places filled units into review state when requested', () => {
+    addGlossaryEntry(ecommerce, 'Save', 'Kaydet');
+    const projectId = addProject([{ msgid: 'Save' }], [ecommerce]);
+
+    const result = applyGlossary(db, projectId, { state: 'review' });
+    expect(result).toEqual({ filled: 1, alternatives: 0, unmatched: 0 });
+    expect(unitFor(projectId, 'Save')).toMatchObject({
+      state: 'review',
+      provenance: 'glossary',
+      msgstr: 'Kaydet',
+    });
+  });
+
+  it('matches core wordpress entries for a project with only a specific tag like theme', () => {
+    const themeTag = addTag('theme');
+    const wpTag = defaultTagId(db);
+    addGlossaryEntry(wpTag, 'Read more', 'Devamını oku');
+    const projectId = addProject([{ msgid: 'Read more' }], [themeTag]);
+
+    const result = applyGlossary(db, projectId, { state: 'review' });
+    expect(result.filled).toBe(1);
+    expect(unitFor(projectId, 'Read more')).toMatchObject({
+      state: 'review',
+      provenance: 'glossary',
+      msgstr: 'Devamını oku',
+    });
+  });
+
+  it('matches across any tag when fallbackAnyTag is true, prioritizing project tags', () => {
+    const themeTag = addTag('theme');
+    const metaTag = addTag('meta');
+    addGlossaryEntry(metaTag, 'Back to top', 'Üste dön');
+    addGlossaryEntry(themeTag, 'Back to top', 'Yukarı dön');
+    addGlossaryEntry(metaTag, 'Guidelines', 'Yönergeler');
+    const projectId = addProject(
+      [{ msgid: 'Back to top' }, { msgid: 'Guidelines' }],
+      [themeTag],
+    );
+
+    const result = applyGlossary(db, projectId, { state: 'review', fallbackAnyTag: true });
+    expect(result.filled).toBe(2);
+    // themeTag should win over metaTag for 'Back to top'
+    expect(unitFor(projectId, 'Back to top')?.msgstr).toBe('Yukarı dön');
+    // metaTag should be matched as fallback for 'Guidelines'
+    expect(unitFor(projectId, 'Guidelines')?.msgstr).toBe('Yönergeler');
+  });
+
+  it('allows filling specific units when ids are given even if not untranslated', () => {
+    addGlossaryEntry(ecommerce, 'Save', 'Kaydet');
+    const projectId = addProject([{ msgid: 'Save' }], [ecommerce]);
+    // Simulate unit already in review
+    db.prepare(`UPDATE translation_units SET state = 'review', msgstr = 'Geçici' WHERE project_id = ?`).run(projectId);
+    const unitId = (db.prepare(`SELECT id FROM translation_units WHERE project_id = ?`).get(projectId) as { id: number }).id;
+
+    const result = applyGlossary(db, projectId, { ids: [unitId], state: 'review' });
+    expect(result.filled).toBe(1);
+    expect(unitFor(projectId, 'Save')?.msgstr).toBe('Kaydet');
+  });
+
+  it('never overwrites already approved (ok) units even if ids are given', () => {
+    addGlossaryEntry(ecommerce, 'Save', 'Kaydet');
+    const projectId = addProject([{ msgid: 'Save' }], [ecommerce]);
+    db.prepare(`UPDATE translation_units SET state = 'ok', msgstr = 'Özel Çeviri' WHERE project_id = ?`).run(projectId);
+    const unitId = (db.prepare(`SELECT id FROM translation_units WHERE project_id = ?`).get(projectId) as { id: number }).id;
+
+    const result = applyGlossary(db, projectId, { ids: [unitId], state: 'review' });
+    expect(result.filled).toBe(0);
+    expect(unitFor(projectId, 'Save')?.msgstr).toBe('Özel Çeviri');
+    expect(unitFor(projectId, 'Save')?.state).toBe('ok');
+  });
+
+  it('respects qa_exceptions so known overrides are not marked blocked', () => {
+    // A string with a printf discrepancy
+    addGlossaryEntry(ecommerce, 'Page %1$d of %2$d', 'Sayfa %d / %d');
+    const projectId = addProject([{ msgid: 'Page %1$d of %2$d' }], [ecommerce]);
+    const unitId = (db.prepare(`SELECT id FROM translation_units WHERE project_id = ?`).get(projectId) as { id: number }).id;
+    // Add QA exception for the rule
+    db.prepare(`INSERT INTO qa_exceptions (unit_id, rule, reason) VALUES (?, 'printf_count', 'Bilinçli tercih')`).run(unitId);
+
+    applyGlossary(db, projectId, { ids: [unitId], state: 'review' });
+    const unit = db.prepare(`SELECT blocked, state, msgstr FROM translation_units WHERE id = ?`).get(unitId) as { blocked: number; state: string; msgstr: string };
+    expect(unit.blocked).toBe(0);
+    expect(unit.state).toBe('review');
+    expect(unit.msgstr).toBe('Sayfa %d / %d');
   });
 });
 

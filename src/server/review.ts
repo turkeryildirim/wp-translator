@@ -426,6 +426,7 @@ export function findTmSuggestions(db: Db, projectId: number, msgid: string): TmS
 
   const suggestions: TmSuggestion[] = [];
   const seen = new Set<string>();
+  const baseTagId = defaultTagId(db);
 
   // 1. Exact matches for the whole string (%100)
   const exactRows = db
@@ -435,11 +436,13 @@ export function findTmSuggestions(db: Db, projectId: number, msgid: string): TmS
          FROM glossary_entries g
          JOIN tags t ON t.id = g.tag_id
         WHERE g.source_text = ? AND g.pos IS NULL
-          AND g.tag_id IN (SELECT tag_id FROM project_tags WHERE project_id = ?)
         GROUP BY g.translation, ifnull(g.translation_plural, '')
-        ORDER BY (g.origin = 'owner') DESC, g.id ASC`,
+        ORDER BY (g.origin = 'owner') DESC,
+                 (g.tag_id IN (SELECT tag_id FROM project_tags WHERE project_id = ?)) DESC,
+                 (g.tag_id = ?) DESC,
+                 g.id ASC`,
     )
-    .all(msgid, projectId) as { source: string; translation: string; translationPlural: string | null; tag: string }[];
+    .all(msgid, projectId, baseTagId) as { source: string; translation: string; translationPlural: string | null; tag: string }[];
 
   for (const r of exactRows) {
     const key = `${r.translation}\u0000${r.translationPlural ?? ''}`;
@@ -471,10 +474,14 @@ export function findTmSuggestions(db: Db, projectId: number, msgid: string): TmS
         FROM glossary_entries g
         JOIN tags t ON t.id = g.tag_id
        WHERE g.pos IS NULL
-         AND g.tag_id IN (SELECT tag_id FROM project_tags WHERE project_id = ?)
+         AND (
+           g.tag_id IN (SELECT tag_id FROM project_tags WHERE project_id = ?)
+           OR g.tag_id = ?
+           OR (SELECT count(*) FROM project_tags WHERE project_id = ?) = 0
+         )
          AND length(g.source_text) BETWEEN ? AND ?
     `;
-    const params: (number | string)[] = [projectId, minLen, maxLen];
+    const params: (number | string)[] = [projectId, baseTagId, projectId, minLen, maxLen];
 
     if (words.length > 0) {
       const likeClauses = words.map(() => 'g.source_text LIKE ?').join(' OR ');
@@ -853,6 +860,7 @@ function enrich(
  * there is nothing to choose, so none is offered.
  */
 function candidatesFor(db: Db, projectId: number, msgid: string): Candidate[] {
+  const baseTagId = defaultTagId(db);
   const rows = db
     .prepare(
       `SELECT g.translation, t.name AS tag
@@ -861,14 +869,15 @@ function candidatesFor(db: Db, projectId: number, msgid: string): Candidate[] {
          LEFT JOIN glossary_entry_sources s ON s.entry_id = g.id
          LEFT JOIN trusted_sources ts ON ts.id = s.trusted_source_id
         WHERE g.source_text = ? AND g.pos IS NULL
-          AND g.tag_id IN (SELECT tag_id FROM project_tags WHERE project_id = ?)
         GROUP BY g.id
         ORDER BY (g.origin = 'owner') DESC,
+                 (g.tag_id IN (SELECT tag_id FROM project_tags WHERE project_id = ?)) DESC,
+                 (g.tag_id = ?) DESC,
                  count(DISTINCT s.trusted_source_id) DESC,
                  ifnull(min(ts.rank), 2147483647) ASC,
                  g.id ASC`,
     )
-    .all(msgid, projectId) as Candidate[];
+    .all(msgid, projectId, baseTagId) as Candidate[];
 
   // Same wording under two tags is one candidate: there is nothing to pick.
   const seen = new Set<string>();

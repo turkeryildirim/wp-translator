@@ -1,6 +1,9 @@
+import type Database from 'better-sqlite3';
 import type { Db } from '../db/open.ts';
 import { sourceHash } from './key.ts';
 import { affixes, reapply } from '../text/whitespace.ts';
+import { defaultTagId } from '../server/sources.ts';
+import { checkTranslation } from '../quality/check.ts';
 
 export interface MatchResult {
   /** Filled from the glossary and complete. */
@@ -11,6 +14,18 @@ export interface MatchResult {
   unmatched: number;
 }
 
+export interface ApplyGlossaryOptions {
+  /** Narrows it to these units; without it, untranslated ones. */
+  ids?: readonly number[] | undefined;
+  /** Target state: 'review' (bekleyen) or 'ok' (onaylanan). Default: 'ok'. */
+  state?: 'ok' | 'review' | undefined;
+  /**
+   * If true, allows matching glossary entries across any tag in the glossary,
+   * prioritizing project tags, base tag, and trusted sources.
+   */
+  fallbackAnyTag?: boolean | undefined;
+}
+
 interface Candidate {
   entryId: number;
   translation: string;
@@ -18,64 +33,120 @@ interface Candidate {
 }
 
 /**
- * Fill a project's untranslated units from the glossary, best translation first.
+ * Fill a project's units from the glossary, best translation first.
  *
  * Matching is byte-exact on the source string and ignores `msgctxt`; where a
  * string has several known translations the best-supported one is filled in and
  * the rest are offered as candidates. Terminology rows (`pos IS NOT NULL`) are
  * skipped — they say how a word is rendered, not how a whole string is.
  *
- * @param ids narrows it to these units; without it, every untranslated one.
+ * @param optionsOrIds narrows it to these units or options; without it, every untranslated one.
  */
-export function applyGlossary(db: Db, projectId: number, ids?: readonly number[]): MatchResult {
-  const tagIds = db
+export function applyGlossary(
+  db: Db,
+  projectId: number,
+  optionsOrIds?: readonly number[] | ApplyGlossaryOptions,
+): MatchResult {
+  const options: ApplyGlossaryOptions = !optionsOrIds
+    ? {}
+    : Array.isArray(optionsOrIds)
+      ? { ids: optionsOrIds }
+      : (optionsOrIds as ApplyGlossaryOptions);
+
+  const ids = options.ids;
+  const targetState = options.state ?? 'ok';
+  const fallbackAnyTag = options.fallbackAnyTag ?? false;
+
+  const projectTagIds = db
     .prepare(`SELECT tag_id FROM project_tags WHERE project_id = ?`)
     .all(projectId)
     .map((row) => (row as { tag_id: number }).tag_id);
 
+  const baseTagId = defaultTagId(db);
+
   const result: MatchResult = { filled: 0, alternatives: 0, unmatched: 0 };
-  if (tagIds.length === 0) {
-    result.unmatched = countUntranslated(db, projectId);
+  if (projectTagIds.length === 0 && !fallbackAnyTag) {
+    result.unmatched = ids ? ids.length : countUntranslated(db, projectId);
     return result;
   }
-  if (ids?.length === 0) return result;
+  if (ids && ids.length === 0) return result;
 
-  const placeholders = tagIds.map(() => '?').join(', ');
-  const candidatesFor = db.prepare(
-    `SELECT e.id AS entryId, e.translation, e.translation_plural AS translationPlural
-       FROM glossary_entries e
-       LEFT JOIN glossary_entry_sources s ON s.entry_id = e.id
-       LEFT JOIN trusted_sources t ON t.id = s.trusted_source_id
-      WHERE e.source_hash = ? AND e.pos IS NULL AND e.tag_id IN (${placeholders})
-      GROUP BY e.id
-      ORDER BY (e.origin = 'owner') DESC,
-               count(DISTINCT s.trusted_source_id) DESC,
-               ifnull(min(t.rank), 2147483647) ASC,
-               e.id ASC`,
-  );
-  const scope = ids ? ` AND id IN (${ids.map(() => '?').join(', ')})` : '';
-  // The hash is recomputed from the trimmed source rather than read from the
-  // column: the glossary stores strings without their surrounding whitespace.
-  const units = db.prepare(
-    `SELECT id, msgid, msgid_plural AS msgidPlural FROM translation_units
-      WHERE project_id = ? AND state = 'untranslated'${scope}`,
-  );
-  // A glossary entry is a translation a human approved of this exact source, so
-  // there is nothing for the checks to find.
+  const allowedTagIds = Array.from(new Set([...projectTagIds, baseTagId]));
+
+  let candidatesFor: Database.Statement<unknown[], Candidate>;
+  if (fallbackAnyTag) {
+    const projectTagOrder =
+      projectTagIds.length > 0
+        ? `(e.tag_id IN (${projectTagIds.map(() => '?').join(', ')})) DESC,`
+        : '';
+    candidatesFor = db.prepare(
+      `SELECT e.id AS entryId, e.translation, e.translation_plural AS translationPlural
+         FROM glossary_entries e
+         LEFT JOIN glossary_entry_sources s ON s.entry_id = e.id
+         LEFT JOIN trusted_sources t ON t.id = s.trusted_source_id
+        WHERE e.source_hash = ? AND e.pos IS NULL
+        GROUP BY e.id
+        ORDER BY (e.origin = 'owner') DESC,
+                 ${projectTagOrder}
+                 (e.tag_id = ?) DESC,
+                 count(DISTINCT s.trusted_source_id) DESC,
+                 ifnull(min(t.rank), 2147483647) ASC,
+                 e.id ASC`,
+    );
+  } else {
+    const placeholders = allowedTagIds.map(() => '?').join(', ');
+    const projectTagOrder =
+      projectTagIds.length > 0
+        ? `(e.tag_id IN (${projectTagIds.map(() => '?').join(', ')})) DESC,`
+        : '';
+    candidatesFor = db.prepare(
+      `SELECT e.id AS entryId, e.translation, e.translation_plural AS translationPlural
+         FROM glossary_entries e
+         LEFT JOIN glossary_entry_sources s ON s.entry_id = e.id
+         LEFT JOIN trusted_sources t ON t.id = s.trusted_source_id
+        WHERE e.source_hash = ? AND e.pos IS NULL AND e.tag_id IN (${placeholders})
+        GROUP BY e.id
+        ORDER BY (e.origin = 'owner') DESC,
+                 ${projectTagOrder}
+                 (e.tag_id = ?) DESC,
+                 count(DISTINCT s.trusted_source_id) DESC,
+                 ifnull(min(t.rank), 2147483647) ASC,
+                 e.id ASC`,
+    );
+  }
+
+  const getCandidates = (hash: string): Candidate[] => {
+    if (fallbackAnyTag) {
+      return candidatesFor.all(hash, ...projectTagIds, baseTagId);
+    }
+    return candidatesFor.all(hash, ...allowedTagIds, ...projectTagIds, baseTagId);
+  };
+
+  let unitQuery = `SELECT id, msgid, msgid_plural AS msgidPlural FROM translation_units WHERE project_id = ?`;
+  const unitParams: unknown[] = [projectId];
+  if (ids && ids.length > 0) {
+    unitQuery += ` AND id IN (${ids.map(() => '?').join(', ')}) AND state <> 'ok'`;
+    unitParams.push(...ids);
+  } else {
+    unitQuery += ` AND state = 'untranslated'`;
+  }
+  const units = db.prepare(unitQuery);
+
   const fill = db.prepare(
     `UPDATE translation_units
         SET msgstr = @translation, msgstr_plural = @translationPlural,
-            state = 'ok', provenance = 'glossary', glossary_entry_id = @entryId,
-            blocked = 0, updated_at = datetime('now')
+            state = @state, provenance = 'glossary', glossary_entry_id = @entryId,
+            blocked = @blocked, updated_at = datetime('now')
       WHERE id = @id`,
   );
+  const qaOverrides = db.prepare(`SELECT rule FROM qa_exceptions WHERE unit_id = ?`);
 
   return db.transaction((): MatchResult => {
-    for (const row of units.all(projectId, ...(ids ?? [])) as UnitRow[]) {
+    for (const row of units.all(...unitParams) as UnitRow[]) {
       const shape = affixes(row.msgid);
       const pluralShape = row.msgidPlural === null ? null : affixes(row.msgidPlural);
       const hash = sourceHash(shape.core, pluralShape?.core);
-      const candidates = distinct(candidatesFor.all(hash, ...tagIds) as Candidate[]);
+      const candidates = distinct(getCandidates(hash));
 
       if (candidates.length === 0) {
         result.unmatched += 1;
@@ -84,14 +155,35 @@ export function applyGlossary(db: Db, projectId: number, ids?: readonly number[]
 
       // The stored translation carries no shape; the unit's own goes back on.
       const best = candidates[0]!;
+      const appliedTranslation = reapply(best.translation, shape);
+      const appliedPlural =
+        best.translationPlural === null || pluralShape === null
+          ? best.translationPlural
+          : reapply(best.translationPlural, pluralShape);
+
+      const failures = checkTranslation({
+        ordinal: 0,
+        msgid: row.msgid,
+        ...(row.msgidPlural ? { msgidPlural: row.msgidPlural } : {}),
+        msgstr: appliedTranslation,
+        ...(appliedPlural ? { msgstrPlural: appliedPlural } : {}),
+      });
+
+      let blocked = 0;
+      if (failures.length > 0) {
+        const overridden = new Set(
+          (qaOverrides.all(row.id) as { rule: string }[]).map((r) => r.rule),
+        );
+        blocked = failures.some((f) => !overridden.has(f.rule)) ? 1 : 0;
+      }
+
       fill.run({
         id: row.id,
         entryId: best.entryId,
-        translation: reapply(best.translation, shape),
-        translationPlural:
-          best.translationPlural === null || pluralShape === null
-            ? best.translationPlural
-            : reapply(best.translationPlural, pluralShape),
+        translation: appliedTranslation,
+        translationPlural: appliedPlural,
+        state: targetState,
+        blocked,
       });
       result.filled += 1;
       if (candidates.length > 1) result.alternatives += 1;
