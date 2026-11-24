@@ -357,7 +357,7 @@ export function startTranslation(
           const repaired = repairTranslationUnit(
             unit.msgid,
             answer.t,
-            unit.msgidPlural,
+            unit.msgidPlural ?? undefined,
             answer.tp,
           );
           const transMain = repaired.translation;
