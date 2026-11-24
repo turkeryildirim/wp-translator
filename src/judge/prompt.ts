@@ -58,6 +58,9 @@ export function buildJudgePrompt(context: JudgeContext): string {
     'NE ZAMAN "ok": true:',
     '- Anlam doğru, kurallara uygun, yer tutucular yerinde — ifade senin seçeceğinden',
     '  farklı olsa bile. Üslup tercihi yüzünden reddetme.',
+    '- Kaynağın birden fazla geçerli Türkçe karşılığı olabilir (örn. Continue -> Devam et / İlerle;',
+    '  Enabled -> Etkin / Etkinleştirildi; Rating -> Puan / Değerlendirme). Sözlükteki ilk karşılıktan',
+    '  farklı olsa da bağlama ve anlama uygunsa KABUL ET (ok: true).',
   ];
 
   if (context.terms.length > 0) {

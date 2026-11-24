@@ -41,6 +41,7 @@ describe('quality checks', () => {
   it('accepts reordered positional placeholders', () => {
     // Turkish word order routinely moves these, which is the whole point of %1$s.
     expect(rules({ msgid: '%1$s in %2$s', msgstr: '%2$s içinde %1$s' })).toEqual([]);
+    expect(rules({ msgid: 'Select %s of %s', msgstr: '%2$s içinden %1$s ögesini seçin' })).toEqual([]);
   });
 
   it('accepts a literal %%', () => {
@@ -94,6 +95,12 @@ describe('quality checks', () => {
       rules({
         msgid: '<img alt="A cat"><input aria-label="Search" placeholder="Type here">',
         msgstr: '<img alt="Bir kedi"><input aria-label="Ara" placeholder="Buraya yazın">',
+      }),
+    ).toEqual([]);
+    expect(
+      rules({
+        msgid: '<input type="submit" value="Save Changes"><optgroup label="Fruits">',
+        msgstr: '<input type="submit" value="Değişiklikleri Kaydet"><optgroup label="Meyveler">',
       }),
     ).toEqual([]);
   });

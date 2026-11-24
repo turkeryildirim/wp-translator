@@ -246,17 +246,37 @@ class QueueWorkerManager {
             const judgement = judgementMap.get(row.translationId);
             const verdict = judgement?.verdict ?? 'unknown';
 
+            const logDetails = {
+              translationId: row.translationId,
+              originalId: row.originalId,
+              rowId: row.rowId,
+              projectSlug: target.slug,
+              projectPath: target.projectPath,
+              setStatusUrl: page.setStatusUrl,
+              approveNonce: row.approveNonce,
+              rejectNonce: row.rejectNonce,
+              source: row.source,
+              sourcePlural: row.sourcePlural,
+              translation: row.translation,
+              translationPlural: row.translationPlural,
+              context: row.context,
+              verdict,
+              reason: judgement?.reason,
+              mode: this.state.mode,
+            };
+
             if (verdict === 'exact' || verdict === 'agreed') {
               if (row.status === 'current') {
                 this.state.approved++;
                 this.log(
                   'info',
                   `― ZATEN ONAYLI: "${row.source}" → "${row.translation}" (${target.slug})`,
+                  { ...logDetails, action: 'already_approved' },
                 );
               } else if (this.state.mode === 'apply' && autoApprove) {
                 if (!row.approveNonce) {
                   const errMsg = `Satır #${row.translationId} onaylanamadı: GlotPress onay noncesi bulunamadı. Oturum süresi dolmuş veya arayüz şablonu değişmiş olabilir.`;
-                  this.log('error', errMsg, { row, target });
+                  this.log('error', errMsg, { ...logDetails, action: 'approve_failed' });
                 } else {
                   try {
                     await setTranslationStatus(
@@ -271,9 +291,10 @@ class QueueWorkerManager {
                     this.log(
                       'success',
                       `✓ ONAYLANDI: "${row.source}" → "${row.translation}" (${target.slug})`,
+                      { ...logDetails, action: 'approved' },
                     );
                   } catch (err: unknown) {
-                    this.log('error', `Onaylanamadı (${row.translationId}): ${String(err)}`, { row, err });
+                    this.log('error', `Onaylanamadı (${row.translationId}): ${String(err)}`, { ...logDetails, action: 'approve_error', err });
                   }
                 }
               } else {
@@ -281,6 +302,7 @@ class QueueWorkerManager {
                 this.log(
                   'info',
                   `✓ ONAY ADAYI: "${row.source}" → "${row.translation}" (${target.slug})`,
+                  { ...logDetails, action: 'candidate_approve' },
                 );
               }
             } else if (verdict === 'flagged') {
@@ -290,11 +312,12 @@ class QueueWorkerManager {
                 this.log(
                   'warn',
                   `― ZATEN REDDEDİLMİŞ: "${row.source}" → "${row.translation}" (${target.slug})`,
+                  { ...logDetails, action: 'already_rejected' },
                 );
               } else if (this.state.mode === 'apply' && autoReject) {
                 if (!row.rejectNonce) {
                   const errMsg = `Satır #${row.translationId} reddedilemedi: GlotPress ret noncesi bulunamadı. Oturum süresi dolmuş veya arayüz şablonu değişmiş olabilir.`;
-                  this.log('error', errMsg, { row, target });
+                  this.log('error', errMsg, { ...logDetails, action: 'reject_failed' });
                 } else {
                   try {
                     await setTranslationStatus(
@@ -309,9 +332,10 @@ class QueueWorkerManager {
                     this.log(
                       'warn',
                       `✗ REDDEDİLDİ: "${row.source}" → "${row.translation}" (${target.slug}) [${reason}]`,
+                      { ...logDetails, action: 'rejected' },
                     );
                   } catch (err: unknown) {
-                    this.log('error', `Reddedilemedi (${row.translationId}): ${String(err)}`, { row, err });
+                    this.log('error', `Reddedilemedi (${row.translationId}): ${String(err)}`, { ...logDetails, action: 'reject_error', err });
                   }
                 }
               } else {
@@ -319,6 +343,7 @@ class QueueWorkerManager {
                 this.log(
                   'warn',
                   `✗ RET ADAYI: "${row.source}" → "${row.translation}" (${target.slug}) [${reason}]`,
+                  { ...logDetails, action: 'candidate_reject' },
                 );
               }
             } else {
@@ -327,6 +352,7 @@ class QueueWorkerManager {
               this.log(
                 'info',
                 `― ATLANDI: "${row.source}" (${target.slug}) [${note} - Kuyrukta bırakıldı]`,
+                { ...logDetails, action: 'skipped' },
               );
             }
 

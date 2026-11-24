@@ -92,5 +92,21 @@ export function scopeFor(db: Db, projectPath?: string): { projectId: number; tag
     if (tagIds.length > 0) return { projectId: project.id, tagIds };
   }
 
-  return { projectId: project?.id ?? 0, tagIds: [defaultTagId(db)] };
+  // Hierarchy for remote or unimported projects
+  const tagsSet = new Set<number>([defaultTagId(db)]);
+  if (projectPath) {
+    if (projectPath.startsWith('wp-plugins/')) {
+      const pluginTag = db.prepare(`SELECT id FROM tags WHERE name = 'plugin'`).get() as { id: number } | undefined;
+      if (pluginTag) tagsSet.add(pluginTag.id);
+    } else if (projectPath.startsWith('wp-themes/')) {
+      const themeTag = db.prepare(`SELECT id FROM tags WHERE name = 'theme'`).get() as { id: number } | undefined;
+      if (themeTag) tagsSet.add(themeTag.id);
+    }
+    if (projectPath.includes('woocommerce') || projectPath.includes('wc-')) {
+      const wooTag = db.prepare(`SELECT id FROM tags WHERE name = 'woo'`).get() as { id: number } | undefined;
+      if (wooTag) tagsSet.add(wooTag.id);
+    }
+  }
+
+  return { projectId: project?.id ?? 0, tagIds: Array.from(tagsSet) };
 }

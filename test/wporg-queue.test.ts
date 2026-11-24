@@ -190,6 +190,25 @@ describe('WordPress.org Queue Scanner & Reviewer', () => {
       expect(page.rows[0]?.rejectNonce).toBe('rev_rej_012');
     });
 
+    it('preserves full text when GlotPress inserts nested glossary-word spans', () => {
+      const html = `
+        <table id="translations">
+          <tr class="preview status-waiting" row="104-504">
+            <td class="original">
+              <span class="original-text">FAQ groups as an <span class="glossary-word" data-translations="[{&quot;translation&quot;:&quot;akordeon&quot;}]">accordion</span> or open list for your theme.</span>
+              <div class="original-tags"><span class="priority bubble">Priority: high</span></div>
+            </td>
+            <td class="translation">
+              <span class="translation-text">Temanız için bir akordeon veya açık liste olarak SSS grupları.</span>
+            </td>
+          </tr>
+        </table>
+      `;
+      const page = parseQueuePage(html, 'https://translate.wordpress.org/projects/wp-plugins/sample/dev/tr/default/');
+      expect(page.rows[0]?.source).toBe('FAQ groups as an accordion or open list for your theme.');
+      expect(page.rows[0]?.translation).toBe('Temanız için bir akordeon veya açık liste olarak SSS grupları.');
+    });
+
     it('sends set-status POST request with proper nonce and payload', async () => {
       let postedBody = '';
       vi.stubGlobal('fetch', (_url: string | URL, init?: RequestInit) => {
