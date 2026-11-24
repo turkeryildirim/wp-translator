@@ -34,7 +34,7 @@ const MAX_VISIBLE = 4;
  * is worse than no message at all — the owner would believe the edit landed.
  */
 export function notify(kind: Note['kind'], text: string, tag?: string): void {
-  const last = notes.at(-1);
+  const last = notes[notes.length - 1];
   if (last && last.kind === kind && last.text === text) {
     last.count += 1;
     schedule(last);

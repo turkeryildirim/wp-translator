@@ -58,8 +58,16 @@ function toggleExpand(id: number) {
 
 async function handleClearLogs() {
   if (!confirm('Tüm sistem günlük kayıtlarını silmek istediğinize emin misiniz?')) return;
-  await clearLogs();
-  await loadLogs();
+  loading.value = true;
+  try {
+    await clearLogs();
+    page.value = 1;
+    await loadLogs();
+  } catch (err) {
+    console.error('Günlükler temizlenirken hata oluştu:', err);
+  } finally {
+    loading.value = false;
+  }
 }
 
 function formatDate(dateStr: string): string {
