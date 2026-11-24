@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { parseGlotPressStats } from '../src/wporg/stats.ts';
+import { describe, expect, it, vi } from 'vitest';
+import { fetchProjectStats, parseGlotPressStats } from '../src/wporg/stats.ts';
 
 describe('parseGlotPressStats', () => {
   it('parses filter-toolbar counts with commas and nbsp', () => {
@@ -47,5 +47,27 @@ describe('parseGlotPressStats', () => {
     expect(stats.untranslated).toBe(182);
     expect(stats.total).toBe(4190 + 14 + 86 + 182);
     expect(stats.percent).toBe(94);
+  });
+
+  it('fetches live stats and handles errors', async () => {
+    vi.stubGlobal('fetch', (url: string | URL) => {
+      if (String(url).includes('notfound')) {
+        return Promise.resolve(new Response('Not found', { status: 404 }));
+      }
+      return Promise.resolve(
+        new Response(
+          '<div class="filter-toolbar"><a class="filter-current">All (100)</a><a href="#">Translated (90)</a></div>',
+          { status: 200 },
+        ),
+      );
+    });
+
+    const stats = await fetchProjectStats('https://translate.wordpress.org/sample/');
+    expect(stats.total).toBe(100);
+    expect(stats.translated).toBe(90);
+
+    await expect(fetchProjectStats('https://translate.wordpress.org/notfound/')).rejects.toThrow(
+      /HTTP 404/,
+    );
   });
 });

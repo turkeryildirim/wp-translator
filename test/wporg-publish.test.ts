@@ -204,5 +204,52 @@ describe('WordPress.org PO publishing and session verification', () => {
       expect(postedFormData).not.toBeNull();
       expect(postedFormData!.get('_gp_route_nonce')).toBe('nonce456');
     });
+
+    it('throws error when GlotPress returns notice-error', async () => {
+      vi.stubGlobal('fetch', (_url: string | URL, init?: RequestInit) => {
+        if (!init?.method || init.method === 'GET') {
+          return Promise.resolve(
+            new Response(
+              `<html><input type="hidden" name="_gp_route_nonce" value="nonce789" /></html>`,
+              { status: 200 },
+            ),
+          );
+        }
+        return Promise.resolve(
+          new Response(
+            `<html>
+              <div class="notice notice-error"><p>Import failed: Invalid PO format.</p></div>
+            </html>`,
+            { status: 200 },
+          ),
+        );
+      });
+
+      await expect(publishProjectToWporg(db, projectId)).rejects.toThrow(
+        /Import failed: Invalid PO format/,
+      );
+    });
+
+    it('falls back to default success message when no notice element exists in postHtml', async () => {
+      vi.stubGlobal('fetch', (_url: string | URL, init?: RequestInit) => {
+        if (!init?.method || init.method === 'GET') {
+          return Promise.resolve(
+            new Response(
+              `<html><input type="hidden" name="_gp_route_nonce" value="nonceFallback" /></html>`,
+              { status: 200 },
+            ),
+          );
+        }
+        return Promise.resolve(
+          new Response(`<html><body><div>Import completed without class.</div></body></html>`, {
+            status: 200,
+          }),
+        );
+      });
+
+      const res = await publishProjectToWporg(db, projectId);
+      expect(res.ok).toBe(true);
+      expect(res.message).toContain('onaylı çeviri wp.org\'a başarıyla gönderildi ve yayınlandı');
+    });
   });
 });

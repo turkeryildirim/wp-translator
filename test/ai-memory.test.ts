@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDb, type Db } from '../src/db/open.ts';
-import { affixes, memoryCounts, reapply, questionKey } from '../src/ai/memory.ts';
+import { affixes, clearMemory, deleteMemoryEntries, deleteMemoryEntry, listMemoryEntries, memoryCounts, reapply, questionKey } from '../src/ai/memory.ts';
 import { rememberTranslations, reshape, splitByMemory } from '../src/ai/translationMemory.ts';
 
 let db: Db;
@@ -108,5 +108,28 @@ describe('translation memory', () => {
     splitByMemory(db, [{ i: 0, s: 'Save' }], GUIDE);
 
     expect(memoryCounts(db)).toMatchObject({ translation: 1, reuses: 2 });
+  });
+
+  it('deletes single entries, multiple entries, and clears memory by kind', () => {
+    rememberTranslations(db, [{ i: 0, s: 'One' }], [{ i: 0, t: 'Bir' }], GUIDE, 'agy');
+    rememberTranslations(db, [{ i: 1, s: 'Two' }], [{ i: 1, t: 'İki' }], GUIDE, 'agy');
+    rememberTranslations(db, [{ i: 2, s: 'Three' }], [{ i: 2, t: 'Üç' }], GUIDE, 'agy');
+
+    const listed = listMemoryEntries(db, { kind: 'translation' });
+    expect(listed.total).toBe(3);
+
+    const firstId = listed.entries[0]!.id;
+    const deletedSingle = deleteMemoryEntry(db, firstId);
+    expect(deletedSingle).toBe(true);
+
+    const secondId = listed.entries[1]!.id;
+    const deletedMultiple = deleteMemoryEntries(db, [secondId]);
+    expect(deletedMultiple).toBe(1);
+
+    expect(deleteMemoryEntries(db, [])).toBe(0);
+
+    const cleared = clearMemory(db, 'translation');
+    expect(cleared).toBe(1);
+    expect(listMemoryEntries(db).total).toBe(0);
   });
 });

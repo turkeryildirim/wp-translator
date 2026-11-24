@@ -31,4 +31,5 @@ Thumbs.db
 /node_modules/
 /dist/
 /build/
+/coverage/
 tr-quality-findings.md
