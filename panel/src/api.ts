@@ -356,6 +356,15 @@ const post = <T>(url: string, body: unknown, label?: string) =>
     label,
   );
 
+const del = <T = unknown>(url: string, label?: string) =>
+  json<T>(
+    url,
+    {
+      method: 'DELETE',
+    },
+    label,
+  );
+
 export const listTags = () => json<Tag[]>('/api/tags');
 
 export const listSources = () => json<TrustedSource[]>('/api/sources');
@@ -752,7 +761,7 @@ export async function fetchMemory(params?: {
 }
 
 export async function deleteMemoryItem(id: number): Promise<void> {
-  await del(`/api/memory/${id}`, 'Hafıza kaydı silindi');
+  await post('/api/memory/delete', { ids: [id] }, 'Hafıza kaydı silindi');
 }
 
 export async function deleteMemoryBulk(ids: number[]): Promise<void> {
