@@ -49,8 +49,8 @@ export function repairMechanically(source: string, translation: string): string 
 export function repairTranslationUnit(
   source: string,
   translation: string,
-  sourcePlural?: string,
-  translationPlural?: string,
+  sourcePlural?: string | null,
+  translationPlural?: string | null,
 ): { translation: string; translationPlural?: string; repaired: boolean } {
   const repMain = repairMechanically(source, translation);
   const repPlural =
@@ -59,7 +59,7 @@ export function repairTranslationUnit(
   const repaired = repMain !== undefined || repPlural !== undefined;
   return {
     translation: repMain ?? translation,
-    ...(translationPlural !== undefined ? { translationPlural: repPlural ?? translationPlural } : {}),
+    ...(translationPlural ? { translationPlural: repPlural ?? translationPlural } : {}),
     repaired,
   };
 }
