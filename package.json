@@ -24,7 +24,8 @@
     "dist:win": "node --experimental-strip-types scripts/fetch-native.ts win && pnpm run build:all && electron-builder --win zip -p never && node --experimental-strip-types scripts/fetch-native.ts node"
   },
   "dependencies": {
-    "better-sqlite3": "^12.6.0"
+    "better-sqlite3": "^12.6.0",
+    "cheerio": "^1.2.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

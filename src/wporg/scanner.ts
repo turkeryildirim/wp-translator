@@ -1,3 +1,5 @@
+import * as cheerio from 'cheerio';
+
 export interface QueueProject {
   family: 'plugin' | 'theme';
   slug: string;
@@ -17,7 +19,8 @@ export interface QueueTarget {
   count: number;
 }
 
-const DEFAULT_USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
+const DEFAULT_USER_AGENT =
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
 
 const PAIRS: readonly [string, string][] = [
   ['dev', 'stable'],
@@ -54,26 +57,26 @@ function parseCount(text?: string | null): number {
 }
 
 /**
- * Parses projects from a locale overview listing
+ * Parses projects from a locale overview listing using Cheerio
  * (e.g. /locale/tr/default/wp-plugins/?filter=strings-waiting-and-fuzzy).
  */
 export function parseWaitingProjects(html: string, family: 'plugin' | 'theme'): QueueProject[] {
+  const $ = cheerio.load(html);
   const projects: QueueProject[] = [];
-  const projectRegex =
-    /<div[^>]*class="[^"]*\bproject\b[^"]*"[^>]*>[\s\S]*?<div class="project-name"[^>]*>[\s\S]*?<a href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<div class="project-status-waiting"[^>]*>[\s\S]*?<span class="project-status-value"[^>]*>([\s\S]*?)<\/span>[\s\S]*?<\/div>/gi;
 
-  let m: RegExpExecArray | null;
-  while ((m = projectRegex.exec(html)) !== null) {
-    const rawUrl = m[1] ?? '';
-    const rawName = m[2] ?? '';
-    const rawWaiting = m[3] ?? '';
+  $('.project').each((_, el) => {
+    const $proj = $(el);
+    const $link = $proj.find('.project-name a').first();
+    const rawUrl = $link.attr('href') ?? '';
+    const rawName = $link.text().trim();
+    const rawWaiting = $proj.find('.project-status-waiting .project-status-value').first().text().trim();
 
     const slugMatch = new RegExp(`/locale/tr/default/wp-${family}s/([^/]+)/`, 'i').exec(rawUrl);
     const slug = slugMatch && slugMatch[1] ? slugMatch[1] : '';
-    if (!slug) continue;
+    if (!slug) return;
 
     const waitingCount = parseCount(rawWaiting);
-    const name = decodeHtml(rawName.replace(/<[^>]+>/g, ''));
+    const name = decodeHtml(rawName);
     const fullUrl = rawUrl.startsWith('http') ? rawUrl : `https://translate.wordpress.org${rawUrl}`;
 
     projects.push({
@@ -83,13 +86,13 @@ export function parseWaitingProjects(html: string, family: 'plugin' | 'theme'): 
       waitingCount,
       url: fullUrl,
     });
-  }
+  });
 
   return projects;
 }
 
 /**
- * Chooses active sub-project targets for a project.
+ * Chooses active sub-project targets for a project using Cheerio.
  * For plugins: balances trunk (dev) and released (stable) queues using chooseSets logic.
  * For themes: uses the root theme project set.
  */
@@ -99,15 +102,12 @@ export function parseSubProjectTargets(
   slug: string,
   name: string,
 ): QueueTarget[] {
+  const $ = cheerio.load(html);
   const targets: QueueTarget[] = [];
 
   if (family === 'theme') {
-    const rowMatch =
-      /<tr[^>]*>[\s\S]*?<td class="stats fuzzy"[^>]*>[\s\S]*?<a[^>]*>([\d,.]+)<\/a>[\s\S]*?<td class="stats waiting"[^>]*>[\s\S]*?<a[^>]*>([\d,.]+)<\/a>/i.exec(
-        html,
-      );
-    const fuzzy = parseCount(rowMatch?.[1]);
-    const waiting = parseCount(rowMatch?.[2]);
+    const fuzzy = parseCount($('td.stats.fuzzy a, td.stats.fuzzy').first().text());
+    const waiting = parseCount($('td.stats.waiting a, td.stats.waiting').first().text());
     const projectPath = `wp-themes/${slug}`;
     const baseUrl = `https://translate.wordpress.org/projects/${projectPath}/tr/default/`;
 
@@ -139,24 +139,24 @@ export function parseSubProjectTargets(
   // Plugin sub-projects table
   const subProjects: Record<string, { waiting: number; fuzzy: number; path: string }> = {};
 
-  const rowRegex =
-    /<tr[^>]*>[\s\S]*?<td class="set-name"[^>]*>[\s\S]*?<a href="([^"]+)"[^>]*>[\s\S]*?<\/a>[\s\S]*?<td class="stats fuzzy"[^>]*>[\s\S]*?<a[^>]*>([\d,.]+)<\/a>[\s\S]*?<td class="stats waiting"[^>]*>[\s\S]*?<a[^>]*>([\d,.]+)<\/a>[\s\S]*?<\/tr>/gi;
+  $('tr').each((_, el) => {
+    const $tr = $(el);
+    const $link = $tr.find('td.set-name a').first();
+    const href = $link.attr('href') ?? '';
+    if (!href) return;
 
-  let rm: RegExpExecArray | null;
-  while ((rm = rowRegex.exec(html)) !== null) {
-    const href = rm[1] ?? '';
-    const fuzzy = parseCount(rm[2]);
-    const waiting = parseCount(rm[3]);
+    const fuzzy = parseCount($tr.find('td.stats.fuzzy a, td.stats.fuzzy').first().text());
+    const waiting = parseCount($tr.find('td.stats.waiting a, td.stats.waiting').first().text());
 
     const kindMatch = /^\/projects\/wp-plugins\/[^/]+\/([^/]+)\//.exec(href);
     const kind = kindMatch && kindMatch[1] ? kindMatch[1] : '';
-    if (!kind) continue;
+    if (!kind) return;
 
     const pathMatch = /\/projects\/(.+?)\/tr\/default\//.exec(href);
     const projectPath = pathMatch && pathMatch[1] ? pathMatch[1] : `wp-plugins/${slug}/${kind}`;
 
     subProjects[kind] = { waiting, fuzzy, path: projectPath };
-  }
+  });
 
   // Choose sets between trunk and released pairs
   const pendingByKind: Record<string, number> = {};

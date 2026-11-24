@@ -1,3 +1,5 @@
+import * as cheerio from 'cheerio';
+
 export interface QueueRow {
   rowId: string;
   originalId: number;
@@ -43,82 +45,23 @@ export function decodeHtml(str: string): string {
     .replace(/&minus;/g, '-');
 }
 
-function cleanText(html: string): string {
-  // Strip HTML tags and decode HTML entities while preserving leading/trailing whitespace
-  return decodeHtml(html.replace(/<[^>]+>/g, ''));
-}
-
-/**
- * Extracts inner content of a targeted <span> by tracking balanced open/close span tag depth.
- * This prevents truncating text when GlotPress inserts nested `<span class="glossary-word">` tags.
- */
-function extractSpanContent(html: string, spanClass: string): string | null {
-  const openTagRegex = new RegExp(`<span[^>]*class=["'][^"']*\\b${spanClass}\\b[^"']*["'][^>]*>`, 'i');
-  const match = openTagRegex.exec(html);
-  if (!match) return null;
-
-  const startIndex = match.index + match[0].length;
-  let depth = 1;
-  let currentIndex = startIndex;
-
-  while (depth > 0 && currentIndex < html.length) {
-    const nextOpen = html.indexOf('<span', currentIndex);
-    const nextClose = html.indexOf('</span>', currentIndex);
-
-    if (nextClose === -1) {
-      return html.slice(startIndex);
-    }
-
-    if (nextOpen !== -1 && nextOpen < nextClose) {
-      depth++;
-      currentIndex = nextOpen + 5;
-    } else {
-      depth--;
-      if (depth === 0) {
-        return html.slice(startIndex, nextClose);
-      }
-      currentIndex = nextClose + 7;
-    }
-  }
-
-  return null;
-}
-
-/**
- * Extracts multiple forms (e.g. singular/plural) or a single text form from a table cell.
- */
-function extractCellForms(cellHtml: string, textSpanClass: string): string[] {
-  if (cellHtml.includes('<ul') && cellHtml.includes('<li')) {
+function extractCellForms($: cheerio.CheerioAPI, $cell: cheerio.Cheerio<any>, spanClass: string): string[] {
+  const $lis = $cell.find('ul li');
+  if ($lis.length > 0) {
     const forms: string[] = [];
-    const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
-    let lm: RegExpExecArray | null;
-    while ((lm = liRegex.exec(cellHtml)) !== null) {
-      const spanContent = extractSpanContent(lm[1] ?? '', textSpanClass);
-      forms.push(spanContent !== null ? cleanText(spanContent) : '');
-    }
-    if (forms.length > 0) return forms;
+    $lis.each((_, li) => {
+      const $span = $(li).find(`.${spanClass}`);
+      forms.push($span.length > 0 ? $span.text() : $(li).text());
+    });
+    return forms.length > 0 ? forms : [''];
   }
 
-  const spanContent = extractSpanContent(cellHtml, textSpanClass);
-  return spanContent !== null ? [cleanText(spanContent)] : [''];
-}
-
-function extractButtonNonce(rowHtml: string, ...classNames: string[]): string | undefined {
-  for (const cls of classNames) {
-    const buttonRegex = new RegExp(`<button[^>]*class=["'][^"']*\\b${cls}\\b[^"']*["'][^>]*>`, 'gi');
-    let bm: RegExpExecArray | null;
-    while ((bm = buttonRegex.exec(rowHtml)) !== null) {
-      const nonceMatch = /data-nonce=["']([^"']+)["']/i.exec(bm[0]);
-      if (nonceMatch && nonceMatch[1]) {
-        return nonceMatch[1];
-      }
-    }
-  }
-  return undefined;
+  const $span = $cell.find(`.${spanClass}`);
+  return $span.length > 0 ? [$span.text()] : [$cell.text()];
 }
 
 /**
- * Parses rows, status URL, and next page link from a GlotPress translation set page HTML.
+ * Parses rows, status URL, and next page link from a GlotPress translation set page HTML using Cheerio.
  */
 export function parseQueuePage(html: string, pageUrl: string): QueuePageResult {
   let setStatusUrl = '';
@@ -131,39 +74,40 @@ export function parseQueuePage(html: string, pageUrl: string): QueuePageResult {
     setStatusUrl = base.endsWith('/') ? `${base}-set-status/` : `${base}/-set-status/`;
   }
 
+  const $ = cheerio.load(html);
   const rows: QueueRow[] = [];
-  const previewRegex = /<tr[^>]*class=["'][^"']*\bpreview\b[^"']*["'][^>]*row=["']([^"']+)["'][\s\S]*?<\/tr>|<tr[^>]*row=["']([^"']+)["'][^>]*class=["'][^"']*\bpreview\b[^"']*["'][\s\S]*?<\/tr>/gi;
 
-  let m: RegExpExecArray | null;
-  while ((m = previewRegex.exec(html)) !== null) {
-    const rowId = (m[1] ?? m[2] ?? '').trim();
-    const rowHtml = m[0];
+  $('tr.preview').each((_, el) => {
+    const $row = $(el);
+    const rowId = ($row.attr('row') ?? '').trim();
+    if (!rowId) return;
 
     const [origStr, transStr] = rowId.split('-');
     const originalId = Number(origStr);
     const translationId = transStr ? Number(transStr) : null;
-    if (!Number.isFinite(originalId) || originalId === 0 || !translationId) continue;
+    if (!Number.isFinite(originalId) || originalId === 0 || !translationId) return;
 
-    const rowStatusMatch = /\bstatus-([a-z]+)\b/i.exec(rowHtml);
+    const classAttr = $row.attr('class') ?? '';
+    const rowStatusMatch = /\bstatus-([a-z]+)\b/i.exec(classAttr);
     const status = rowStatusMatch && rowStatusMatch[1] ? rowStatusMatch[1].toLowerCase() : undefined;
 
     // Source cell
-    const origCellMatch = /<td class="original"[^>]*>([\s\S]*?)<\/td>/i.exec(rowHtml);
-    const origCell = origCellMatch && origCellMatch[1] ? origCellMatch[1] : '';
-    const srcForms = extractCellForms(origCell, 'original-text');
+    const $origCell = $row.find('td.original');
+    const srcForms = extractCellForms($, $origCell, 'original-text');
 
     // Translation cell
-    const transCellMatch = /<td class="translation[^"]*"[^>]*>([\s\S]*?)<\/td>/i.exec(rowHtml);
-    const transCell = transCellMatch && transCellMatch[1] ? transCellMatch[1] : '';
-    const transForms = extractCellForms(transCell, 'translation-text');
+    const $transCell = $row.find('td.translation');
+    const transForms = extractCellForms($, $transCell, 'translation-text');
 
     // Context bubble
-    const ctxtMatch = /<span class="context bubble">([\s\S]*?)<\/span>/i.exec(rowHtml);
-    const context = ctxtMatch && ctxtMatch[1] ? cleanText(ctxtMatch[1]).trim() : undefined;
+    const $context = $row.find('.context.bubble');
+    const context = $context.length > 0 ? $context.text().trim() : undefined;
 
     // Approve & reject nonces
-    const approveNonce = extractButtonNonce(rowHtml, 'inline-action-approve', 'approve');
-    const rejectNonce = extractButtonNonce(rowHtml, 'inline-action-reject', 'reject');
+    const approveNonce =
+      $row.find('button.inline-action-approve, button.approve').first().attr('data-nonce') || undefined;
+    const rejectNonce =
+      $row.find('button.inline-action-reject, button.reject').first().attr('data-nonce') || undefined;
 
     rows.push({
       rowId,
@@ -178,33 +122,26 @@ export function parseQueuePage(html: string, pageUrl: string): QueuePageResult {
       approveNonce,
       rejectNonce,
     });
-  }
+  });
 
   // Next page detection
   let nextPageUrl: string | undefined;
-  const pagingMatch = /<div class="paging">([\s\S]*?)<\/div>/i.exec(html);
-  if (pagingMatch && pagingMatch[1]) {
-    const pagingHtml = pagingMatch[1];
-    const aRegex = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
-    let am: RegExpExecArray | null;
-    let nextHref: string | undefined;
-    while ((am = aRegex.exec(pagingHtml)) !== null) {
-      const attrs = am[1] ?? '';
-      const text = am[2] ?? '';
-      const hasNextClass = /\bclass=["'][^"']*\bnext\b[^"']*["']/i.test(attrs);
-      const isNextText = /(?:&rarr;|Next|Sonraki)/i.test(text);
-      if (hasNextClass || isNextText) {
-        const hrefMatch = /\bhref=["']([^"']+)["']/i.exec(attrs);
-        if (hrefMatch && hrefMatch[1]) {
-          nextHref = hrefMatch[1];
-          break;
-        }
-      }
+  let nextHref: string | undefined;
+  $('div.paging a').each((_, el) => {
+    const $a = $(el);
+    const isNext =
+      $a.hasClass('next') ||
+      /(?:→|&rarr;|Next|Sonraki)/i.test($a.text()) ||
+      /\bnext\b/i.test($a.attr('class') ?? '');
+    if (isNext) {
+      nextHref = $a.attr('href');
+      return false; // break loop
     }
-    if (nextHref) {
-      const raw = decodeHtml(nextHref).trim();
-      nextPageUrl = raw.startsWith('http') ? raw : new URL(raw, pageUrl).toString();
-    }
+  });
+
+  if (nextHref) {
+    const raw = decodeHtml(nextHref).trim();
+    nextPageUrl = raw.startsWith('http') ? raw : new URL(raw, pageUrl).toString();
   }
 
   return {

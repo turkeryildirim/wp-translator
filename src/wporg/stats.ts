@@ -1,3 +1,5 @@
+import * as cheerio from 'cheerio';
+
 export interface GlotPressStats {
   translated: number;
   fuzzy: number;
@@ -48,20 +50,22 @@ export function parseGlotPressStats(html: string): GlotPressStats {
     return stats;
   }
 
-  // Pattern 2: Locale sub-projects table, e.g. td.stats.translated > a
-  const transTd = /<td[^>]*class="[^"]*stats translated[^"]*"[^>]*>[\s\S]*?<a[^>]*>([\d,.]+)<\/a>/i.exec(html);
-  const fuzzyTd = /<td[^>]*class="[^"]*stats fuzzy[^"]*"[^>]*>[\s\S]*?<a[^>]*>([\d,.]+)<\/a>/i.exec(html);
-  const untransTd = /<td[^>]*class="[^"]*stats untranslated[^"]*"[^>]*>[\s\S]*?<a[^>]*>([\d,.]+)<\/a>/i.exec(html);
-  const waitingTd = /<td[^>]*class="[^"]*stats waiting[^"]*"[^>]*>[\s\S]*?<a[^>]*>([\d,.]+)<\/a>/i.exec(html);
-  const percentSpan = /<span[^>]*class="[^"]*sub-project-status[^"]*"[^>]*>(\d+)\s*%/i.exec(html);
+  // Pattern 2: Locale sub-projects table using cheerio
+  const $ = cheerio.load(html);
+  const transVal = $('td.stats.translated a, td.stats.translated').first().text();
+  const fuzzyVal = $('td.stats.fuzzy a, td.stats.fuzzy').first().text();
+  const untransVal = $('td.stats.untranslated a, td.stats.untranslated').first().text();
+  const waitingVal = $('td.stats.waiting a, td.stats.waiting').first().text();
+  const percentText = $('span.sub-project-status').first().text();
 
-  if (transTd || untransTd) {
-    stats.translated = parseNum(transTd?.[1]);
-    stats.fuzzy = parseNum(fuzzyTd?.[1]);
-    stats.untranslated = parseNum(untransTd?.[1]);
-    stats.waiting = parseNum(waitingTd?.[1]);
+  if (transVal || untransVal) {
+    stats.translated = parseNum(transVal);
+    stats.fuzzy = parseNum(fuzzyVal);
+    stats.untranslated = parseNum(untransVal);
+    stats.waiting = parseNum(waitingVal);
     stats.total = stats.translated + stats.untranslated + stats.waiting + stats.fuzzy;
-    stats.percent = percentSpan ? parseNum(percentSpan[1]) : (stats.total > 0 ? Math.round((stats.translated / stats.total) * 100) : 0);
+    const pctMatch = /(\d+)\s*%/.exec(percentText);
+    stats.percent = pctMatch ? parseNum(pctMatch[1]) : (stats.total > 0 ? Math.round((stats.translated / stats.total) * 100) : 0);
   }
 
   return stats;
@@ -83,7 +87,7 @@ export async function fetchProjectStats(url: string, signal?: AbortSignal): Prom
   const response = await fetch(url, init);
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} when fetching stats from ${url}`);
+    throw new Error(`WordPress.org HTTP ${response.status}: ${url}`);
   }
 
   const html = await response.text();

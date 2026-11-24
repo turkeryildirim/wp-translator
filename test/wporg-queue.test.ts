@@ -209,6 +209,24 @@ describe('WordPress.org Queue Scanner & Reviewer', () => {
       expect(page.rows[0]?.translation).toBe('Temanız için bir akordeon veya açık liste olarak SSS grupları.');
     });
 
+    it('handles deeply nested formatting tags inside glossary spans with Cheerio', () => {
+      const html = `
+        <table id="translations">
+          <tr class="preview status-waiting" row="105-505">
+            <td class="original">
+              <span class="original-text">Please visit <a href="https://wordpress.org"><strong>WordPress</strong></a> <span class="glossary-word">documentation</span>.</span>
+            </td>
+            <td class="translation">
+              <span class="translation-text">Lütfen <a href="https://wordpress.org"><strong>WordPress</strong></a> <span class="glossary-word">belgelerini</span> ziyaret edin.</span>
+            </td>
+          </tr>
+        </table>
+      `;
+      const page = parseQueuePage(html, 'https://translate.wordpress.org/projects/wp-plugins/sample/dev/tr/default/');
+      expect(page.rows[0]?.source).toBe('Please visit WordPress documentation.');
+      expect(page.rows[0]?.translation).toBe('Lütfen WordPress belgelerini ziyaret edin.');
+    });
+
     it('sends set-status POST request with proper nonce and payload', async () => {
       let postedBody = '';
       vi.stubGlobal('fetch', (_url: string | URL, init?: RequestInit) => {
