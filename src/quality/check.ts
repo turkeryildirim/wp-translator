@@ -1,4 +1,5 @@
 import type { TranslationUnit } from '../po/types.ts';
+import { DEFAULT_BRANDS, checkBrandRules } from './brands.ts';
 
 export type CheckRule =
   | 'empty'
@@ -7,7 +8,11 @@ export type CheckRule =
   | 'html-tags'
   | 'plural-missing'
   | 'leading-whitespace'
-  | 'trailing-whitespace';
+  | 'trailing-whitespace'
+  | 'suffix-on-placeholder'
+  | 'number-plural-noun'
+  | 'brand-casing'
+  | 'brand-apostrophe';
 
 export interface CheckFailure {
   rule: CheckRule;
@@ -46,6 +51,37 @@ const TRANSLATABLE_ATTRIBUTES = new Set([
 
 const ATTRIBUTE = /([a-zA-Z_:][-\w:.]*)\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+)/g;
 
+/** Placeholder taking Turkish apostrophe suffix (e.g. %s'in, %1$s'e, {user}'ın). */
+const PLACEHOLDER_SUFFIX =
+  /(?:%(?:\d+\$)?(?:ll|l|z|h)?[@sdifuxXgGc]|\{[a-zA-Z_][\w.]*\}|%\([a-zA-Z_]\w*\)[sdf])['’][a-zA-ZçğıöşüÇĞİÖŞÜ\p{L}]+/gu;
+
+/** Root words ending in -ler/-lar protected from number-plural-noun rule. */
+const NUMBER_PLURAL_EXCEPTIONS = new Set([
+  'dolar',
+  'popüler',
+  'kiler',
+  'çalar',
+  'modüler',
+  'seküler',
+  'sirküler',
+  'skaler',
+  'skalar',
+  'polar',
+  'solar',
+  'molar',
+  'nükleer',
+  'fular',
+  'radar',
+  'controller',
+  'handler',
+  'crawler',
+  'installer',
+  'mailer',
+  'scheduler',
+  'bundler',
+  'profiler',
+]);
+
 /**
  * Check a translation against its source.
  *
@@ -65,6 +101,9 @@ export function checkTranslation(unit: TranslationUnit): CheckFailure[] {
   comparePlaceholders(unit.msgid, translation, BRACE, 'brace-placeholders', failures);
   compareTags(unit.msgid, translation, failures);
   compareEdgeWhitespace(unit.msgid, translation, failures);
+  checkSuffixOnPlaceholder(translation, failures);
+  checkNumberPluralNoun(translation, failures);
+  failures.push(...checkBrandRules(unit.msgid, translation));
 
   if (unit.msgidPlural && !unit.msgstrPlural) {
     failures.push({
@@ -73,7 +112,56 @@ export function checkTranslation(unit: TranslationUnit): CheckFailure[] {
     });
   }
 
-  return failures;
+  if (unit.msgstrPlural) {
+    checkSuffixOnPlaceholder(unit.msgstrPlural, failures);
+    checkNumberPluralNoun(unit.msgstrPlural, failures);
+    failures.push(...checkBrandRules(unit.msgidPlural ?? unit.msgid, unit.msgstrPlural));
+  }
+
+  // Deduplicate failures so plural strings or multiple rules don't produce duplicate cards
+  const seen = new Set<string>();
+  return failures.filter((f) => {
+    const key = `${f.rule}:${f.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function checkSuffixOnPlaceholder(translation: string, failures: CheckFailure[]): void {
+  const sanitized = translation.replace(/%%/g, '\0\0');
+  const matches = sanitized.match(PLACEHOLDER_SUFFIX);
+  if (!matches) return;
+
+  for (const match of new Set(matches)) {
+    failures.push({
+      rule: 'suffix-on-placeholder',
+      message: `Placeholders should not take suffixes with apostrophes: "${match}".`,
+    });
+  }
+}
+
+function checkNumberPluralNoun(translation: string, failures: CheckFailure[]): void {
+  const sanitized = translation.replace(/%%/g, '\0\0');
+  const pattern = /(%(?:\d+\$)?(?:ll|l|z|h)?[du])\s+(?:<[^>]+>\s*)*([a-zA-ZçğıöşüÇĞİÖŞÜ\p{L}]+)/gu;
+
+  for (const match of sanitized.matchAll(pattern)) {
+    const placeholder = match[1]!;
+    const rawWord = match[2]!;
+    const lowerWord = rawWord.toLocaleLowerCase('tr-TR');
+    const stem = lowerWord.replace(/(?:dan|den|da|de|ın|in|un|ün|la|le|[ıieauü])$/i, '');
+
+    if (NUMBER_PLURAL_EXCEPTIONS.has(lowerWord) || NUMBER_PLURAL_EXCEPTIONS.has(stem)) {
+      continue;
+    }
+
+    if (/(?:ler|lar)(?:[ıiea]|da|de|dan|den)?$/i.test(lowerWord)) {
+      failures.push({
+        rule: 'number-plural-noun',
+        message: `Nouns following a number placeholder must be singular: "${placeholder} ${rawWord}".`,
+      });
+    }
+  }
 }
 
 interface PrintfToken {
@@ -238,8 +326,6 @@ function compareEdgeWhitespace(
   translation: string,
   failures: CheckFailure[],
 ): void {
-  // A trailing space before a value is usually deliberate, and matching is
-  // byte-exact, so losing it changes the string.
   const leading = (text: string) => /^\s*/.exec(text)![0];
   const trailing = (text: string) => /\s*$/.exec(text)![0];
 
@@ -259,10 +345,6 @@ function compareEdgeWhitespace(
 
 /**
  * Tokens counted by identity, never by position.
- *
- * Turkish word order routinely moves placeholders and the tags around them —
- * that is what `%1$s` exists for — so order is not compared. A changed *count*
- * still is: dropping or duplicating a tag is damage, moving one is translation.
  */
 function countMatches(text: string, pattern: RegExp): Map<string, number> {
   const counts = new Map<string, number>();

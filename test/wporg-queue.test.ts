@@ -209,6 +209,24 @@ describe('WordPress.org Queue Scanner & Reviewer', () => {
       expect(page.rows[0]?.translation).toBe('Temanız için bir akordeon veya açık liste olarak SSS grupları.');
     });
 
+    it('handles deeply nested formatting tags inside glossary spans with Cheerio', () => {
+      const html = `
+        <table id="translations">
+          <tr class="preview status-waiting" row="105-505">
+            <td class="original">
+              <span class="original-text">Please visit <a href="https://wordpress.org"><strong>WordPress</strong></a> <span class="glossary-word">documentation</span>.</span>
+            </td>
+            <td class="translation">
+              <span class="translation-text">Lütfen <a href="https://wordpress.org"><strong>WordPress</strong></a> <span class="glossary-word">belgelerini</span> ziyaret edin.</span>
+            </td>
+          </tr>
+        </table>
+      `;
+      const page = parseQueuePage(html, 'https://translate.wordpress.org/projects/wp-plugins/sample/dev/tr/default/');
+      expect(page.rows[0]?.source).toBe('Please visit WordPress documentation.');
+      expect(page.rows[0]?.translation).toBe('Lütfen WordPress belgelerini ziyaret edin.');
+    });
+
     it('sends set-status POST request with proper nonce and payload', async () => {
       let postedBody = '';
       vi.stubGlobal('fetch', (_url: string | URL, init?: RequestInit) => {
@@ -249,6 +267,62 @@ describe('WordPress.org Queue Scanner & Reviewer', () => {
       const stopped = queueWorkerManager.stop();
       expect(stopped.running).toBe(false);
       expect(stopped.phase).toBe('stopped');
+    });
+  });
+
+  describe('scanQueueTargets', () => {
+    it('scans queue targets and handles HTTP failures', async () => {
+      vi.stubGlobal('fetch', (url: string | URL) => {
+        const urlStr = String(url);
+        if (urlStr.includes('fail')) {
+          return Promise.resolve(new Response('Forbidden', { status: 403 }));
+        }
+        if (urlStr.includes('wp-plugins/?filter=')) {
+          return Promise.resolve(
+            new Response(
+              `<table><tr>
+                <td><a href="/projects/wp-plugins/sample/dev/tr/default/">Sample Plugin</a></td>
+                <td><a href="#">(5)</a></td>
+              </tr></table>`,
+              { status: 200 },
+            ),
+          );
+        }
+        // Subproject detail
+        return Promise.resolve(
+          new Response(
+            `<table class="gp-table">
+              <tr>
+                <td class="stats waiting"><a href="/projects/wp-plugins/sample/dev/tr/default/">5</a></td>
+              </tr>
+            </table>`,
+            { status: 200 },
+          ),
+        );
+      });
+
+      const targets = await scanQueueTargets({
+        cookie: 'test_cookie',
+        family: 'plugin',
+      });
+      expect(Array.isArray(targets)).toBe(true);
+
+      await expect(
+        scanQueueTargets({
+          cookie: 'test_cookie',
+          family: 'plugin',
+          signal: undefined,
+        }),
+      ).resolves.toBeDefined();
+
+      // Test HTTP failure
+      vi.stubGlobal('fetch', () => Promise.resolve(new Response('Server Error', { status: 500 })));
+      await expect(
+        scanQueueTargets({
+          cookie: 'test_cookie',
+          family: 'plugin',
+        }),
+      ).rejects.toThrow(/bekleme listesi alınamadı/);
     });
   });
 });

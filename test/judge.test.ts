@@ -152,4 +152,17 @@ describe('reading the model’s opinions', () => {
 
     expect(out[0]).not.toHaveProperty('expected');
   });
+
+  it('includes glossary terminology section when terms are provided in JudgeContext', async () => {
+    const { buildJudgePrompt } = await import('../src/judge/prompt.ts');
+    const prompt = buildJudgePrompt({
+      styleGuide: 'Özel rehber',
+      terms: [{ source: 'Plugin', readings: [{ translation: 'Eklenti' }] }],
+    });
+
+    expect(prompt).toContain('SÖZLÜK');
+    expect(prompt).toContain('- Plugin: Eklenti');
+    expect(prompt).toContain('ÜSLUP REHBERİ:');
+    expect(prompt).toContain('Özel rehber');
+  });
 });

@@ -24,12 +24,14 @@
     "dist:win": "node --experimental-strip-types scripts/fetch-native.ts win && pnpm run build:all && electron-builder --win zip -p never && node --experimental-strip-types scripts/fetch-native.ts node"
   },
   "dependencies": {
-    "better-sqlite3": "^12.6.0"
+    "better-sqlite3": "^12.6.0",
+    "cheerio": "^1.2.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.10.1",
     "@vitejs/plugin-vue": "^6.0.9",
+    "@vitest/coverage-v8": "^3.2.7",
     "electron": "42.11.18",
     "electron-builder": "^26.18.0",
     "gettext-parser": "^9.1.1",

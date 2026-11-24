@@ -1,6 +1,7 @@
 import type { Db } from '../db/open.ts';
 import { collectTerms } from '../glossary/terminology.ts';
 import { checkTranslation } from '../quality/check.ts';
+import { repairTranslationUnit } from '../quality/repair.ts';
 import { rememberTranslations, reshape, splitByMemory } from '../ai/translationMemory.ts';
 import { AgyProvider } from '../translate/agy.ts';
 import { ClaudeProvider } from '../translate/claude.ts';
@@ -352,16 +353,26 @@ export function startTranslation(
           if (!answer) continue;
           const unit = slice[index]!;
 
+          // Mechanically repair whitespace and echoed quote escapes before quality checks
+          const repaired = repairTranslationUnit(
+            unit.msgid,
+            answer.t,
+            unit.msgidPlural,
+            answer.tp,
+          );
+          const transMain = repaired.translation;
+          const transPlural = repaired.translationPlural;
+
           const failures = checkTranslation({
             ordinal: 0,
             msgid: unit.msgid,
             ...(unit.msgidPlural ? { msgidPlural: unit.msgidPlural } : {}),
-            msgstr: answer.t,
-            ...(answer.tp ? { msgstrPlural: answer.tp } : {}),
+            msgstr: transMain,
+            ...(transPlural ? { msgstrPlural: transPlural } : {}),
           });
 
           // Stored so the review queue can filter and page on it in SQL.
-          store.run(answer.t, answer.tp ?? null, failures.length > 0 ? 1 : 0, send.name, unit.id);
+          store.run(transMain, transPlural ?? null, failures.length > 0 ? 1 : 0, send.name, unit.id);
 
           if (failures.length > 0) progress.flagged += 1;
           else progress.translated += 1;

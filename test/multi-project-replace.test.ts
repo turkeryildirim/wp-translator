@@ -245,4 +245,19 @@ describe('multi-project find and replace', () => {
     expect(row.msgstr).toBe('%d kayıt'); // Untouched!
     expect(row.msgstrPlural).toBe('%d öğeler'); // Replaced!
   });
+
+  it('handles empty findText edge case in search and execute', () => {
+    const emptySearch = searchMultiProjectUnits(db, {
+      findText: '',
+      replaceText: 'test',
+    });
+    expect(emptySearch).toEqual({ total: 0, projectCount: 0, matches: [] });
+
+    expect(() =>
+      executeMultiProjectReplace(db, {
+        findText: '',
+        replaceText: 'test',
+      }),
+    ).toThrow('Aranacak metin boş olamaz');
+  });
 });

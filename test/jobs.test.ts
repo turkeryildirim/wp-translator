@@ -1,9 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { readJob, startJob } from '../src/server/jobs.ts';
+import { activeJobCount, hasActiveJobs, readJob, startJob } from '../src/server/jobs.ts';
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('work collected by ticket', () => {
+  it('tracks active background jobs count and status', async () => {
+    let completeJob: () => void;
+    const pendingPromise = new Promise((resolve) => {
+      completeJob = () => resolve('finished');
+    });
+
+    const id = startJob(() => pendingPromise);
+    expect(hasActiveJobs()).toBe(true);
+    expect(activeJobCount()).toBeGreaterThanOrEqual(1);
+
+    completeJob!();
+    await settle();
+
+    readJob(id);
+  });
+
   it('is not done the moment it is started', () => {
     // The point of the ticket: the request that asked returns at once, so the
     // extension's background worker is never carrying a minute-long request.
