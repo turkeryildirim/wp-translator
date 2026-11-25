@@ -90,7 +90,7 @@ export async function publishProjectToWporg(
 
   if (!project) throw new Error(`Proje bulunamadı (ID: ${projectId}).`);
 
-  const { po, exported, withheld, exportedIds } = exportProject(db, projectId, {
+  const { po, exported, withheld } = exportProject(db, projectId, {
     unitIds: options?.unitIds,
   });
   if (exported === 0) {
@@ -224,15 +224,16 @@ export async function publishProjectToWporg(
     message = `${exported} adet onaylı çeviri wp.org'a başarıyla gönderildi ve yayınlandı.`;
   }
 
-  // If specific units were published as approved (not waiting suggestions), update their local state to 'ok'
-  if (options?.status !== 'waiting' && exportedIds && exportedIds.length > 0) {
-    const placeholders = exportedIds.map(() => '?').join(', ');
+  // If specific units were published, update their local state to 'ok'
+  if (options?.status !== 'waiting' && options?.unitIds && options.unitIds.length > 0) {
+    const placeholders = options.unitIds.map(() => '?').join(', ');
     db.prepare(
       `UPDATE translation_units
           SET state = 'ok'
         WHERE project_id = ?
-          AND id IN (${placeholders})`,
-    ).run(projectId, ...exportedIds);
+          AND id IN (${placeholders})
+          AND msgstr IS NOT NULL AND msgstr <> ''`,
+    ).run(projectId, ...options.unitIds);
   }
 
   return {

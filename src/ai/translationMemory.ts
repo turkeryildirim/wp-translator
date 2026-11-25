@@ -1,6 +1,7 @@
 import type { Db } from '../db/open.ts';
 import { affixes, questionKey, reapply, recall, remember, rulesKey } from './memory.ts';
 import { unescapeEchoedQuotes } from '../text/escapes.ts';
+import { checkTranslation } from '../quality/check.ts';
 import { repairTranslationUnit } from '../quality/repair.ts';
 import type { RequestItem, ResponseItem, TranslationContext } from '../translate/types.ts';
 
@@ -12,9 +13,12 @@ interface Stored {
 
 const keyOf = (item: RequestItem): string =>
   questionKey([
+    'translation-v2',
     affixes(item.s).core,
     item.p ? affixes(item.p).core : '',
     item.c ?? '',
+    item.u ?? '',
+    item.x ?? '',
   ]);
 
 export interface TranslationMemoryScope {
@@ -124,6 +128,12 @@ export function rememberTranslations(
       if (!item) continue;
 
       const repaired = repairTranslationUnit(item.s, answer.t, item.p, answer.tp);
+      const failures = checkTranslation({
+        ordinal: 0, msgid: item.s, ...(item.p ? { msgidPlural: item.p } : {}),
+        msgstr: repaired.translation,
+        ...(repaired.translationPlural ? { msgstrPlural: repaired.translationPlural } : {}),
+      });
+      if (failures.length > 0) continue;
       const stored: Stored = { t: affixes(repaired.translation).core };
       if (repaired.translationPlural) stored.tp = affixes(repaired.translationPlural).core;
       if (!stored.t) continue;

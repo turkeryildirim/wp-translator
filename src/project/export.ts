@@ -10,11 +10,9 @@ export interface ExportSummary {
 
 export interface ExportResult extends ExportSummary {
   po: Buffer;
-  exportedIds: number[];
 }
 
 interface UnitRow {
-  id: number;
   ordinal: number;
   msgid: string;
   msgid_plural: string | null;
@@ -50,13 +48,13 @@ export function exportProject(db: Db, projectId: number, options?: ExportOptions
   if (options?.unitIds) {
     if (options.unitIds.length === 0) {
       const headers = project.headers ? (JSON.parse(project.headers) as Record<string, string>) : {};
-      return { po: serializePo({ headers, units: [] }), exported: 0, withheld: 0, exportedIds: [] };
+      return { po: serializePo({ headers, units: [] }), exported: 0, withheld: 0 };
     }
     const placeholders = options.unitIds.map(() => '?').join(', ');
     const stateClause = onlyOk ? "AND state = 'ok'" : '';
     rows = db
       .prepare(
-        `SELECT id, ordinal, msgid, msgid_plural, msgctxt, refs, extracted_comments,
+        `SELECT ordinal, msgid, msgid_plural, msgctxt, refs, extracted_comments,
                 msgstr, msgstr_plural
            FROM translation_units
           WHERE project_id = ?
@@ -73,7 +71,7 @@ export function exportProject(db: Db, projectId: number, options?: ExportOptions
   } else {
     rows = db
       .prepare(
-        `SELECT id, ordinal, msgid, msgid_plural, msgctxt, refs, extracted_comments,
+        `SELECT ordinal, msgid, msgid_plural, msgctxt, refs, extracted_comments,
                 msgstr, msgstr_plural
            FROM translation_units
           WHERE project_id = ?
@@ -105,7 +103,7 @@ export function exportProject(db: Db, projectId: number, options?: ExportOptions
     units: rows.map(toUnit),
   };
 
-  return { po: serializePo(catalogue), exported: rows.length, withheld, exportedIds: rows.map((r) => r.id) };
+  return { po: serializePo(catalogue), exported: rows.length, withheld };
 }
 
 function toUnit(row: UnitRow): TranslationUnit {
