@@ -200,6 +200,7 @@ export async function setTranslationStatus(
       Cookie: cookie.trim(),
       'User-Agent': DEFAULT_USER_AGENT,
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'X-Requested-With': 'XMLHttpRequest',
       Referer: setStatusUrl,
     },
     body: body.toString(),
@@ -209,7 +210,13 @@ export async function setTranslationStatus(
 
   const finalUrl = res.url ? new URL(res.url) : new URL(setStatusUrl);
   const expectedUrl = new URL(setStatusUrl);
-  const loginPage = finalUrl.hostname === 'login.wordpress.org' || finalUrl.pathname === '/wp-login.php';
+  const locationHeader = res.headers.get('location');
+  const redirectUrl = locationHeader ? new URL(locationHeader, setStatusUrl) : null;
+  const loginPage =
+    finalUrl.hostname === 'login.wordpress.org' ||
+    finalUrl.pathname === '/wp-login.php' ||
+    redirectUrl?.hostname === 'login.wordpress.org' ||
+    redirectUrl?.pathname === '/wp-login.php';
   const header = res.headers.get('x-glotpress-filter-counts');
   let validCounts = false;
   if (header) {
@@ -226,6 +233,13 @@ export async function setTranslationStatus(
     }
   }
   const responseBody = await res.text();
+  let jsonOk = false;
+  try {
+    const data = JSON.parse(responseBody) as Record<string, unknown>;
+    if (data && (data.ok === true || data.success === true)) jsonOk = true;
+  } catch {
+    // not JSON
+  }
   const $ = cheerio.load(responseBody, {}, false);
   let matchingRow = false;
   $('tr.preview').each((_, row) => {
@@ -234,7 +248,7 @@ export async function setTranslationStatus(
       matchingRow = true;
     }
   });
-  if (!res.ok || finalUrl.origin !== expectedUrl.origin || loginPage || (!matchingRow && !validCounts)) {
+  if (!res.ok || finalUrl.origin !== expectedUrl.origin || loginPage || (!matchingRow && !validCounts && !jsonOk)) {
     const excerpt = $.text().replace(/\s+/g, ' ').trim().slice(0, 200);
     throw new Error(`GlotPress durum güncellemesi doğrulanamadı (HTTP ${res.status}): ${excerpt}`);
   }

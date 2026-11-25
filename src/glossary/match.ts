@@ -24,6 +24,11 @@ export interface ApplyGlossaryOptions {
    * prioritizing project tags, base tag, and trusted sources.
    */
   fallbackAnyTag?: boolean | undefined;
+  /**
+   * If true, allows falling back to edge/case variants when no exact match exists.
+   * Default: false (exact byte match by design).
+   */
+  includeVariants?: boolean | undefined;
 }
 
 interface Candidate {
@@ -56,6 +61,7 @@ export function applyGlossary(
   const ids = options.ids;
   const targetState = options.state ?? 'ok';
   const fallbackAnyTag = options.fallbackAnyTag ?? false;
+  const includeVariants = options.includeVariants ?? false;
 
   const projectTagIds = db
     .prepare(`SELECT tag_id FROM project_tags WHERE project_id = ?`)
@@ -150,7 +156,7 @@ export function applyGlossary(
       const pluralShape = row.msgidPlural === null ? null : affixes(row.msgidPlural);
       const hash = sourceHash(shape.core, pluralShape?.core);
       let candidates = distinct(getCandidates(candidatesFor, hash));
-      if (candidates.length === 0) {
+      if (candidates.length === 0 && includeVariants) {
         const variantHash = sourceVariantHash(shape.core, pluralShape?.core);
         if (variantHash !== null) {
           const variants = distinct(getCandidates(variantsFor, variantHash));

@@ -104,22 +104,6 @@ export function judgeLocally(
   submission: Submission,
   tagIds: readonly number[],
 ): Judgement | null {
-  const known = glossaryWordings(db, submission, tagIds);
-  if (known.length === 0) {
-    const variants = glossaryVariantWordings(db, submission, tagIds);
-    if (variants.length > 0) {
-      const wordings = [...new Set(variants.map((entry) =>
-        entry.plural ? `${entry.translation} / ${entry.plural}` : entry.translation,
-      ))];
-      return {
-        id: submission.id,
-        verdict: 'unknown',
-        reason: `Kaynağın farklı bir biçimi sözlükte bulundu; inceleme için karşılık: ${wordings.join(' · ')}`,
-        expected: wordings.join(' · '),
-      };
-    }
-  }
-
   const failures = checkTranslation({
     ordinal: 0,
     msgid: submission.source,
@@ -136,6 +120,7 @@ export function judgeLocally(
     };
   }
 
+  const known = glossaryWordings(db, submission, tagIds);
   const plural = submission.translationPlural ?? '';
 
   if (known.length > 0) {
@@ -144,6 +129,21 @@ export function judgeLocally(
     );
     if (matches) {
       return { id: submission.id, verdict: 'exact', reason: 'Sözlükteki karşılığın aynısı.' };
+    }
+  }
+
+  if (known.length === 0) {
+    const variants = glossaryVariantWordings(db, submission, tagIds);
+    if (variants.length > 0) {
+      const wordings = [...new Set(variants.map((entry) =>
+        entry.plural ? `${entry.translation} / ${entry.plural}` : entry.translation,
+      ))];
+      return {
+        id: submission.id,
+        verdict: 'unknown',
+        reason: `Kaynağın farklı bir biçimi sözlükte bulundu; inceleme için karşılık: ${wordings.join(' · ')}`,
+        expected: wordings.join(' · '),
+      };
     }
   }
 
