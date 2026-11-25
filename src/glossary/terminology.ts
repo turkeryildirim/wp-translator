@@ -1,4 +1,6 @@
 import type { Db } from '../db/open.ts';
+import { defaultTagId } from '../server/sources.ts';
+import { variantText } from './key.ts';
 
 export interface Term {
   source: string;
@@ -32,7 +34,7 @@ const WORD = /[A-Za-z][A-Za-z'-]*/g;
 export function collectTerms(db: Db, projectId: number, sources: readonly string[]): Term[] {
   const candidates = new Set<string>();
   for (const source of sources) {
-    for (const ngram of ngrams(source)) candidates.add(ngram);
+    for (const ngram of ngrams(source)) candidates.add(variantText(ngram));
   }
   if (candidates.size === 0) return [];
 
@@ -40,15 +42,16 @@ export function collectTerms(db: Db, projectId: number, sources: readonly string
     .prepare(
       `SELECT g.source_text AS source, g.translation, g.pos, g.note
          FROM glossary_entries g
-        WHERE g.tag_id IN (SELECT tag_id FROM project_tags WHERE project_id = ?)
+        WHERE (g.tag_id IN (SELECT tag_id FROM project_tags WHERE project_id = ?) OR g.tag_id = ?)
           AND length(g.source_text) <= ${MAX_LENGTH}
         ORDER BY g.source_text, g.pos, g.translation`,
     )
-    .all(projectId) as { source: string; translation: string; pos: string | null; note: string | null }[];
+    .all(projectId, defaultTagId(db)) as { source: string; translation: string; pos: string | null; note: string | null }[];
 
   const found = new Map<string, Map<string, TermReading>>();
   for (const row of rows) {
-    if (!candidates.has(row.source.toLowerCase())) continue;
+    const source = variantText(row.source);
+    if (!source || !candidates.has(source)) continue;
     const readings = found.get(row.source) ?? found.set(row.source, new Map()).get(row.source)!;
     const key = `${row.pos ?? ''}\u0000${row.translation}`;
     if (readings.has(key)) continue;
@@ -64,13 +67,15 @@ export function collectTerms(db: Db, projectId: number, sources: readonly string
     .sort((a, b) => a.source.localeCompare(b.source));
 }
 
-/** Every 1–3 word run in a string, lowercased. */
+/** Every 1–3 word run, preserving the source text between the words. */
 function ngrams(text: string): string[] {
-  const words = text.match(WORD) ?? [];
+  const words = [...text.matchAll(WORD)];
   const out: string[] = [];
   for (let size = 1; size <= MAX_WORDS; size += 1) {
     for (let start = 0; start + size <= words.length; start += 1) {
-      out.push(words.slice(start, start + size).join(' ').toLowerCase());
+      const first = words[start]!;
+      const last = words[start + size - 1]!;
+      out.push(text.slice(first.index!, last.index! + last[0].length));
     }
   }
   return out;

@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { openDb } from '../src/db/open.ts';
 import { resolveDbPath } from '../src/db/path.ts';
 import { listAiAgents } from '../src/db/aiSettings.ts';
 import { fetchQueuePage, setTranslationStatus, type QueueRow } from '../src/wporg/reviewer.ts';
@@ -86,7 +86,7 @@ async function main() {
   if (options.projectSlug) console.log(`Hedef Proje: ${options.projectSlug}`);
   if (options.fromSlug) console.log(`Başlangıç Projesi (--from): ${options.fromSlug}`);
 
-  const db = new Database(resolveDbPath());
+  const db = openDb(resolveDbPath());
   const cookieRow = db.prepare("SELECT value FROM app_settings WHERE key = 'wporg_cookie'").get() as { value: string } | undefined;
   const cookie = cookieRow?.value;
 

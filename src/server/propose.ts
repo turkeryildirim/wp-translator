@@ -1,7 +1,7 @@
 import type { Db } from '../db/open.ts';
 import { collectTerms } from '../glossary/terminology.ts';
 import { glossaryWordings, proposalFor, refusalFor } from '../judge/verdict.ts';
-import { rememberTranslations, reshape, splitByMemory } from '../ai/translationMemory.ts';
+import { rememberTranslations, reshape, splitByMemory, type TranslationMemoryScope } from '../ai/translationMemory.ts';
 import type { RequestItem, ResponseItem, TranslationProvider } from '../translate/types.ts';
 import { chunk, providerFor, type TranslateOptions } from './translate.ts';
 import { scopeFor } from './judge.ts';
@@ -76,18 +76,30 @@ export async function proposeTranslations(
       ...(item.context ? { c: item.context } : {}),
     }));
 
-    const memory = splitByMemory(db, items, styleGuide);
-    reused = memory.known.size;
-    for (const [index, answer] of memory.known) {
-      settled.set(open[index]!.id, judgeWording(open[index]!, answer, 'memory'));
-    }
-
-    if (memory.ask.length > 0) {
-      asked = memory.ask.length;
-      const answers = await ask(db, memory.ask, items, styleGuide, projectId, options);
-      for (const answer of answers) {
-        const item = open[answer.i];
-        if (item) settled.set(item.id, judgeWording(item, answer, 'model'));
+    const send: TranslationProvider = options.provider ?? providerFor(options, () => {});
+    const batches = chunk(
+      items.map((item) => ({ msgid: item.s, msgidPlural: item.p ?? null, item })),
+      options.chunkSize ?? 10,
+      options.chunkChars ?? 2_000,
+    );
+    for (const batch of batches) {
+      const batchItems = batch.map((entry) => entry.item);
+      const context = { styleGuide, terms: collectTerms(db, projectId, batchItems.map((item) => item.s)) };
+      const memoryScope: TranslationMemoryScope = {
+        context, provider: send.name, model: options.model ?? null, agent: options.agent,
+      };
+      const memory = splitByMemory(db, batchItems, memoryScope);
+      reused += memory.known.size;
+      for (const [index, answer] of memory.known) {
+        settled.set(open[index]!.id, judgeWording(open[index]!, answer, 'memory'));
+      }
+      if (memory.ask.length > 0) {
+        asked += memory.ask.length;
+        const answers = await ask(db, memory.ask, batchItems, memoryScope, send, options.signal);
+        for (const answer of answers) {
+          const item = open[answer.i];
+          if (item) settled.set(item.id, judgeWording(item, answer, 'model'));
+        }
       }
     }
   }
@@ -112,38 +124,19 @@ async function ask(
   db: Db,
   toAsk: readonly RequestItem[],
   original: readonly RequestItem[],
-  styleGuide: string,
-  projectId: number,
-  options: TranslateOptions & { signal?: AbortSignal },
+  memoryScope: TranslationMemoryScope,
+  send: TranslationProvider,
+  signal?: AbortSignal,
 ): Promise<ResponseItem[]> {
-  const send: TranslationProvider = options.provider ?? providerFor(options, () => {});
-  const terms = collectTerms(db, projectId, toAsk.map((item) => item.s));
-  const answers: ResponseItem[] = [];
-
-  const batches = chunk(
-    toAsk.map((item) => ({ msgid: item.s, msgidPlural: item.p ?? null, item })),
-    options.chunkSize ?? 10,
-    options.chunkChars ?? 2_000,
-  );
-
-  for (const batch of batches) {
-    const items = batch.map((entry) => entry.item);
-    try {
-      const reply = await send.translate(
-        { items, context: { styleGuide, terms } },
-        options.signal,
-      );
-      answers.push(...reshape(original, reply));
-      rememberTranslations(db, items, reply, styleGuide, options.model ?? null);
-    } catch (problem) {
-      if (options.signal?.aborted) throw problem;
-      // Left unanswered on purpose: the caller reports these as having no
-      // proposal, with the reason, and the other chunks still count.
-      void problem;
-    }
+  try {
+    const reply = await send.translate({ items: toAsk, context: memoryScope.context }, signal);
+    rememberTranslations(db, toAsk, reply, memoryScope);
+    return reshape(original, reply);
+  } catch (problem) {
+    if (signal?.aborted) throw problem;
+    // Other batches can still provide proposals.
+    return [];
   }
-
-  return answers;
 }
 
 /** The glossary's own wording, when it holds exactly one and the checks pass it. */

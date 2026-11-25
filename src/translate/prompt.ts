@@ -24,6 +24,8 @@ export function buildPrompt(context: TranslationContext): string {
     '',
     'Sana verilen JSON, bir WordPress projesinden İngilizce arayüz metinlerinin listesidir.',
     'Her öğenin "s" değerini Türkçeye (tr_TR) çevir. "p" varsa İngilizce çoğul biçimdir, onu da çevir.',
+    '"c" varsa gettext bağlamıdır; anlamı belirlemek için kullan, çevrilecek metin olarak alma.',
+    '"u" varsa metnin kullanım alanını belirtir (admin, frontend veya both); üslup ve sözcük seçimini buna göre yap.',
     '',
     'ÇIKTI BİÇİMİ — buna harfiyen uy:',
     '- Yalnızca bir JSON dizisi döndür. Açıklama, giriş cümlesi, markdown çiti yazma.',

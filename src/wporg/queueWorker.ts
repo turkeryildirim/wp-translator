@@ -90,13 +90,10 @@ class QueueWorkerManager {
   }
 
   stop(): QueueWorkerState {
-    if (this.abortController) {
+    if (this.abortController && !this.abortController.signal.aborted) {
       this.abortController.abort();
-      this.abortController = null;
+      this.log('warn', 'İşlem durduruluyor.');
     }
-    this.state.running = false;
-    this.state.phase = 'stopped';
-    this.log('warn', 'İşlem kullanıcı tarafından durduruldu.');
     return this.getState();
   }
 
@@ -220,6 +217,7 @@ class QueueWorkerManager {
             id: r.translationId,
             source: r.source,
             ...(r.sourcePlural ? { sourcePlural: r.sourcePlural } : {}),
+            ...(r.context ? { context: r.context } : {}),
             translation: r.translation,
             ...(r.translationPlural ? { translationPlural: r.translationPlural } : {}),
           }));
@@ -234,6 +232,7 @@ class QueueWorkerManager {
               engine,
               model,
               agent: engine === 'opencode' ? 'wp-translator' : undefined,
+              signal,
             },
           );
 
@@ -384,11 +383,7 @@ class QueueWorkerManager {
         );
       }
     } catch (err: unknown) {
-      if (signal.aborted) {
-        this.state.phase = 'stopped';
-        this.state.running = false;
-        this.log('warn', 'İşlem durduruldu.');
-      } else {
+      if (!signal.aborted) {
         const msg = err instanceof Error ? err.message : String(err);
         this.state.phase = 'error';
         this.state.running = false;
@@ -396,7 +391,14 @@ class QueueWorkerManager {
         this.log('error', `Beklenmeyen hata: ${msg}`);
       }
     } finally {
-      this.abortController = null;
+      if (this.abortController?.signal === signal) {
+        if (signal.aborted) {
+          this.state.phase = 'stopped';
+          this.state.running = false;
+          this.log('warn', 'İşlem durduruldu.');
+        }
+        this.abortController = null;
+      }
     }
   }
 }

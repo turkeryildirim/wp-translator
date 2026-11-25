@@ -89,7 +89,9 @@ export function scopeFor(db: Db, projectPath?: string): { projectId: number; tag
       .prepare(`SELECT tag_id FROM project_tags WHERE project_id = ?`)
       .all(project.id)
       .map((row) => (row as { tag_id: number }).tag_id);
-    if (tagIds.length > 0) return { projectId: project.id, tagIds };
+    if (tagIds.length > 0) {
+      return { projectId: project.id, tagIds: [...new Set([...tagIds, defaultTagId(db)])] };
+    }
   }
 
   // Hierarchy for remote or unimported projects
