@@ -78,14 +78,19 @@ describe('glossary matching', () => {
     });
   });
 
-  it('does not match on case, because matching is byte-exact', () => {
-    // Lowercasing would gain matches that map to a different translation:
-    // `Saved for Later` is `Sonraya Kaydet`, `Saved for later` is `Sonraya
-    // kaydedildi`.
+  it('matches on case variant when wording agrees, and keeps apart when they disagree', () => {
+    // When only one wording exists, variant matches can fill:
     addGlossaryEntry(ecommerce, 'Add to cart', 'Sepete ekle');
     const projectId = addProject([{ msgid: 'Add To Cart' }], [ecommerce]);
 
-    expect(applyGlossary(db, projectId).unmatched).toBe(1);
+    expect(applyGlossary(db, projectId).filled).toBe(1);
+    expect(unitFor(projectId, 'Add To Cart')?.msgstr).toBe('Sepete ekle');
+
+    // When different wordings exist, it does not guess:
+    vouched(ecommerce, 'Saved for Later', 'Sonraya Kaydet', ['core']);
+    vouched(ecommerce, 'Saved for later', 'Sonraya kaydedildi', ['woocommerce']);
+    const conflictId = addProject([{ msgid: 'SAVED FOR LATER' }], [ecommerce]);
+    expect(applyGlossary(db, conflictId).unmatched).toBe(1);
   });
 
   it('matches a padded source and gives the padding back', () => {
@@ -98,12 +103,13 @@ describe('glossary matching', () => {
     expect(unitFor(projectId, '  Save \n')?.msgstr).toBe('  Kaydet \n');
   });
 
-  it('still keeps strings apart on anything but whitespace', () => {
-    // Punctuation is not shape. `Save.` is a different string.
+  it('matches edge punctuation variant when wording agrees', () => {
+    // Edge punctuation is recognized as a variant of the core term.
     addGlossaryEntry(ecommerce, 'Save', 'Kaydet');
     const projectId = addProject([{ msgid: 'Save.' }], [ecommerce]);
 
-    expect(applyGlossary(db, projectId).unmatched).toBe(1);
+    expect(applyGlossary(db, projectId).filled).toBe(1);
+    expect(unitFor(projectId, 'Save.')?.msgstr).toBe('Kaydet');
   });
 
   it('ignores the unit’s context entirely', () => {

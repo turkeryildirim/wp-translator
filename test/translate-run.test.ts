@@ -319,7 +319,9 @@ describe('running several requests at once', () => {
 describe('paying for an answer once', () => {
   it('serves a repeat from what the model already said', async () => {
     // The same string turns up in project after project; asking again is waste.
-    const provider = stub((request) => request.items.map((item) => ({ i: item.i, t: 'Kaydet' })));
+    const provider = stub((request) =>
+      request.items.map((item) => ({ i: item.i, t: item.s.includes('%s') ? 'Düzenle %s' : 'Kaydet' })),
+    );
 
     startTranslation(db, projectId, { provider, chunkSize: 10, lanes: 1 });
     await settled();

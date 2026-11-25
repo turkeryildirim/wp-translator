@@ -121,17 +121,6 @@ export function judgeLocally(
   }
 
   const known = glossaryWordings(db, submission, tagIds);
-  const plural = submission.translationPlural ?? '';
-
-  if (known.length > 0) {
-    const matches = known.some(
-      (entry) => entry.translation === submission.translation && (entry.plural ?? '') === plural,
-    );
-    if (matches) {
-      return { id: submission.id, verdict: 'exact', reason: 'Sözlükteki karşılığın aynısı.' };
-    }
-  }
-
   if (known.length === 0) {
     const variants = glossaryVariantWordings(db, submission, tagIds);
     if (variants.length > 0) {
@@ -144,6 +133,17 @@ export function judgeLocally(
         reason: `Kaynağın farklı bir biçimi sözlükte bulundu; inceleme için karşılık: ${wordings.join(' · ')}`,
         expected: wordings.join(' · '),
       };
+    }
+  }
+
+  const plural = submission.translationPlural ?? '';
+
+  if (known.length > 0) {
+    const matches = known.some(
+      (entry) => entry.translation === submission.translation && (entry.plural ?? '') === plural,
+    );
+    if (matches) {
+      return { id: submission.id, verdict: 'exact', reason: 'Sözlükteki karşılığın aynısı.' };
     }
   }
 
