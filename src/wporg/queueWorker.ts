@@ -94,6 +94,8 @@ class QueueWorkerManager {
       this.abortController.abort();
       this.log('warn', 'İşlem durduruluyor.');
     }
+    this.state.running = false;
+    this.state.phase = 'stopped';
     return this.getState();
   }
 
@@ -199,8 +201,10 @@ class QueueWorkerManager {
         );
 
         let currentUrl: string | undefined = target.queueUrl;
+        const visitedUrls = new Set<string>();
 
-        while (currentUrl && !signal.aborted) {
+        while (currentUrl && !signal.aborted && !visitedUrls.has(currentUrl)) {
+          visitedUrls.add(currentUrl);
           const page = await fetchQueuePage(currentUrl, cookie, signal);
           if (page.rows.length === 0) {
             if (target.count > 0) {

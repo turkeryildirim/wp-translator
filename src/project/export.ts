@@ -10,9 +10,11 @@ export interface ExportSummary {
 
 export interface ExportResult extends ExportSummary {
   po: Buffer;
+  exportedIds: number[];
 }
 
 interface UnitRow {
+  id: number;
   ordinal: number;
   msgid: string;
   msgid_plural: string | null;
@@ -25,12 +27,14 @@ interface UnitRow {
 
 export interface ExportOptions {
   unitIds?: readonly number[] | undefined;
+  onlyOk?: boolean | undefined;
 }
 
 /**
  * Export a project as PO for import into GlotPress.
  *
- * Only approved, unblocked units are exported. `unitIds` narrows that set.
+ * When `unitIds` is passed, only those specific units that carry translations
+ * are exported. Otherwise, only `ok` units are written.
  */
 export function exportProject(db: Db, projectId: number, options?: ExportOptions): ExportResult {
   const project = db
@@ -39,24 +43,28 @@ export function exportProject(db: Db, projectId: number, options?: ExportOptions
 
   if (!project) throw new Error(`No project with id ${projectId}.`);
 
+  const onlyOk = options?.onlyOk ?? (options?.unitIds ? false : true);
   let rows: UnitRow[];
   let withheld = 0;
 
   if (options?.unitIds) {
     if (options.unitIds.length === 0) {
       const headers = project.headers ? (JSON.parse(project.headers) as Record<string, string>) : {};
-      return { po: serializePo({ headers, units: [] }), exported: 0, withheld: 0 };
+      return { po: serializePo({ headers, units: [] }), exported: 0, withheld: 0, exportedIds: [] };
     }
     const placeholders = options.unitIds.map(() => '?').join(', ');
+    const stateClause = onlyOk ? "AND state = 'ok'" : '';
     rows = db
       .prepare(
-        `SELECT ordinal, msgid, msgid_plural, msgctxt, refs, extracted_comments,
+        `SELECT id, ordinal, msgid, msgid_plural, msgctxt, refs, extracted_comments,
                 msgstr, msgstr_plural
            FROM translation_units
           WHERE project_id = ?
             AND id IN (${placeholders})
             AND msgstr IS NOT NULL AND msgstr <> ''
-            AND state = 'ok' AND blocked = 0
+            AND (msgid_plural IS NULL OR (msgstr_plural IS NOT NULL AND msgstr_plural <> ''))
+            AND blocked = 0
+            ${stateClause}
           ORDER BY ordinal`,
       )
       .all(projectId, ...options.unitIds) as UnitRow[];
@@ -65,10 +73,14 @@ export function exportProject(db: Db, projectId: number, options?: ExportOptions
   } else {
     rows = db
       .prepare(
-        `SELECT ordinal, msgid, msgid_plural, msgctxt, refs, extracted_comments,
+        `SELECT id, ordinal, msgid, msgid_plural, msgctxt, refs, extracted_comments,
                 msgstr, msgstr_plural
            FROM translation_units
-          WHERE project_id = ? AND state = 'ok' AND blocked = 0 AND msgstr IS NOT NULL AND msgstr <> ''
+          WHERE project_id = ?
+            AND state = 'ok'
+            AND blocked = 0
+            AND msgstr IS NOT NULL AND msgstr <> ''
+            AND (msgid_plural IS NULL OR (msgstr_plural IS NOT NULL AND msgstr_plural <> ''))
           ORDER BY ordinal`,
       )
       .all(projectId) as UnitRow[];
@@ -77,7 +89,12 @@ export function exportProject(db: Db, projectId: number, options?: ExportOptions
       db
         .prepare(
           `SELECT count(*) AS n FROM translation_units
-            WHERE project_id = ? AND NOT (state = 'ok' AND blocked = 0 AND msgstr IS NOT NULL AND msgstr <> '')`,
+            WHERE project_id = ? AND NOT (
+              state = 'ok'
+              AND blocked = 0
+              AND msgstr IS NOT NULL AND msgstr <> ''
+              AND (msgid_plural IS NULL OR (msgstr_plural IS NOT NULL AND msgstr_plural <> ''))
+            )`,
         )
         .get(projectId) as { n: number }
     ).n;
@@ -88,7 +105,7 @@ export function exportProject(db: Db, projectId: number, options?: ExportOptions
     units: rows.map(toUnit),
   };
 
-  return { po: serializePo(catalogue), exported: rows.length, withheld };
+  return { po: serializePo(catalogue), exported: rows.length, withheld, exportedIds: rows.map((r) => r.id) };
 }
 
 function toUnit(row: UnitRow): TranslationUnit {
