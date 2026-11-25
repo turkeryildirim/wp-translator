@@ -311,12 +311,21 @@ export function startTranslation(
     }));
 
     try {
+      const context = {
+        styleGuide,
+        terms: collectTerms(db, projectId, items.map((item) => item.s)),
+        project: {
+          ...(project.name ? { name: project.name } : {}),
+          ...(project.description ? { description: project.description } : {}),
+          ...(project.readme ? { readme: project.readme } : {}),
+        },
+      };
+      const memoryScope = { context, provider: send.name, model: options.model ?? null, agent: options.agent };
       // Whatever the model has already answered under these rules is taken out
       // first: the same string turns up in project after project.
-      const { known, ask } = splitByMemory(db, items, styleGuide);
+      const { known, ask } = splitByMemory(db, items, memoryScope);
       progress.reused += known.size;
 
-      const terms = collectTerms(db, projectId, ask.map((item) => item.s));
       mark(number);
       progress.currentChunk = {
         current: number,
@@ -329,21 +338,13 @@ export function startTranslation(
         return send.translate(
           {
             items: ask,
-            context: {
-              styleGuide,
-              terms,
-              project: {
-                ...(project.name ? { name: project.name } : {}),
-                ...(project.description ? { description: project.description } : {}),
-                ...(project.readme ? { readme: project.readme } : {}),
-              },
-            },
+            context,
           },
           signal,
         );
       });
 
-      rememberTranslations(db, ask, fresh, styleGuide, send.name);
+      rememberTranslations(db, ask, fresh, memoryScope);
       // The model answered the trimmed string; the unit's own shape goes back on.
       const shaped = reshape(items, fresh);
       const answers = items.map((item) => known.get(item.i) ?? shaped.find((a) => a.i === item.i));

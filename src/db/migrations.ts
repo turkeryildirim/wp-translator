@@ -454,6 +454,12 @@ export const migrations: readonly Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level);
     `,
   },
+  {
+    version: 19,
+    // Preserve exact identities while allowing indexed source variant lookups.
+    sql: `CREATE INDEX idx_glossary_variant ON glossary_entries
+      (source_variant_hash(source_text, source_plural), tag_id) WHERE pos IS NULL;`,
+  },
 ];
 
 export const latestVersion = migrations[migrations.length - 1]!.version;

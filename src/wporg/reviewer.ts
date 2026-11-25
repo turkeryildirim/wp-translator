@@ -195,6 +195,7 @@ export async function setTranslationStatus(
 
   const postInit: RequestInit = {
     method: 'POST',
+    redirect: 'manual',
     headers: {
       Cookie: cookie.trim(),
       'User-Agent': DEFAULT_USER_AGENT,
@@ -206,9 +207,36 @@ export async function setTranslationStatus(
   if (signal) postInit.signal = signal;
   const res = await fetch(setStatusUrl, postInit);
 
-  if (!res.ok) {
-    const text = (await res.text()).trim().slice(0, 200);
-    throw new Error(`GlotPress status güncelleme başarısız (HTTP ${res.status}): ${text}`);
+  const finalUrl = res.url ? new URL(res.url) : new URL(setStatusUrl);
+  const expectedUrl = new URL(setStatusUrl);
+  const loginPage = finalUrl.hostname === 'login.wordpress.org' || finalUrl.pathname === '/wp-login.php';
+  const header = res.headers.get('x-glotpress-filter-counts');
+  let validCounts = false;
+  if (header) {
+    try {
+      const counts: unknown = JSON.parse(header);
+      const fields = ['translated', 'untranslated', 'waiting', 'changesrequested', 'fuzzy', 'warnings'];
+      validCounts = typeof counts === 'object' && counts !== null && !Array.isArray(counts) &&
+        fields.every((field) => {
+          const value = (counts as Record<string, unknown>)[field];
+          return typeof value === 'string' && /^\d[\d\s.,\u00a0\u202f]*$/u.test(value);
+        });
+    } catch {
+      validCounts = false;
+    }
+  }
+  const responseBody = await res.text();
+  const $ = cheerio.load(responseBody, {}, false);
+  let matchingRow = false;
+  $('tr.preview').each((_, row) => {
+    const rowId = $(row).attr('row') ?? '';
+    if (rowId.endsWith(`-${translationId}`) && $(row).hasClass(`status-${status}`)) {
+      matchingRow = true;
+    }
+  });
+  if (!res.ok || finalUrl.origin !== expectedUrl.origin || loginPage || (!matchingRow && !validCounts)) {
+    const excerpt = $.text().replace(/\s+/g, ' ').trim().slice(0, 200);
+    throw new Error(`GlotPress durum güncellemesi doğrulanamadı (HTTP ${res.status}): ${excerpt}`);
   }
 
   return true;

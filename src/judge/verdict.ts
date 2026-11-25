@@ -1,5 +1,5 @@
 import type { Db } from '../db/open.ts';
-import { sourceHash } from '../glossary/key.ts';
+import { sourceHash, sourceVariantHash } from '../glossary/key.ts';
 import { checkTranslation } from '../quality/check.ts';
 import { repairTranslationUnit } from '../quality/repair.ts';
 
@@ -8,7 +8,7 @@ import { repairTranslationUnit } from '../quality/repair.ts';
  *
  * `exact` and `flagged` are reached without a model: the glossary already holds
  * this wording, or a quality check refuses it. `agreed` rests on the model's
- * opinion, and `unknown` means no opinion was obtained.
+ * opinion, and `unknown` leaves the submission for review.
  */
 export type Verdict = 'exact' | 'agreed' | 'flagged' | 'unknown';
 
@@ -104,6 +104,22 @@ export function judgeLocally(
   submission: Submission,
   tagIds: readonly number[],
 ): Judgement | null {
+  const known = glossaryWordings(db, submission, tagIds);
+  if (known.length === 0) {
+    const variants = glossaryVariantWordings(db, submission, tagIds);
+    if (variants.length > 0) {
+      const wordings = [...new Set(variants.map((entry) =>
+        entry.plural ? `${entry.translation} / ${entry.plural}` : entry.translation,
+      ))];
+      return {
+        id: submission.id,
+        verdict: 'unknown',
+        reason: `Kaynağın farklı bir biçimi sözlükte bulundu; inceleme için karşılık: ${wordings.join(' · ')}`,
+        expected: wordings.join(' · '),
+      };
+    }
+  }
+
   const failures = checkTranslation({
     ordinal: 0,
     msgid: submission.source,
@@ -120,7 +136,6 @@ export function judgeLocally(
     };
   }
 
-  const known = glossaryWordings(db, submission, tagIds);
   const plural = submission.translationPlural ?? '';
 
   if (known.length > 0) {
@@ -128,27 +143,6 @@ export function judgeLocally(
       (entry) => entry.translation === submission.translation && (entry.plural ?? '') === plural,
     );
     if (matches) {
-      return { id: submission.id, verdict: 'exact', reason: 'Sözlükteki karşılığın aynısı.' };
-    }
-  }
-
-  // Check if translation matches a valid wording across any tag in translation memory
-  const allWordings = db
-    .prepare(
-      `SELECT translation, translation_plural AS plural
-         FROM glossary_entries
-        WHERE source_hash = ? AND pos IS NULL`,
-    )
-    .all(sourceHash(submission.source, submission.sourcePlural)) as {
-    translation: string;
-    plural: string | null;
-  }[];
-
-  if (allWordings.length > 0) {
-    const matchesAny = allWordings.some(
-      (entry) => entry.translation === submission.translation && (entry.plural ?? '') === plural,
-    );
-    if (matchesAny) {
       return { id: submission.id, verdict: 'exact', reason: 'Sözlükteki karşılığın aynısı.' };
     }
   }
@@ -166,6 +160,26 @@ export function judgeLocally(
     expected: known.map((entry) => entry.translation).join(' / '),
     ...(proposal ? { proposal } : {}),
   };
+}
+
+/** Glossary wordings for a source differing only in supported edge marks or case. */
+function glossaryVariantWordings(
+  db: Db,
+  submission: Submission,
+  tagIds: readonly number[],
+): { translation: string; plural: string | null }[] {
+  const hash = sourceVariantHash(submission.source, submission.sourcePlural);
+  if (tagIds.length === 0 || hash === null) return [];
+
+  const holes = tagIds.map(() => '?').join(', ');
+  return db
+    .prepare(
+      `SELECT translation, translation_plural AS plural
+         FROM glossary_entries
+        WHERE source_variant_hash(source_text, source_plural) = ?
+          AND pos IS NULL AND tag_id IN (${holes})`,
+    )
+    .all(hash, ...tagIds) as { translation: string; plural: string | null }[];
 }
 
 /** Every translation the glossary holds for this source, under these tags. */

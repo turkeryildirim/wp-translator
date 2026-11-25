@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { fold } from './fold.ts';
 import { latestVersion, migrations } from './migrations.ts';
+import { sourceVariantHash } from '../glossary/key.ts';
 
 export type Db = Database.Database;
 
@@ -22,6 +23,10 @@ export function openDb(path: string): Db {
   db.function('fold', { deterministic: true }, (value: unknown) =>
     typeof value === 'string' ? fold(value) : value === null ? null : String(value),
   );
+  db.function('source_variant_hash', { deterministic: true }, (source: unknown, plural: unknown) => {
+    if (typeof source !== 'string' || (plural !== null && typeof plural !== 'string')) return null;
+    return sourceVariantHash(source, plural);
+  });
 
   const current = db.pragma('user_version', { simple: true }) as number;
 

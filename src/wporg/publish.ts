@@ -1,6 +1,7 @@
 import type { Db } from '../db/open.ts';
 import { getAppSetting } from '../db/appSettings.ts';
 import { exportProject } from '../project/export.ts';
+import { load } from 'cheerio';
 
 export interface PublishResult {
   ok: boolean;
@@ -156,6 +157,7 @@ export async function publishProjectToWporg(
   // 3. POST to GlotPress import endpoint
   const postRes = await fetch(importUrl, {
     method: 'POST',
+    redirect: 'manual',
     headers: {
       Cookie: cookie.trim(),
       'User-Agent': DEFAULT_USER_AGENT,
@@ -164,7 +166,41 @@ export async function publishProjectToWporg(
     body: form,
   });
 
-  const postHtml = await postRes.text();
+  let resultRes = postRes;
+  const notices = new Map<string, string>();
+  if ([301, 302, 303].includes(postRes.status)) {
+    const location = postRes.headers.get('location');
+    if (!location) throw new Error('GlotPress yönlendirme adresi bulunamadı.');
+    const destination = new URL(location, importUrl);
+    const expected = new URL(base);
+    const importPage = new URL(importUrl);
+    if (destination.origin !== expected.origin ||
+        ![expected.pathname.replace(/\/$/, ''), importPage.pathname.replace(/\/$/, '')]
+          .includes(destination.pathname.replace(/\/$/, ''))) {
+      throw new Error('GlotPress içe aktarma beklenmeyen bir adrese yönlendirildi.');
+    }
+    const cookiePairs = cookie.split(';').map((part) => part.trim())
+      .filter((part) => part && !part.startsWith('_gp_notice_'));
+    for (const header of postRes.headers.getSetCookie()) {
+      const pair = header.split(';', 1)[0] ?? '';
+      const match = /^(_gp_notice_(?:error|success|notice))=([^;\r\n]*)$/.exec(pair);
+      if (!match || !match[2]) continue;
+      cookiePairs.push(pair);
+      try {
+        notices.set(match[1]!, decodeURIComponent(match[2].replace(/\+/g, ' ')));
+      } catch {
+        throw new Error('GlotPress bildirim çerezi okunamadı.');
+      }
+    }
+    resultRes = await fetch(destination, {
+      headers: { Cookie: cookiePairs.join('; '), 'User-Agent': DEFAULT_USER_AGENT },
+      redirect: 'manual',
+    });
+  }
+  if (!resultRes.ok) {
+    throw new Error(`GlotPress içe aktarma yanıtı başarısız (HTTP ${resultRes.status}).`);
+  }
+  const postHtml = await resultRes.text();
 
   if (postHtml.includes('notice-error') || postHtml.includes('error-message')) {
     const errorMatch =
@@ -177,30 +213,14 @@ export async function publishProjectToWporg(
     throw new Error(errText);
   }
 
-  // If specific units were published, update their local state to 'ok'
-  if (options?.unitIds && options.unitIds.length > 0) {
-    const placeholders = options.unitIds.map(() => '?').join(', ');
-    db.prepare(
-      `UPDATE translation_units
-          SET state = 'ok'
-        WHERE project_id = ?
-          AND id IN (${placeholders})
-          AND msgstr IS NOT NULL AND msgstr <> ''`,
-    ).run(projectId, ...options.unitIds);
-  }
-
+  const noticeError = notices.get('_gp_notice_error');
+  if (noticeError) throw new Error(load(noticeError).text().trim());
   const noticeMatch =
     /class=["'][^"']*notice-(?:success|info)[^"']*["'][^>]*>([\s\S]*?)<\/div>/i.exec(postHtml) ||
     /id=["']gp-js-message["'][^>]*>([\s\S]*?)<\/div>/i.exec(postHtml);
-
-  let message = '';
-  if (noticeMatch && noticeMatch[1]) {
-    message = noticeMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  }
-
-  if (!message) {
-    message = `${exported} adet onaylı çeviri wp.org'a başarıyla gönderildi ve yayınlandı.`;
-  }
+  const rawMessage = notices.get('_gp_notice_success') ?? notices.get('_gp_notice_notice') ?? noticeMatch?.[1];
+  const message = rawMessage ? load(rawMessage).text().replace(/\s+/g, ' ').trim() : '';
+  if (!message) throw new Error('GlotPress içe aktarma sonucu doğrulanamadı; yanıt incelenmeli.');
 
   return {
     ok: true,

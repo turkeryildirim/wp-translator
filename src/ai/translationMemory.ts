@@ -1,7 +1,9 @@
 import type { Db } from '../db/open.ts';
 import { affixes, questionKey, reapply, recall, remember, rulesKey } from './memory.ts';
 import { unescapeEchoedQuotes } from '../text/escapes.ts';
-import type { RequestItem, ResponseItem } from '../translate/types.ts';
+import { checkTranslation } from '../quality/check.ts';
+import { repairTranslationUnit } from '../quality/repair.ts';
+import type { RequestItem, ResponseItem, TranslationContext } from '../translate/types.ts';
 
 /** What the store holds for one source: the translation, without its shape. */
 interface Stored {
@@ -9,7 +11,27 @@ interface Stored {
   tp?: string;
 }
 
-const keyOf = (item: RequestItem): string => questionKey([item.s, item.p ?? '']);
+const keyOf = (item: RequestItem): string => questionKey(['translation-v2', item.s, item.p ?? '', item.c ?? '', item.u ?? '', item.x ?? '']);
+
+export interface TranslationMemoryScope {
+  context: TranslationContext;
+  provider: string;
+  model: string | null;
+  agent?: string | undefined;
+}
+
+function scopeKey(scope: TranslationMemoryScope | string): string {
+  if (typeof scope === 'string') return rulesKey(scope);
+  return rulesKey(JSON.stringify({
+    version: 2,
+    styleGuide: scope.context.styleGuide,
+    terms: scope.context.terms,
+    project: scope.context.project ?? null,
+    provider: scope.provider,
+    model: scope.model,
+    agent: scope.agent ?? null,
+  }));
+}
 
 export interface Split {
   /** Answers the store already had, shaped to the strings that asked for them. */
@@ -32,9 +54,9 @@ export interface Split {
 export function splitByMemory(
   db: Db,
   items: readonly RequestItem[],
-  styleGuide: string,
+  scope: TranslationMemoryScope | string,
 ): Split {
-  const rules = rulesKey(styleGuide);
+  const rules = scopeKey(scope);
   const known = new Map<number, ResponseItem>();
   const ask: RequestItem[] = [];
 
@@ -94,10 +116,10 @@ export function rememberTranslations(
   db: Db,
   asked: readonly RequestItem[],
   answers: readonly ResponseItem[],
-  styleGuide: string,
-  model: string | null,
+  scope: TranslationMemoryScope | string,
+  model: string | null = null,
 ): void {
-  const rules = rulesKey(styleGuide);
+  const rules = scopeKey(scope);
   const byId = new Map(asked.map((item) => [item.i, item]));
 
   db.transaction(() => {
@@ -105,8 +127,15 @@ export function rememberTranslations(
       const item = byId.get(answer.i);
       if (!item) continue;
 
-      const stored: Stored = { t: affixes(answer.t).core };
-      if (answer.tp) stored.tp = affixes(answer.tp).core;
+      const repaired = repairTranslationUnit(item.s, answer.t, item.p, answer.tp);
+      const failures = checkTranslation({
+        ordinal: 0, msgid: item.s, ...(item.p ? { msgidPlural: item.p } : {}),
+        msgstr: repaired.translation,
+        ...(repaired.translationPlural ? { msgstrPlural: repaired.translationPlural } : {}),
+      });
+      if (failures.length > 0) continue;
+      const stored: Stored = { t: affixes(repaired.translation).core };
+      if (repaired.translationPlural) stored.tp = affixes(repaired.translationPlural).core;
       if (!stored.t) continue;
 
       remember(db, {
@@ -114,9 +143,9 @@ export function rememberTranslations(
         keyHash: keyOf(item),
         rulesHash: rules,
         sourceText: affixes(item.s).core,
-        question: { source: affixes(item.s).core, ...(item.p ? { plural: affixes(item.p).core } : {}) },
+        question: { source: affixes(item.s).core, ...(item.p ? { plural: affixes(item.p).core } : {}), ...(item.c ? { context: item.c } : {}), ...(item.u ? { usageSurface: item.u } : {}) },
         answer: stored,
-        model,
+        model: typeof scope === 'string' ? model : scope.model,
       });
     }
   })();

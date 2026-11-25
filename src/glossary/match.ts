@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { Db } from '../db/open.ts';
-import { sourceHash } from './key.ts';
+import { sourceHash, sourceVariantHash } from './key.ts';
 import { affixes, reapply } from '../text/whitespace.ts';
 import { defaultTagId } from '../server/sources.ts';
 import { checkTranslation } from '../quality/check.ts';
@@ -35,7 +35,7 @@ interface Candidate {
 /**
  * Fill a project's units from the glossary, best translation first.
  *
- * Matching is byte-exact on the source string and ignores `msgctxt`; where a
+ * Matching tries the exact source first, then its edge/case variants, and ignores `msgctxt`; where a
  * string has several known translations the best-supported one is filled in and
  * the rest are offered as candidates. Terminology rows (`pos IS NOT NULL`) are
  * skipped — they say how a word is rendered, not how a whole string is.
@@ -74,52 +74,55 @@ export function applyGlossary(
   const allowedTagIds = Array.from(new Set([...projectTagIds, baseTagId]));
 
   let candidatesFor: Database.Statement<unknown[], Candidate>;
+  let variantsFor: Database.Statement<unknown[], Candidate>;
   if (fallbackAnyTag) {
     const projectTagOrder =
       projectTagIds.length > 0
         ? `(e.tag_id IN (${projectTagIds.map(() => '?').join(', ')})) DESC,`
         : '';
-    candidatesFor = db.prepare(
+    const query =
       `SELECT e.id AS entryId, e.translation, e.translation_plural AS translationPlural
          FROM glossary_entries e
          LEFT JOIN glossary_entry_sources s ON s.entry_id = e.id
          LEFT JOIN trusted_sources t ON t.id = s.trusted_source_id
-        WHERE e.source_hash = ? AND e.pos IS NULL
+        WHERE LOOKUP = ? AND e.pos IS NULL
         GROUP BY e.id
         ORDER BY (e.origin = 'owner') DESC,
                  ${projectTagOrder}
                  (e.tag_id = ?) DESC,
                  count(DISTINCT s.trusted_source_id) DESC,
                  ifnull(min(t.rank), 2147483647) ASC,
-                 e.id ASC`,
-    );
+                 e.id ASC`;
+    candidatesFor = db.prepare(query.replace('LOOKUP', 'e.source_hash'));
+    variantsFor = db.prepare(query.replace('LOOKUP', 'source_variant_hash(e.source_text, e.source_plural)'));
   } else {
     const placeholders = allowedTagIds.map(() => '?').join(', ');
     const projectTagOrder =
       projectTagIds.length > 0
         ? `(e.tag_id IN (${projectTagIds.map(() => '?').join(', ')})) DESC,`
         : '';
-    candidatesFor = db.prepare(
+    const query =
       `SELECT e.id AS entryId, e.translation, e.translation_plural AS translationPlural
          FROM glossary_entries e
          LEFT JOIN glossary_entry_sources s ON s.entry_id = e.id
          LEFT JOIN trusted_sources t ON t.id = s.trusted_source_id
-        WHERE e.source_hash = ? AND e.pos IS NULL AND e.tag_id IN (${placeholders})
+        WHERE LOOKUP = ? AND e.pos IS NULL AND e.tag_id IN (${placeholders})
         GROUP BY e.id
         ORDER BY (e.origin = 'owner') DESC,
                  ${projectTagOrder}
                  (e.tag_id = ?) DESC,
                  count(DISTINCT s.trusted_source_id) DESC,
                  ifnull(min(t.rank), 2147483647) ASC,
-                 e.id ASC`,
-    );
+                 e.id ASC`;
+    candidatesFor = db.prepare(query.replace('LOOKUP', 'e.source_hash'));
+    variantsFor = db.prepare(query.replace('LOOKUP', 'source_variant_hash(e.source_text, e.source_plural)'));
   }
 
-  const getCandidates = (hash: string): Candidate[] => {
+  const getCandidates = (statement: Database.Statement<unknown[], Candidate>, hash: string): Candidate[] => {
     if (fallbackAnyTag) {
-      return candidatesFor.all(hash, ...projectTagIds, baseTagId);
+      return statement.all(hash, ...projectTagIds, baseTagId);
     }
-    return candidatesFor.all(hash, ...allowedTagIds, ...projectTagIds, baseTagId);
+    return statement.all(hash, ...allowedTagIds, ...projectTagIds, baseTagId);
   };
 
   let unitQuery = `SELECT id, msgid, msgid_plural AS msgidPlural FROM translation_units WHERE project_id = ?`;
@@ -146,7 +149,15 @@ export function applyGlossary(
       const shape = affixes(row.msgid);
       const pluralShape = row.msgidPlural === null ? null : affixes(row.msgidPlural);
       const hash = sourceHash(shape.core, pluralShape?.core);
-      const candidates = distinct(getCandidates(hash));
+      let candidates = distinct(getCandidates(candidatesFor, hash));
+      if (candidates.length === 0) {
+        const variantHash = sourceVariantHash(shape.core, pluralShape?.core);
+        if (variantHash !== null) {
+          const variants = distinct(getCandidates(variantsFor, variantHash));
+          // A variant can fill only when all matching entries agree on wording.
+          if (variants.length === 1) candidates = variants;
+        }
+      }
 
       if (candidates.length === 0) {
         result.unmatched += 1;
