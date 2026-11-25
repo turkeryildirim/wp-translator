@@ -1,6 +1,6 @@
 {
   "name": "wp-translator",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Autonomous AI Translation Assistant for WordPress.org",
   "author": "Turker",
   "private": true,
